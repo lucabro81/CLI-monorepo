@@ -10,11 +10,22 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
+    /// Manage authentication with Jira
+    Auth {
+        #[command(subcommand)]
+        command: AuthCommand,
+    },
     /// Work with Jira issues
     Issue {
         #[command(subcommand)]
         command: IssueCommand,
     },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum AuthCommand {
+    /// Run the OAuth 2.0 login flow and store credentials locally
+    Login,
 }
 
 #[derive(Debug, Subcommand)]
@@ -38,6 +49,19 @@ mod tests {
             Command::Issue {
                 command: IssueCommand::Get { key },
             } => assert_eq!(key, "PROJ-123"),
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_auth_login() {
+        let cli = Cli::try_parse_from(["jira", "auth", "login"]).expect("should parse");
+
+        match cli.command {
+            Command::Auth {
+                command: AuthCommand::Login,
+            } => {}
+            other => panic!("unexpected command: {other:?}"),
         }
     }
 

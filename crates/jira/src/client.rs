@@ -1,4 +1,4 @@
-use crate::config::Config;
+use crate::auth::Credentials;
 
 #[derive(Debug)]
 pub enum ClientError {
@@ -18,28 +18,27 @@ impl std::fmt::Display for ClientError {
 }
 
 pub struct JiraClient {
-    config: Config,
+    base_url: String,
+    access_token: String,
     http: reqwest::blocking::Client,
 }
 
 impl JiraClient {
-    pub fn new(config: Config) -> Self {
+    pub fn new(credentials: &Credentials) -> Self {
         Self {
-            config,
+            base_url: format!("https://api.atlassian.com/ex/jira/{}", credentials.cloud_id),
+            access_token: credentials.access_token.clone(),
             http: reqwest::blocking::Client::new(),
         }
     }
 
     pub fn get_issue(&self, key: &str) -> Result<serde_json::Value, ClientError> {
-        let url = format!(
-            "{}/rest/api/3/issue/{key}",
-            self.config.base_url.trim_end_matches('/')
-        );
+        let url = format!("{}/rest/api/3/issue/{key}", self.base_url);
 
         let response = self
             .http
             .get(&url)
-            .basic_auth(&self.config.email, Some(&self.config.api_token))
+            .bearer_auth(&self.access_token)
             .header("Accept", "application/json")
             .send()
             .map_err(|e| ClientError::Request(e.to_string()))?;
