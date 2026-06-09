@@ -47,6 +47,7 @@ pub enum Command {
     /// Runs three checks in order: app credentials file, stored OAuth tokens,
     /// and a live API call. Prints a JSON object with a status field per check.
     /// Exits non-zero if any check fails or is skipped.
+    #[command(after_help = "Examples:\n  jira doctor\n  jira doctor --select app_config.status,credentials.status,api.status\n\nEach check has a status field: \"ok\", \"error\", or \"skipped\".\nLater checks are skipped if an earlier one fails.")]
     Doctor,
     /// Manage authentication with Jira
     Auth {
@@ -63,14 +64,21 @@ pub enum Command {
 #[derive(Debug, Subcommand)]
 pub enum AuthCommand {
     /// Run the OAuth 2.0 login flow and store credentials locally
+    ///
+    /// Opens the browser for Atlassian consent, receives the callback on
+    /// localhost:8080, exchanges the code for tokens, and writes credentials.json.
+    /// Run this once per machine; tokens are refreshed automatically after that.
+    #[command(after_help = "Example: jira auth login\n\nRequires app.json to exist at ~/.config/jira-cli/app.json.\nRun `jira init` first if you have not set up the OAuth app yet.")]
     Login,
     /// Print the currently authenticated user as JSON
+    #[command(after_help = "Examples:\n  jira auth whoami\n  jira auth whoami --select displayName,emailAddress,accountId")]
     Whoami,
 }
 
 #[derive(Debug, Subcommand)]
 pub enum IssueCommand {
     /// Fetch a single issue by key (e.g. PROJ-123) and print it as JSON
+    #[command(after_help = "Examples:\n  jira issue get PROJ-123\n  jira issue get PROJ-123 --select summary,status.name,assignee.displayName,priority.name")]
     Get {
         /// Issue key, e.g. PROJ-123
         key: String,
@@ -81,6 +89,7 @@ pub enum IssueCommand {
         command: CommentCommand,
     },
     /// List the workflow transitions available for an issue in its current state, as JSON
+    #[command(after_help = "Examples:\n  jira issue transitions PROJ-123\n  jira issue transitions PROJ-123 --select transitions.id,transitions.name\n\nUse the transition names returned here as the --to argument for `issue transition`.")]
     Transitions {
         /// Issue key, e.g. PROJ-123
         key: String,

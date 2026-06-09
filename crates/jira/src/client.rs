@@ -24,9 +24,15 @@ pub struct JiraTransition {
     pub name: String,
 }
 
+/// Error returned by `JiraClient` methods.
+///
+/// `Request` covers network-level failures (connection refused, timeout, etc.).
+/// `Status` covers HTTP-level failures where the server responded with a non-2xx status.
 #[derive(Debug)]
 pub enum ClientError {
+    /// Network or serialization error — no HTTP response was received.
     Request(String),
+    /// The server responded but with a non-2xx status code.
     Status { status: u16, body: String },
 }
 
@@ -41,6 +47,7 @@ impl std::fmt::Display for ClientError {
     }
 }
 
+/// Blocking HTTP client for the Jira REST API v3.
 pub struct JiraClient {
     base_url: String,
     access_token: String,
@@ -48,6 +55,7 @@ pub struct JiraClient {
 }
 
 impl JiraClient {
+    /// Builds a client from stored credentials. The base URL is derived from `cloud_id`.
     pub fn new(credentials: &Credentials) -> Self {
         Self {
             base_url: format!("https://api.atlassian.com/ex/jira/{}", credentials.cloud_id),

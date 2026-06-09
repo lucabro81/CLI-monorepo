@@ -23,6 +23,8 @@
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
+/// Static OAuth 2.0 app identity loaded from `app.json`.
+/// Written once by hand (or by `jira init`); never modified by the CLI at runtime.
 #[derive(Debug, PartialEq, Eq)]
 pub struct OAuthConfig {
     pub client_id: String,
@@ -270,6 +272,7 @@ pub fn load_credentials(config: &OAuthConfig, path: &Path) -> Result<Credentials
     Ok(credentials)
 }
 
+/// Serialises credentials to JSON and writes them to `path`, creating parent directories as needed.
 pub fn save_credentials(path: &Path, credentials: &Credentials) -> Result<(), LoginError> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(LoginError::Io)?;
@@ -292,11 +295,15 @@ pub enum CallbackError {
     MissingParam(&'static str),
 }
 
+/// Dynamic session credentials persisted to `credentials.json`.
+/// Fully managed by the CLI — never edit by hand. Refreshed transparently before expiry.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Credentials {
     pub access_token: String,
     pub refresh_token: String,
+    /// Unix timestamp (seconds) after which the access token is no longer valid.
     pub expires_at: u64,
+    /// Jira Cloud instance ID, resolved once at login via the accessible-resources endpoint.
     pub cloud_id: String,
 }
 
