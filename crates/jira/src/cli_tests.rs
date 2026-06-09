@@ -114,3 +114,54 @@ fn rejects_comment_remove_missing_id() {
 
     assert!(result.is_err());
 }
+
+#[test]
+fn parses_issue_transition() {
+    let cli =
+        Cli::try_parse_from(["jira", "issue", "transition", "KAN-4", "--to", "In Progress"])
+            .expect("should parse");
+
+    match cli.command {
+        Command::Issue {
+            command: IssueCommand::Transition { key, to },
+        } => {
+            assert_eq!(key, "KAN-4");
+            assert_eq!(to, "In Progress");
+        }
+        other => panic!("unexpected command: {other:?}"),
+    }
+}
+
+#[test]
+fn rejects_transition_missing_to_flag() {
+    let result = Cli::try_parse_from(["jira", "issue", "transition", "KAN-4"]);
+
+    assert!(result.is_err());
+}
+
+#[test]
+fn rejects_transition_missing_key() {
+    let result = Cli::try_parse_from(["jira", "issue", "transition", "--to", "Done"]);
+
+    assert!(result.is_err());
+}
+
+#[test]
+fn parses_issue_transitions_list() {
+    let cli = Cli::try_parse_from(["jira", "issue", "transitions", "KAN-4"])
+        .expect("should parse");
+
+    match cli.command {
+        Command::Issue {
+            command: IssueCommand::Transitions { key },
+        } => assert_eq!(key, "KAN-4"),
+        other => panic!("unexpected command: {other:?}"),
+    }
+}
+
+#[test]
+fn rejects_transitions_list_missing_key() {
+    let result = Cli::try_parse_from(["jira", "issue", "transitions"]);
+
+    assert!(result.is_err());
+}

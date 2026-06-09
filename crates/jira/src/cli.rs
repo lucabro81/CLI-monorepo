@@ -42,6 +42,20 @@ pub enum IssueCommand {
         #[command(subcommand)]
         command: CommentCommand,
     },
+    /// List the workflow transitions available for an issue in its current state, as JSON
+    Transitions {
+        /// Issue key, e.g. PROJ-123
+        key: String,
+    },
+    /// Move an issue to a different status via a workflow transition
+    #[command(after_help = "Example: jira issue transition KAN-4 --to \"In Progress\"\n\nUse the exact status name as it appears in Jira. If the name does not match any available transition, the command fails and lists the valid options.")]
+    Transition {
+        /// Issue key, e.g. PROJ-123
+        key: String,
+        /// Target status name, e.g. \"In Progress\" or \"Done\"
+        #[arg(long)]
+        to: String,
+    },
 }
 
 #[derive(Debug, Subcommand)]

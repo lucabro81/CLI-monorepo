@@ -53,6 +53,40 @@ fn run() -> Result<(), CliError> {
                     let value = client.add_comment(&key, &body).map_err(client_error_to_cli)?;
                     print_json(&value)
                 }
+                IssueCommand::Transitions { key } => {
+                    let value = client
+                        .list_transitions_json(&key)
+                        .map_err(client_error_to_cli)?;
+                    print_json(&value)
+                }
+                IssueCommand::Transition { key, to } => {
+                    let transitions =
+                        client.get_transitions(&key).map_err(client_error_to_cli)?;
+
+                    let matched = transitions
+                        .iter()
+                        .find(|t| t.name.eq_ignore_ascii_case(&to));
+
+                    let transition = matched.ok_or_else(|| {
+                        let available = transitions
+                            .iter()
+                            .map(|t| t.name.as_str())
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        CliError::TransitionNotFound {
+                            name: to.clone(),
+                            available,
+                        }
+                    })?;
+
+                    client
+                        .apply_transition(&key, &transition.id)
+                        .map_err(client_error_to_cli)?;
+
+                    let result =
+                        serde_json::json!({"transitioned": true, "key": key, "to": transition.name});
+                    print_json(&result)
+                }
                 IssueCommand::Comment {
                     command: CommentCommand::Remove { key, id },
                 } => {

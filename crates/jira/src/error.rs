@@ -53,4 +53,10 @@ pub enum CliError {
 
     #[error("failed to serialize response to JSON: {reason}")]
     JsonSerialize { reason: String },
+
+    #[error(
+        "transition \"{name}\" not found for this issue in its current state. \
+        Available transitions: {available}"
+    )]
+    TransitionNotFound { name: String, available: String },
 }

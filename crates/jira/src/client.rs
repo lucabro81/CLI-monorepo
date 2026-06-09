@@ -1,4 +1,13 @@
+use serde::Deserialize;
+
 use crate::auth::Credentials;
+
+/// A workflow transition available for an issue.
+#[derive(Debug, Deserialize)]
+pub struct JiraTransition {
+    pub id: String,
+    pub name: String,
+}
 
 #[derive(Debug)]
 pub enum ClientError {
@@ -59,6 +68,52 @@ impl JiraClient {
             }
         });
         self.post_json(&format!("/rest/api/3/issue/{key}/comment"), &body)
+    }
+
+    /// Returns the raw JSON response for available transitions (for display to the caller).
+    /// Use this when you want to forward the full response as-is.
+    pub fn list_transitions_json(&self, key: &str) -> Result<serde_json::Value, ClientError> {
+        self.get_json(&format!("/rest/api/3/issue/{key}/transitions"))
+    }
+
+    /// Returns the list of workflow transitions available for an issue in its current state.
+    pub fn get_transitions(&self, key: &str) -> Result<Vec<JiraTransition>, ClientError> {
+        #[derive(Deserialize)]
+        struct TransitionsResponse {
+            transitions: Vec<JiraTransition>,
+        }
+
+        let value = self.get_json(&format!("/rest/api/3/issue/{key}/transitions"))?;
+        let resp: TransitionsResponse = serde_json::from_value(value)
+            .map_err(|e| ClientError::Request(format!("failed to parse transitions: {e}")))?;
+        Ok(resp.transitions)
+    }
+
+    /// Executes a workflow transition on an issue by transition ID.
+    /// Returns `()` on success (Jira responds with 204 No Content).
+    pub fn apply_transition(&self, key: &str, transition_id: &str) -> Result<(), ClientError> {
+        let body = serde_json::json!({"transition": {"id": transition_id}});
+        let url = format!("{}/rest/api/3/issue/{key}/transitions", self.base_url);
+
+        let response = self
+            .http
+            .post(&url)
+            .bearer_auth(&self.access_token)
+            .header("Accept", "application/json")
+            .json(&body)
+            .send()
+            .map_err(|e| ClientError::Request(e.to_string()))?;
+
+        let status = response.status();
+        if !status.is_success() {
+            let body = response.text().unwrap_or_default();
+            return Err(ClientError::Status {
+                status: status.as_u16(),
+                body,
+            });
+        }
+
+        Ok(())
     }
 
     /// Deletes a comment from an issue by its ID.
