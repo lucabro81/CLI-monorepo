@@ -82,6 +82,83 @@ cargo run -p jira -- issue get KAN-4
 
 On error (issue not found, not authenticated, etc.), prints a message to stderr and exits non-zero. If not authenticated, the hint points you to `jira auth login`.
 
+### `jira issue create`
+
+Creates a new issue. Required: `--project`, `--type`, `--summary`. Optional: `--description`, `--assignee`, `--priority`.
+
+```sh
+cargo run -p jira -- issue create --project KAN --type Task --summary "Fix login bug"
+cargo run -p jira -- issue create --project KAN --type Bug --summary "Crash on startup" \
+  --description "Reproducible on macOS 14" --priority High
+```
+
+Prints the Jira response (`id`, `key`, `self`) on success.
+
+### `jira issue delete <KEY>`
+
+Permanently deletes an issue. Requires `--confirm` as an explicit acknowledgement — omitting it prints an error with the exact command to run. If the issue has subtasks, also pass `--delete-subtasks` (Jira returns 400 otherwise).
+
+```sh
+cargo run -p jira -- issue delete KAN-5 --confirm
+cargo run -p jira -- issue delete KAN-5 --confirm --delete-subtasks
+```
+
+Prints `{"deleted": true, "key": "KAN-5"}` on success.
+
+### `jira issue transitions <KEY>`
+
+Lists the workflow transitions available for an issue in its current state, as raw JSON.
+
+```sh
+cargo run -p jira -- issue transitions KAN-4
+```
+
+Useful before `issue transition` to discover valid target states. Use `--fields transitions.id,transitions.name` to get a compact list.
+
+### `jira issue transition <KEY> --to <STATUS>`
+
+Moves an issue to a different workflow state. The `--to` value is matched case-insensitively against the available transition names. If the name doesn't match, the error lists the valid options.
+
+```sh
+cargo run -p jira -- issue transition KAN-4 --to "In Progress"
+cargo run -p jira -- issue transition KAN-4 --to done
+```
+
+Prints `{"transitioned": true, "key": "KAN-4", "to": "In Progress"}` on success.
+
+### `jira issue comment add <KEY> --body <TEXT>`
+
+Adds a plain-text comment to an issue (converted to Jira's document format internally). Prints the created comment as JSON.
+
+```sh
+cargo run -p jira -- issue comment add KAN-4 --body "Blocked by network issue, retrying tomorrow"
+```
+
+### `jira issue comment remove <KEY> <COMMENT_ID>`
+
+Deletes a comment by ID (the `id` field in the comment JSON from `comment add` or `issue get`). Prints `{"deleted": true, "id": "..."}` on success.
+
+```sh
+cargo run -p jira -- issue comment remove KAN-4 10033
+```
+
+### `--fields <PATHS>` (global flag)
+
+All commands that return JSON support a `--fields` flag for selective output. Pass a comma-separated list of dot-notation paths; only those fields are included in the output. If omitted, the full response from Jira is printed.
+
+```sh
+# compact transitions list
+cargo run -p jira -- issue transitions KAN-4 --fields transitions.id,transitions.name
+
+# just the key fields of an issue
+cargo run -p jira -- issue get KAN-4 --fields summary,status.name,assignee.displayName
+
+# only your account details
+cargo run -p jira -- auth whoami --fields accountId,displayName,emailAddress
+```
+
+The flag can appear before or after the subcommand. Arrays (like `transitions`) are filtered element-wise automatically — no special syntax needed.
+
 ## Error design
 
 All errors are plain text, no colors or symbols — designed to be read by an LLM. Each message is self-contained: it states what went wrong and what to do next. Example:

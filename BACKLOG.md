@@ -56,6 +56,35 @@ the current behaviour, why it was deferred, and what a future fix would look lik
 
 ---
 
+### issue create / issue delete
+
+#### CREATE-1 — Empty `--summary` accepted by CLI, rejected by Jira with opaque 400
+**Found:** review session 2026-06-09  
+**Trigger:** `jira issue create --project KAN --type Task --summary ""`  
+**Current behaviour:** clap parses it, Jira returns 400 with a field-validation error that surfaces as `ApiError { status: 400, body: ... }`. The body is Jira's raw JSON error, not particularly LLM-friendly.  
+**Acceptable?** Marginal. Rare in practice; Jira's error body does explain the problem.  
+**Future fix:** validate non-empty in `run_issue` before the API call; return `CliError::InvalidInput` with "summary must not be empty".
+
+---
+
+#### CREATE-2 — Wrong `--type` gives Jira 400, no list of available types shown
+**Found:** review session 2026-06-09  
+**Trigger:** `jira issue create --project KAN --type "NonExistent" --summary "x"`  
+**Current behaviour:** Jira returns 400; raw error body shown. No list of valid types.  
+**Acceptable?** Yes for now. Unlike transitions (where valid options depend on issue state), issue types per project are stable and discoverable via `GET /rest/api/3/project/{key}/issuetypes`. Could add an `issue types <PROJECT>` command later.  
+**Future fix:** add `issue types <PROJECT>` command to list available types; reference it in the `issue create` help text.
+
+---
+
+#### DELETE-1 — Missing `--delete-subtasks` on issue with subtasks gives Jira 400
+**Found:** review session 2026-06-09  
+**Trigger:** `jira issue delete KAN-X --confirm` where KAN-X has subtasks  
+**Current behaviour:** Jira returns 400; raw error body shown. The `--delete-subtasks` flag is documented in `--help` but the error doesn't remind the caller about it.  
+**Acceptable?** Yes. The flag is explicit in `--help` and the `after_help` example. A 400 body from Jira typically mentions subtasks.  
+**Future fix:** detect "subtask" in the 400 response body and surface a tailored `CliError` that mentions `--delete-subtasks`.
+
+---
+
 #### AUTH-2 — `OAuthConfig` does not validate non-empty client_id / client_secret
 **Found:** review session 2026-06-09  
 **Trigger:** `app.json` with `{"client_id": "", "client_secret": ""}` — parses successfully  

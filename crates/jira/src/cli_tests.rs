@@ -1,5 +1,6 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
+use crate::error;
 use super::{AuthCommand, Cli, Command, CommentCommand, IssueCommand};
 use clap::Parser;
 
@@ -370,4 +371,38 @@ fn parses_issue_delete_with_delete_subtasks() {
 fn rejects_issue_delete_missing_key() {
     let result = Cli::try_parse_from(["jira", "issue", "delete", "--confirm"]);
     assert!(result.is_err());
+}
+
+#[test]
+fn issue_create_accepts_empty_summary() {
+    // clap does not reject empty strings — Jira will return 400 at runtime.
+    // Documents current behaviour; see BACKLOG CREATE-1.
+    let cli = Cli::try_parse_from([
+        "jira", "issue", "create",
+        "--project", "KAN", "--type", "Task", "--summary", "",
+    ])
+    .expect("should parse");
+
+    match cli.command {
+        Command::Issue {
+            command: IssueCommand::Create { summary, .. },
+        } => assert_eq!(summary, ""),
+        other => panic!("unexpected: {other:?}"),
+    }
+}
+
+#[test]
+fn delete_not_confirmed_error_message_contains_key_and_corrective_command() {
+    // Regression guard: if the error message format changes, an LLM can no longer
+    // self-correct by reading the error and retrying with --confirm.
+    use error::CliError;
+    let err = CliError::DeleteNotConfirmed { key: "KAN-99".to_string() };
+    let msg = err.to_string();
+
+    assert!(msg.contains("KAN-99"), "error must name the key");
+    assert!(msg.contains("--confirm"), "error must mention the --confirm flag");
+    assert!(
+        msg.contains("jira issue delete KAN-99 --confirm"),
+        "error must include the exact command to run"
+    );
 }

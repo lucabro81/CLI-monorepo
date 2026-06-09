@@ -62,10 +62,11 @@ Cargo workspace; each service CLI is its own binary crate under `crates/<service
   - `login()` — full interactive flow: builds the authorization URL (PKCE challenge + CSRF `state`), opens the browser, runs a one-shot local HTTP server on `http://localhost:8080/callback` to catch the redirect, exchanges the code for tokens, resolves the Jira `cloud_id` via the accessible-resources endpoint
   - `Credentials` — `access_token`/`refresh_token`/`expires_at`/`cloud_id`, persisted to `<config>/jira-cli/credentials.json` (dynamic, rewritten by the CLI on login/refresh)
   - `refresh()` / `load_credentials()` — transparent refresh-before-expiry; Atlassian refresh tokens **rotate on every use**, so the stored credentials must be replaced after each refresh
-- `client.rs` — `JiraClient` wraps a blocking `reqwest` client, authenticates with `Bearer <access_token>` against `https://api.atlassian.com/ex/jira/<cloud_id>/rest/api/3/...`, returns raw `serde_json::Value`. Private `get_json(path)` helper shared by all GET methods.
-- `context.rs` — setup helpers used by `run()`: `config_dir()`, `load_oauth_config()`, `authenticated_client()`, `print_json()`. Centralises the credential-load → refresh → client-build sequence so each command in `main.rs` calls one function.
+- `client.rs` — `JiraClient` wraps a blocking `reqwest` client, authenticates with `Bearer <access_token>` against `https://api.atlassian.com/ex/jira/<cloud_id>/rest/api/3/...`, returns raw `serde_json::Value`. Private `get_json(path)` and `post_json(path, body)` helpers shared by all methods. DELETE operations build the URL directly.
+- `context.rs` — setup helpers used by `run()`: `config_dir()`, `load_oauth_config()`, `authenticated_client()`, `print_json(value, fields)`. Centralises the credential-load → refresh → client-build sequence so each command in `main.rs` calls one function. `print_json` applies `--fields` filtering before printing.
 - `error.rs` — `CliError` enum (top-level, `thiserror`-derived). All internal errors are mapped to `CliError` at the `run()` boundary.
-- `main.rs` — `run() -> Result<(), CliError>` dispatches CLI commands; `main() -> ExitCode` calls `run()` and prints any error. No logic, no `process::exit`.
+- `fields.rs` — `filter_fields(value, fields)` applies dot-notation field selection to any `serde_json::Value`. Arrays are filtered element-wise automatically. Used by `print_json` when `--fields` is set.
+- `main.rs` — `run() -> Result<(), CliError>` parses `--fields` then dispatches to `run_issue()` or handles auth commands inline; `main() -> ExitCode` calls `run()` and prints any error. No logic, no `process::exit`.
 
 #### Test file convention
 
@@ -75,7 +76,7 @@ Tests live in a separate `<module>_tests.rs` file referenced with `#[cfg(test)] 
 
 Both files live under `$XDG_CONFIG_HOME/jira-cli/` (falling back to `~/.config/jira-cli/`) — chosen over OS-specific dirs (e.g. macOS `~/Library/Application Support`) so the same layout works on the Linux machine the agent will eventually run on:
 
-- `app.json` — `{"client_id": "...", "client_secret": "..."}`, the Atlassian OAuth app's static identity (create the app at developer.atlassian.com, OAuth 2.0 (3LO), redirect URI `http://localhost:8080/callback`, scopes `read:jira-work read:jira-user offline_access`)
+- `app.json` — `{"client_id": "...", "client_secret": "..."}`, the Atlassian OAuth app's static identity (create the app at developer.atlassian.com, OAuth 2.0 (3LO), redirect URI `http://localhost:8080/callback`, scopes `read:jira-work read:jira-user write:jira-work offline_access`)
 - `credentials.json` — OAuth tokens, fully managed by the CLI (never edit by hand)
 
 Kept as two separate files so the CLI's automatic writes to `credentials.json` never clobber the hand-written app identity.
