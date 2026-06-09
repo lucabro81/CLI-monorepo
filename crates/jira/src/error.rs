@@ -1,3 +1,14 @@
+//! Top-level error type for the `jira` CLI.
+//!
+//! `CliError` is the single error type that surfaces to the user. Every
+//! variant carries a self-contained message — what went wrong and what the
+//! caller (human or LLM) should do to fix it. Messages are plain text with
+//! no colors, symbols, or formatting.
+//!
+//! Internal module errors (`LoginError`, `ClientError`, `OAuthConfigError`)
+//! are mapped to `CliError` at the `run()` boundary in `main.rs` or in the
+//! relevant command handler. They are never exposed directly to the user.
+
 use thiserror::Error;
 
 /// Top-level CLI error. Every variant carries a self-contained message:

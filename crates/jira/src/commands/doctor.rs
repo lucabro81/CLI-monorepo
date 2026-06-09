@@ -1,4 +1,23 @@
-use std::path::Path;
+//! Handler for the `doctor` command.
+//!
+//! Runs three sequential checks and returns a structured JSON report:
+//!
+//! 1. `app_config` — verifies that `app.json` exists at the expected path and
+//!    contains valid OAuth credentials.
+//! 2. `credentials` — verifies that `credentials.json` exists and holds a
+//!    non-expired token. If the token is expired, a refresh is attempted and
+//!    the result (success or failure) is reported transparently.
+//! 3. `api` — makes a live call to `/rest/api/3/myself` to confirm the Jira
+//!    API is reachable with the current token.
+//!
+//! Checks cascade: if `app_config` fails, the remaining checks are marked
+//! `skipped` (no credentials to load). If `credentials` fails, `api` is
+//! skipped (no token to use).
+//!
+//! The function never returns `Err` for check failures — all outcomes are
+//! captured in the JSON report. The caller decides whether to exit non-zero
+//! based on the returned `bool` flag. This module is also called by `init`
+//! as a final verification step after onboarding.
 
 use serde_json::{json, Value};
 
@@ -7,8 +26,10 @@ use crate::client::JiraClient;
 use crate::context::config_dir;
 use crate::error::CliError;
 
-/// Runs all doctor checks and returns a structured JSON report plus an overall pass/fail flag.
-/// Never fails with `CliError` for check failures — all failures are captured in the JSON.
+/// Runs all doctor checks. Returns `(report, all_ok)`.
+///
+/// `report` is a JSON object with one key per check. `all_ok` is `true` only
+/// if every check has `status: "ok"`.
 pub fn run_doctor() -> Result<(Value, bool), CliError> {
     let config_dir = config_dir()?;
 
@@ -38,7 +59,7 @@ pub fn run_doctor() -> Result<(Value, bool), CliError> {
     Ok((report, all_ok))
 }
 
-fn check_app_config(config_dir: &Path) -> (Value, Option<OAuthConfig>) {
+fn check_app_config(config_dir: &std::path::Path) -> (Value, Option<OAuthConfig>) {
     let path = auth::app_config_path(config_dir);
     let path_str = path.display().to_string();
 
@@ -53,7 +74,7 @@ fn check_app_config(config_dir: &Path) -> (Value, Option<OAuthConfig>) {
 
 fn check_credentials(
     oauth_config: &OAuthConfig,
-    config_dir: &Path,
+    config_dir: &std::path::Path,
 ) -> (Value, Option<auth::Credentials>) {
     let path = auth::credentials_path(config_dir);
     let path_str = path.display().to_string();
@@ -74,13 +95,12 @@ fn check_credentials(
             json!({
                 "status": "error",
                 "path": path_str,
-                "message": format!("credentials file is malformed. Run: jira auth login")
+                "message": "credentials file is malformed. Run: jira auth login"
             }),
             None,
         );
     };
 
-    // Check expiry without silently refreshing — if expired, try once and report.
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()

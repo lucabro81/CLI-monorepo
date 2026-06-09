@@ -96,5 +96,6 @@ the current behaviour, why it was deferred, and what a future fix would look lik
 
 - valutare se splittare claude.md, tra root e crate
 - valutare se organizzare meglio i crate, types in un file separato? file per singolo comando? cose così 
+- raccogliere tests in una loro cartella anche se comunque divisi per file?
 - nell'help esempi di uso anche per i comandi get, command, transition, non solo nelle options
 - documentare con commenti ovunque sia possibile

@@ -1,3 +1,18 @@
+//! Jira REST API v3 HTTP client.
+//!
+//! `JiraClient` wraps a blocking `reqwest` client pre-configured with a
+//! `Bearer` token and the base URL `https://api.atlassian.com/ex/jira/<cloud_id>/`.
+//! All methods return raw `serde_json::Value` so callers decide how much
+//! structure to impose; the `--select` flag can then filter the output
+//! client-side without requiring typed response structs for every endpoint.
+//!
+//! Private helpers `get_json` and `post_json` handle auth headers, URL
+//! construction, and error mapping. DELETE operations build their URL inline.
+//!
+//! Search uses the current Atlassian endpoint `GET /rest/api/3/search/jql`
+//! with cursor-based pagination (`nextPageToken`). The deprecated
+//! `POST /rest/api/3/search` endpoint (410 Gone) is not used.
+
 use serde::Deserialize;
 
 use crate::auth::Credentials;

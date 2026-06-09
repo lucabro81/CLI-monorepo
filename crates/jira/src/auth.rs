@@ -1,3 +1,25 @@
+//! OAuth 2.0 (3LO) + PKCE authentication infrastructure.
+//!
+//! Provides two layers:
+//!
+//! - **App identity** (`OAuthConfig`) — the static Atlassian OAuth app credentials
+//!   loaded from `app.json`. Includes helpers for loading and validating the file.
+//! - **Session credentials** (`Credentials`) — the dynamic token set (access token,
+//!   refresh token, expiry, cloud ID) persisted to `credentials.json`.
+//!
+//! The `login` function drives the full interactive consent flow: PKCE challenge
+//! generation, browser launch, one-shot local HTTP server for the callback,
+//! authorization code exchange, and cloud ID resolution via the accessible-resources
+//! endpoint.
+//!
+//! `refresh` exchanges a refresh token for a new token pair. Atlassian refresh
+//! tokens **rotate on every use** — the new pair must always be persisted immediately
+//! to avoid invalidating the stored token.
+//!
+//! Path helpers (`app_config_path`, `credentials_path`) and persistence helpers
+//! (`save_credentials`, `load_credentials`) are kept here so every caller uses the
+//! same paths and serialization format.
+
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 

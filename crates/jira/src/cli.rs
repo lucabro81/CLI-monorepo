@@ -1,3 +1,14 @@
+//! CLI surface definition — all clap structs and enums.
+//!
+//! Defines the full command hierarchy: `Cli` (root, holds `--select`) →
+//! `Command` (top-level subcommands) → resource-specific enums
+//! (`AuthCommand`, `IssueCommand`, `CommentCommand`).
+//!
+//! No logic lives here — this file is purely argument parsing and help text.
+//! Every flag uses `#[arg(long)]` only; no short aliases. Complex subcommands
+//! include `after_help` examples so an LLM can infer usage from a worked
+//! example rather than reconstructing it from abstract parameter descriptions.
+
 use clap::{Parser, Subcommand};
 
 /// Jira CLI for LLM agents — query Jira issues from the command line.

@@ -1,8 +1,21 @@
+//! Handler for the `issue` command group and all its subcommands.
+//!
+//! Delegates all Jira API calls to `client::JiraClient`. Each subcommand
+//! follows the same pattern: call the appropriate client method, map any
+//! `ClientError` to `CliError`, then print the result as JSON (optionally
+//! filtered via `--select`).
+//!
+//! The `issue transition` subcommand contains the only non-trivial logic:
+//! it fetches the available transitions for an issue, matches the requested
+//! status name case-insensitively, and fails with an actionable error listing
+//! valid options if no match is found.
+
 use crate::client::{self, ClientError};
 use crate::cli::{CommentCommand, IssueCommand};
 use crate::context::{authenticated_client, print_json};
 use crate::error::CliError;
 
+/// Dispatches an `IssueCommand` variant to the appropriate Jira API call.
 pub fn run(command: IssueCommand, select: &[&str]) -> Result<(), CliError> {
     let client = authenticated_client()?;
     match command {

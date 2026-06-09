@@ -1,3 +1,16 @@
+//! Shared setup helpers used across command handlers.
+//!
+//! - `config_dir` — resolves the XDG config directory (`$XDG_CONFIG_HOME` or
+//!   `~/.config`). Used by every command that touches the filesystem.
+//! - `load_oauth_config` — loads and validates `app.json` from the config dir,
+//!   mapping `OAuthConfigError` to `CliError`.
+//! - `authenticated_client` — the standard sequence for commands that call the
+//!   Jira API: load config → load credentials → refresh if expired → build client.
+//!   Centralised here so each command handler calls one function instead of
+//!   repeating the load/refresh/build chain.
+//! - `print_json` — serialises a `serde_json::Value` to stdout, applying
+//!   `--select` field projection beforehand if any paths were requested.
+
 use crate::auth::{self, OAuthConfig, OAuthConfigError};
 use crate::client::JiraClient;
 use crate::error::CliError;

@@ -1,3 +1,19 @@
+//! Client-side JSON field projection via dot-notation paths.
+//!
+//! `filter_fields` is the implementation of the `--select` global flag. It
+//! accepts a `serde_json::Value` and a list of dot-notation paths (e.g.
+//! `["status.name", "assignee.displayName"]`) and returns a new value
+//! containing only the requested fields.
+//!
+//! Arrays are handled element-wise automatically: `"transitions.name"` on a
+//! response where `transitions` is an array will extract the `name` field
+//! from each element without requiring any special syntax from the caller.
+//!
+//! Internally, paths are compiled into a `FieldTree` (a recursive
+//! `BTreeMap`) so that sibling paths sharing a common prefix (e.g.
+//! `"status.id"` and `"status.name"`) are resolved with a single object
+//! traversal rather than repeated passes over the value.
+
 use std::collections::BTreeMap;
 
 use serde_json::{Map, Value};

@@ -1,11 +1,28 @@
+//! Handler for the `init` command — guided onboarding for humans.
+//!
+//! This is the only command in the crate with narrative (non-JSON) output.
+//! It is intended to be run once per machine to get everything configured.
+//!
+//! The flow is:
+//! 1. Print numbered setup instructions for creating an Atlassian OAuth 2.0
+//!    app at developer.atlassian.com.
+//! 2. Read the Client ID and Client Secret — from `--client-id`/`--client-secret`
+//!    flags if provided, otherwise from interactive stdin prompts.
+//! 3. Write `app.json` to the XDG config directory via `write_app_config`.
+//! 4. Run the OAuth browser login flow (`auth::login`).
+//! 5. Call `doctor::run_doctor` and print its JSON report as confirmation.
+//!
+//! `write_app_config` is kept as a separate public function so it can be unit-tested
+//! in isolation without going through the interactive flow.
+
 use std::io::{self, BufRead, Write};
 use std::path::Path;
 
 use serde_json::json;
 
 use crate::auth::{self, OAuthConfig};
+use crate::commands::doctor;
 use crate::context::config_dir;
-use crate::doctor;
 use crate::error::CliError;
 
 const INSTRUCTIONS: &str = "\
@@ -24,8 +41,8 @@ Step 5: In \"Permissions\", add the Jira API scopes:
 Step 6: Under \"Settings\", copy the Client ID and Client Secret.
 ";
 
-/// Writes `app.json` with the given client credentials to `<config_dir>/jira-cli/app.json`.
-/// Creates parent directories if they do not exist.
+/// Writes `app.json` with the given OAuth credentials to `<config_dir>/jira-cli/app.json`.
+/// Creates parent directories if they do not exist. Overwrites any existing file.
 pub fn write_app_config(config_dir: &Path, client_id: &str, client_secret: &str) -> Result<(), CliError> {
     let dir = config_dir.join("jira-cli");
     std::fs::create_dir_all(&dir).map_err(|e| CliError::SaveCredentialsFailed {
@@ -61,7 +78,7 @@ fn prompt(label: &str) -> Result<String, CliError> {
     Ok(line.trim().to_string())
 }
 
-/// Runs the full init flow.
+/// Runs the full init onboarding flow.
 pub fn run_init(client_id: Option<String>, client_secret: Option<String>) -> Result<(), CliError> {
     println!("{INSTRUCTIONS}");
 
@@ -78,7 +95,6 @@ pub fn run_init(client_id: Option<String>, client_secret: Option<String>) -> Res
     write_app_config(&cfg_dir, &client_id, &client_secret)?;
     println!("\napp.json written to {}", cfg_dir.join("jira-cli").join("app.json").display());
 
-    // Run login flow.
     println!("\nStarting OAuth login flow — your browser will open.\n");
     let oauth_config = OAuthConfig {
         client_id,
@@ -97,7 +113,6 @@ pub fn run_init(client_id: Option<String>, client_secret: Option<String>) -> Res
     })?;
     println!("Login successful.\n");
 
-    // Final verification.
     println!("Running doctor check...\n");
     let (report, all_ok) = doctor::run_doctor()?;
     let output = serde_json::to_string_pretty(&report).map_err(|e| CliError::JsonSerialize {
