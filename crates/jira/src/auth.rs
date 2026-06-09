@@ -62,29 +62,22 @@ impl std::fmt::Display for OAuthConfigError {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum LoginError {
-    Io(std::io::Error),
+    #[error("I/O error: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("invalid OAuth callback: {0:?}")]
     Callback(CallbackError),
+    #[error("OAuth state mismatch — possible CSRF attack, login aborted")]
     StateMismatch,
+    #[error("token exchange failed: {0}")]
     TokenExchange(String),
+    #[error("no accessible Jira sites found for this account")]
     NoAccessibleResources,
-}
-
-impl std::fmt::Display for LoginError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            LoginError::Io(e) => write!(f, "I/O error: {e}"),
-            LoginError::Callback(e) => write!(f, "invalid callback: {e:?}"),
-            LoginError::StateMismatch => {
-                write!(f, "OAuth state mismatch — possible CSRF, aborting")
-            }
-            LoginError::TokenExchange(msg) => write!(f, "token exchange failed: {msg}"),
-            LoginError::NoAccessibleResources => {
-                write!(f, "no accessible Jira sites returned for this account")
-            }
-        }
-    }
+    /// A condition that should be unreachable given valid inputs.
+    /// If this surfaces it indicates a bug in the CLI itself.
+    #[error("internal error: {0}")]
+    Internal(String),
 }
 
 #[derive(Debug, Deserialize)]
@@ -107,7 +100,7 @@ pub fn login(config: &OAuthConfig) -> Result<Credentials, LoginError> {
     let challenge = code_challenge(&verifier);
     let state = generate_state();
 
-    let url = authorization_url(config, &challenge, &state);
+    let url = authorization_url(config, &challenge, &state)?;
     eprintln!("Opening browser for Jira authorization:\n{url}\n");
     let _ = webbrowser::open(&url);
 
@@ -125,9 +118,12 @@ pub fn login(config: &OAuthConfig) -> Result<Credentials, LoginError> {
 }
 
 fn now_unix() -> u64 {
+    // Fallback to 0 if the system clock predates the Unix epoch (should never happen
+    // on a real machine, but avoids a panic — a 0 timestamp causes the token to be
+    // treated as expired and refreshed on the next call, which is safe behavior).
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .expect("system clock is before unix epoch")
+        .unwrap_or_default()
         .as_secs()
 }
 
@@ -255,8 +251,9 @@ pub fn save_credentials(path: &Path, credentials: &Credentials) -> Result<(), Lo
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(LoginError::Io)?;
     }
-    let json = serde_json::to_string_pretty(credentials)
-        .expect("credentials always serialize");
+    let json = serde_json::to_string_pretty(credentials).map_err(|e| {
+        LoginError::Internal(format!("failed to serialize credentials: {e}"))
+    })?;
     std::fs::write(path, json).map_err(LoginError::Io)
 }
 
@@ -309,7 +306,11 @@ fn random_url_safe_string(byte_len: usize) -> String {
 }
 
 /// Builds the Atlassian authorization URL the user must open in a browser.
-pub fn authorization_url(config: &OAuthConfig, code_challenge: &str, state: &str) -> String {
+pub fn authorization_url(
+    config: &OAuthConfig,
+    code_challenge: &str,
+    state: &str,
+) -> Result<String, LoginError> {
     let params = [
         ("audience", "api.atlassian.com"),
         ("client_id", &config.client_id),
@@ -322,8 +323,9 @@ pub fn authorization_url(config: &OAuthConfig, code_challenge: &str, state: &str
         ("code_challenge_method", "S256"),
     ];
 
-    let query = serde_urlencoded::to_string(params).expect("query params always serialize");
-    format!("https://auth.atlassian.com/authorize?{query}")
+    let query = serde_urlencoded::to_string(params)
+        .map_err(|e| LoginError::Internal(format!("failed to encode authorization URL: {e}")))?;
+    Ok(format!("https://auth.atlassian.com/authorize?{query}"))
 }
 
 /// Parses the first line of the local callback HTTP request, e.g.
@@ -361,156 +363,5 @@ pub fn credentials_path(config_dir: &Path) -> PathBuf {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn code_verifier_is_url_safe_and_long_enough() {
-        let verifier = generate_code_verifier();
-
-        assert!(verifier.len() >= 43 && verifier.len() <= 128);
-        assert!(verifier
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'));
-    }
-
-    #[test]
-    fn code_verifiers_are_random() {
-        assert_ne!(generate_code_verifier(), generate_code_verifier());
-    }
-
-    #[test]
-    fn code_challenge_matches_known_rfc7636_example() {
-        // From RFC 7636 appendix B.
-        let verifier = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk";
-
-        assert_eq!(code_challenge(verifier), "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM");
-    }
-
-    #[test]
-    fn state_values_are_random() {
-        assert_ne!(generate_state(), generate_state());
-    }
-
-    #[test]
-    fn builds_authorization_url_with_required_params() {
-        let config = OAuthConfig {
-            client_id: "my-client-id".to_string(),
-            client_secret: "shh".to_string(),
-            redirect_uri: "http://localhost:8080/callback".to_string(),
-        };
-
-        let url = authorization_url(&config, "challenge123", "state456");
-
-        assert!(url.starts_with("https://auth.atlassian.com/authorize?"));
-        assert!(url.contains("client_id=my-client-id"));
-        assert!(url.contains("code_challenge=challenge123"));
-        assert!(url.contains("code_challenge_method=S256"));
-        assert!(url.contains("state=state456"));
-        assert!(url.contains("response_type=code"));
-        assert!(url.contains("audience=api.atlassian.com"));
-        assert!(url.contains("redirect_uri=http%3A%2F%2Flocalhost%3A8080%2Fcallback"));
-        assert!(url.contains("scope=read%3Ajira-work+read%3Ajira-user+offline_access"));
-    }
-
-    #[test]
-    fn parses_valid_callback_request_line() {
-        let line = "GET /callback?code=abc123&state=xyz789 HTTP/1.1";
-
-        let params = parse_callback_request_line(line).expect("should parse");
-
-        assert_eq!(
-            params,
-            CallbackParams {
-                code: "abc123".to_string(),
-                state: "xyz789".to_string(),
-            }
-        );
-    }
-
-    #[test]
-    fn rejects_callback_missing_code() {
-        let line = "GET /callback?state=xyz789 HTTP/1.1";
-
-        assert_eq!(
-            parse_callback_request_line(line),
-            Err(CallbackError::MissingParam("code"))
-        );
-    }
-
-    #[test]
-    fn rejects_callback_missing_state() {
-        let line = "GET /callback?code=abc123 HTTP/1.1";
-
-        assert_eq!(
-            parse_callback_request_line(line),
-            Err(CallbackError::MissingParam("state"))
-        );
-    }
-
-    #[test]
-    fn rejects_malformed_request_line() {
-        assert_eq!(
-            parse_callback_request_line("not a request line"),
-            Err(CallbackError::MalformedRequestLine)
-        );
-    }
-
-    #[test]
-    fn credentials_round_trip_through_json() {
-        let creds = Credentials {
-            access_token: "access".to_string(),
-            refresh_token: "refresh".to_string(),
-            expires_at: 1_700_000_000,
-            cloud_id: "cloud-123".to_string(),
-        };
-
-        let json = serde_json::to_string(&creds).unwrap();
-        let parsed: Credentials = serde_json::from_str(&json).unwrap();
-
-        assert_eq!(parsed, creds);
-    }
-
-    #[test]
-    fn credentials_path_is_under_jira_cli_dir() {
-        let path = credentials_path(Path::new("/home/user/.config"));
-
-        assert_eq!(
-            path,
-            PathBuf::from("/home/user/.config/jira-cli/credentials.json")
-        );
-    }
-
-    #[test]
-    fn app_config_path_is_under_jira_cli_dir() {
-        let path = app_config_path(Path::new("/home/user/.config"));
-
-        assert_eq!(
-            path,
-            PathBuf::from("/home/user/.config/jira-cli/app.json")
-        );
-    }
-
-    #[test]
-    fn parses_oauth_config_from_app_json() {
-        let json = r#"{"client_id": "abc", "client_secret": "shh"}"#;
-
-        let config = OAuthConfig::from_json(json).expect("should parse");
-
-        assert_eq!(
-            config,
-            OAuthConfig {
-                client_id: "abc".to_string(),
-                client_secret: "shh".to_string(),
-                redirect_uri: OAuthConfig::REDIRECT_URI.to_string(),
-            }
-        );
-    }
-
-    #[test]
-    fn rejects_malformed_app_json() {
-        let result = OAuthConfig::from_json("not json");
-
-        assert!(matches!(result, Err(OAuthConfigError::InvalidJson(_))));
-    }
-}
+#[path = "auth_tests.rs"]
+mod tests;

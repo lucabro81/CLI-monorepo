@@ -1,3 +1,15 @@
 [workspace]
 resolver = "2"
 members = ["crates/jira"]
+
+[workspace.lints.clippy]
+# Enforce the no-unwrap/expect rule for all production code in the workspace.
+# Test modules must add #[allow(clippy::unwrap_used, clippy::expect_used)] explicitly.
+unwrap_used = "deny"
+expect_used = "deny"
+# Useful pedantic lints — priority -1 so individual overrides above take precedence.
+pedantic = { level = "warn", priority = -1 }
+# These pedantic lints are too noisy for this project
+must_use_candidate = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"

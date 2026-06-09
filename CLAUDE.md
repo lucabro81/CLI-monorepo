@@ -19,10 +19,34 @@ Monorepo: single Cargo workspace holding many CLI tools, one per external servic
 - Each CLI lives as its own crate/binary in the workspace, named after the service it wraps.
 - Update this CLAUDE.md and project memory after every significant addition or change (new crate, new command, architecture decision) — keep them in sync with codebase state.
 
+## Error handling
+
+Never use `unwrap()` or `expect()` outside `#[cfg(test)]`. Every failure path must produce a typed error that reaches the user as plain text explaining what went wrong and what to do next — no colors, symbols, or formatting (output is read by an LLM).
+
+Define error types with [`thiserror`](https://docs.rs/thiserror):
+
+```rust
+#[derive(Debug, thiserror::Error)]
+pub enum MyError {
+    #[error("what went wrong: {reason}. Do this to fix it: <example>")]
+    SomeVariant { reason: String },
+}
+```
+
+Rules:
+- One error enum per module (e.g. `LoginError` in `auth.rs`, `ClientError` in `client.rs`). Top-level `CliError` in `error.rs` is the boundary type that reaches the user.
+- `#[error("...")]` strings are self-contained: problem + corrective action in one sentence, plain text only.
+- Map internal errors to `CliError` at the `run()` boundary in `main.rs`, not deeper.
+- For conditions that are theoretically unreachable (e.g. serializing a well-typed struct), use a dedicated `Internal(String)` variant instead of `unwrap`/`expect`, with a comment explaining why it should never fire.
+- `main()` returns `ExitCode`; `run()` returns `Result<(), CliError>`; a single `match run()` in `main` prints the error and returns the exit code. No `std::process::exit` anywhere.
+
+Clippy is configured at workspace level (`[workspace.lints.clippy]` in root `Cargo.toml`) with `unwrap_used`/`expect_used` as `deny` and `pedantic` as `warn`. Each crate opts in with `[lints] workspace = true`. Test modules silence the unwrap/expect denies with `#[allow(clippy::unwrap_used, clippy::expect_used)]` on the `mod tests` block.
+
 ## Commands
 
 - Build: `cargo build` (whole workspace) or `cargo build -p <crate>`
 - Test: `cargo test -p <crate>`; single test: `cargo test -p <crate> <test_name_substring>`
+- Lint: `cargo clippy -p <crate>` — must pass with zero warnings before merging
 - Run a CLI: `cargo run -p <crate> -- <args>`, e.g. `cargo run -p jira -- issue get PROJ-123`
 - Help: `cargo run -p <crate> -- --help`
 
@@ -32,15 +56,20 @@ Cargo workspace; each service CLI is its own binary crate under `crates/<service
 
 ### `crates/jira`
 
-- `cli.rs` — clap derive arg parsing (`Cli` → `Command` → subcommands per resource, e.g. `auth login`, `issue get <KEY>`). Argument-parsing tests use `Cli::try_parse_from`.
+- `cli.rs` — clap derive arg parsing (`Cli` → `Command` → subcommands per resource, e.g. `auth login`, `issue get <KEY>`).
 - `auth.rs` — OAuth 2.0 (3LO) + PKCE flow against Atlassian:
   - `OAuthConfig` — app-level `client_id`/`client_secret`, loaded from `<config>/jira-cli/app.json` (static, written by hand once)
   - `login()` — full interactive flow: builds the authorization URL (PKCE challenge + CSRF `state`), opens the browser, runs a one-shot local HTTP server on `http://localhost:8080/callback` to catch the redirect, exchanges the code for tokens, resolves the Jira `cloud_id` via the accessible-resources endpoint
   - `Credentials` — `access_token`/`refresh_token`/`expires_at`/`cloud_id`, persisted to `<config>/jira-cli/credentials.json` (dynamic, rewritten by the CLI on login/refresh)
   - `refresh()` / `load_credentials()` — transparent refresh-before-expiry; Atlassian refresh tokens **rotate on every use**, so the stored credentials must be replaced after each refresh
-  - Pure/testable building blocks (PKCE generation, URL building, callback request-line parsing, JSON (de)serialization) are unit tested; the full `login()` orchestration (network + browser + TCP server) is exercised manually
-- `client.rs` — `JiraClient` wraps a blocking `reqwest` client, authenticates with `Bearer <access_token>` against `https://api.atlassian.com/ex/jira/<cloud_id>/rest/api/3/...`, returns raw `serde_json::Value`.
-- `main.rs` — wires CLI → auth (load/refresh credentials, or run login) → client, prints results as pretty-printed JSON to stdout, errors to stderr with non-zero exit and actionable hints (e.g. "run `jira auth login`").
+- `client.rs` — `JiraClient` wraps a blocking `reqwest` client, authenticates with `Bearer <access_token>` against `https://api.atlassian.com/ex/jira/<cloud_id>/rest/api/3/...`, returns raw `serde_json::Value`. Private `get_json(path)` helper shared by all GET methods.
+- `context.rs` — setup helpers used by `run()`: `config_dir()`, `load_oauth_config()`, `authenticated_client()`, `print_json()`. Centralises the credential-load → refresh → client-build sequence so each command in `main.rs` calls one function.
+- `error.rs` — `CliError` enum (top-level, `thiserror`-derived). All internal errors are mapped to `CliError` at the `run()` boundary.
+- `main.rs` — `run() -> Result<(), CliError>` dispatches CLI commands; `main() -> ExitCode` calls `run()` and prints any error. No logic, no `process::exit`.
+
+#### Test file convention
+
+Tests live in a separate `<module>_tests.rs` file referenced with `#[cfg(test)] #[path = "..."] mod tests;`. This keeps production code files short while retaining access to private items. The `#![allow(clippy::unwrap_used, clippy::expect_used)]` attribute goes at the top of each test file.
 
 ### Config layout (XDG-style, used on every platform for dev/deploy parity)
 

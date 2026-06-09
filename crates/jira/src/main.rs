@@ -1,89 +1,68 @@
 mod auth;
 mod cli;
 mod client;
+mod context;
+mod error;
 
-use auth::OAuthConfig;
+use std::process::ExitCode;
+
 use clap::Parser;
 use cli::{AuthCommand, Cli, Command, IssueCommand};
-use client::JiraClient;
+use context::{authenticated_client, load_oauth_config, print_json};
+use error::CliError;
 
-/// XDG-style config directory (`$XDG_CONFIG_HOME` or `~/.config`), used on every platform
-/// so dev machines and headless deployment targets share the same layout.
-fn config_dir() -> std::path::PathBuf {
-    if let Ok(xdg) = std::env::var("XDG_CONFIG_HOME") {
-        return std::path::PathBuf::from(xdg);
-    }
-    dirs::home_dir()
-        .expect("could not determine home directory")
-        .join(".config")
-}
-
-fn credentials_path() -> std::path::PathBuf {
-    auth::credentials_path(&config_dir())
-}
-
-fn oauth_config_or_exit() -> OAuthConfig {
-    let path = auth::app_config_path(&config_dir());
-    match OAuthConfig::load(&path) {
-        Ok(config) => config,
-        Err(err) => {
-            eprintln!("error: {err}");
-            eprintln!(
-                "hint: create {} with your Atlassian OAuth 2.0 (3LO) app credentials, e.g.:\n  {{\"client_id\": \"...\", \"client_secret\": \"...\"}}",
-                path.display()
-            );
-            std::process::exit(1);
-        }
-    }
-}
-
-fn main() {
+fn run() -> Result<(), CliError> {
     let cli = Cli::parse();
-    let path = credentials_path();
 
     match cli.command {
         Command::Auth {
             command: AuthCommand::Login,
         } => {
-            let oauth_config = oauth_config_or_exit();
-            match auth::login(&oauth_config) {
-                Ok(credentials) => {
-                    if let Err(err) = auth::save_credentials(&path, &credentials) {
-                        eprintln!("error: failed to save credentials: {err}");
-                        std::process::exit(1);
-                    }
-                    println!("Logged in. Credentials saved to {}", path.display());
+            let oauth_config = load_oauth_config()?;
+            let path = auth::credentials_path(&context::config_dir()?);
+            let credentials = auth::login(&oauth_config).map_err(|e| CliError::LoginFailed {
+                reason: e.to_string(),
+            })?;
+            auth::save_credentials(&path, &credentials).map_err(|e| {
+                CliError::SaveCredentialsFailed {
+                    path: path.display().to_string(),
+                    reason: e.to_string(),
                 }
-                Err(err) => {
-                    eprintln!("error: login failed: {err}");
-                    std::process::exit(1);
-                }
-            }
+            })?;
+            println!("Logged in. Credentials saved to {}", path.display());
+            Ok(())
         }
+
+        Command::Auth {
+            command: AuthCommand::Whoami,
+        } => {
+            let value = authenticated_client()?.get_myself().map_err(|e| match e {
+                client::ClientError::Request(r) => CliError::ApiRequestFailed { reason: r },
+                client::ClientError::Status { status, body } => CliError::ApiError { status, body },
+            })?;
+            print_json(&value)
+        }
+
         Command::Issue { command } => {
-            let oauth_config = oauth_config_or_exit();
-            let credentials = match auth::load_credentials(&oauth_config, &path) {
-                Ok(credentials) => credentials,
-                Err(err) => {
-                    eprintln!("error: not authenticated ({err})");
-                    eprintln!("hint: run `jira auth login` first");
-                    std::process::exit(1);
-                }
-            };
-
-            let client = JiraClient::new(&credentials);
-
+            let client = authenticated_client()?;
             let result = match command {
                 IssueCommand::Get { key } => client.get_issue(&key),
             };
+            let value = result.map_err(|e| match e {
+                client::ClientError::Request(r) => CliError::ApiRequestFailed { reason: r },
+                client::ClientError::Status { status, body } => CliError::ApiError { status, body },
+            })?;
+            print_json(&value)
+        }
+    }
+}
 
-            match result {
-                Ok(value) => println!("{}", serde_json::to_string_pretty(&value).unwrap()),
-                Err(err) => {
-                    eprintln!("error: {err}");
-                    std::process::exit(1);
-                }
-            }
+fn main() -> ExitCode {
+    match run() {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(err) => {
+            eprintln!("{err}");
+            ExitCode::FAILURE
         }
     }
 }

@@ -64,6 +64,14 @@ This matters because **Atlassian refresh tokens rotate on every use**: each refr
 
 Runs the interactive OAuth login described above and stores credentials locally. Run this once per machine, or again if `credentials.json` is lost or revoked.
 
+### `jira auth whoami`
+
+Prints the currently authenticated user as JSON. Useful to verify that authentication is working and to discover the `accountId` of the authenticated user (needed to filter issues by assignee).
+
+```sh
+cargo run -p jira -- auth whoami
+```
+
 ### `jira issue get <KEY>`
 
 Fetches a single issue by its key (e.g. `KAN-4`) and prints the full Jira API response as pretty-printed JSON to stdout.
@@ -73,3 +81,13 @@ cargo run -p jira -- issue get KAN-4
 ```
 
 On error (issue not found, not authenticated, etc.), prints a message to stderr and exits non-zero. If not authenticated, the hint points you to `jira auth login`.
+
+## Error design
+
+All errors are plain text, no colors or symbols — designed to be read by an LLM. Each message is self-contained: it states what went wrong and what to do next. Example:
+
+```
+not authenticated. Run: jira auth login
+```
+
+Errors are typed with `thiserror` (`CliError` in `error.rs`). Internal module errors (`LoginError`, `ClientError`) are mapped to `CliError` at the top-level `run()` function and never surface directly to the user.

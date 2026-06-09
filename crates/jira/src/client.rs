@@ -32,8 +32,18 @@ impl JiraClient {
         }
     }
 
+    /// Fetches a Jira issue by key and returns the raw JSON response.
     pub fn get_issue(&self, key: &str) -> Result<serde_json::Value, ClientError> {
-        let url = format!("{}/rest/api/3/issue/{key}", self.base_url);
+        self.get_json(&format!("/rest/api/3/issue/{key}"))
+    }
+
+    /// Returns the currently authenticated user as raw JSON.
+    pub fn get_myself(&self) -> Result<serde_json::Value, ClientError> {
+        self.get_json("/rest/api/3/myself")
+    }
+
+    fn get_json(&self, path: &str) -> Result<serde_json::Value, ClientError> {
+        let url = format!("{}{path}", self.base_url);
 
         let response = self
             .http
