@@ -70,6 +70,32 @@ impl JiraClient {
         self.post_json(&format!("/rest/api/3/issue/{key}/comment"), &body)
     }
 
+    /// Searches issues using JQL and returns the raw Jira response.
+    /// `fields` controls which Jira fields are included per issue (server-side);
+    /// defaults to `*navigable` when `None`. Pass `*all` for every field.
+    /// `page_token` is the cursor from a previous response's `nextPageToken` field.
+    pub fn search_issues(
+        &self,
+        jql: &str,
+        max_results: u32,
+        page_token: Option<&str>,
+        fields: Option<&str>,
+    ) -> Result<serde_json::Value, ClientError> {
+        let fields_value = fields.unwrap_or("*navigable");
+        let mut pairs: Vec<(&str, String)> = vec![
+            ("jql", jql.to_string()),
+            ("maxResults", max_results.to_string()),
+            ("fields", fields_value.to_string()),
+        ];
+        if let Some(token) = page_token {
+            pairs.push(("pageToken", token.to_string()));
+        }
+        let params = serde_urlencoded::to_string(&pairs)
+            .map_err(|e| ClientError::Request(format!("failed to encode query params: {e}")))?;
+
+        self.get_json(&format!("/rest/api/3/search/jql?{params}"))
+    }
+
     /// Creates a new issue and returns the Jira response (contains `id`, `key`, `self`).
     pub fn create_issue(
         &self,

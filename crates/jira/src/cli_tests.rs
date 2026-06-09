@@ -170,17 +170,17 @@ fn rejects_transitions_list_missing_key() {
 #[test]
 fn parses_fields_flag_on_issue_get() {
     let cli =
-        Cli::try_parse_from(["jira", "--fields", "summary,status.name", "issue", "get", "KAN-4"])
+        Cli::try_parse_from(["jira", "--select", "summary,status.name", "issue", "get", "KAN-4"])
             .expect("should parse");
 
-    assert_eq!(cli.fields.as_deref(), Some("summary,status.name"));
+    assert_eq!(cli.select.as_deref(), Some("summary,status.name"));
 }
 
 #[test]
 fn fields_flag_is_none_when_absent() {
     let cli = Cli::try_parse_from(["jira", "issue", "get", "KAN-4"]).expect("should parse");
 
-    assert!(cli.fields.is_none());
+    assert!(cli.select.is_none());
 }
 
 #[test]
@@ -191,12 +191,12 @@ fn fields_flag_accepted_after_subcommand() {
         "issue",
         "transitions",
         "KAN-4",
-        "--fields",
+        "--select",
         "transitions.name",
     ])
     .expect("should parse");
 
-    assert_eq!(cli.fields.as_deref(), Some("transitions.name"));
+    assert_eq!(cli.select.as_deref(), Some("transitions.name"));
 }
 
 #[test]
@@ -221,10 +221,10 @@ fn fields_flag_with_trailing_comma_parses_as_string() {
     // BACKLOG FIELDS-1: trailing comma produces an empty segment after split in run().
     // This test documents that clap accepts the raw string; trimming/filtering is run()'s job.
     let cli =
-        Cli::try_parse_from(["jira", "issue", "get", "KAN-4", "--fields", "summary,"])
+        Cli::try_parse_from(["jira", "issue", "get", "KAN-4", "--select", "summary,"])
             .expect("should parse");
 
-    assert_eq!(cli.fields.as_deref(), Some("summary,"));
+    assert_eq!(cli.select.as_deref(), Some("summary,"));
 }
 
 #[test]
@@ -235,12 +235,12 @@ fn fields_flag_with_spaces_around_comma_parses_as_string() {
         "issue",
         "get",
         "KAN-4",
-        "--fields",
+        "--select",
         "summary, status.name",
     ])
     .expect("should parse");
 
-    assert_eq!(cli.fields.as_deref(), Some("summary, status.name"));
+    assert_eq!(cli.select.as_deref(), Some("summary, status.name"));
 }
 
 // --- issue create ---
@@ -389,6 +389,79 @@ fn issue_create_accepts_empty_summary() {
         } => assert_eq!(summary, ""),
         other => panic!("unexpected: {other:?}"),
     }
+}
+
+// --- issue search ---
+
+#[test]
+fn parses_issue_search_with_jql() {
+    let cli = Cli::try_parse_from([
+        "jira", "issue", "search", "--jql", "project=KAN AND status=\"In Progress\"",
+    ])
+    .expect("should parse");
+
+    match cli.command {
+        Command::Issue {
+            command: IssueCommand::Search { jql, max_results, page_token, fields },
+        } => {
+            assert_eq!(jql, "project=KAN AND status=\"In Progress\"");
+            assert_eq!(max_results, 50);
+            assert!(page_token.is_none());
+            assert!(fields.is_none());
+        }
+        other => panic!("unexpected: {other:?}"),
+    }
+}
+
+#[test]
+fn parses_issue_search_with_max_results() {
+    let cli = Cli::try_parse_from([
+        "jira", "issue", "search", "--jql", "project=KAN", "--max-results", "10",
+    ])
+    .expect("should parse");
+
+    match cli.command {
+        Command::Issue { command: IssueCommand::Search { max_results, .. } } => {
+            assert_eq!(max_results, 10);
+        }
+        other => panic!("unexpected: {other:?}"),
+    }
+}
+
+#[test]
+fn parses_issue_search_with_page_token() {
+    let cli = Cli::try_parse_from([
+        "jira", "issue", "search", "--jql", "project=KAN", "--page-token", "abc123",
+    ])
+    .expect("should parse");
+
+    match cli.command {
+        Command::Issue { command: IssueCommand::Search { page_token, .. } } => {
+            assert_eq!(page_token.as_deref(), Some("abc123"));
+        }
+        other => panic!("unexpected: {other:?}"),
+    }
+}
+
+#[test]
+fn parses_issue_search_with_fields() {
+    let cli = Cli::try_parse_from([
+        "jira", "issue", "search", "--jql", "project=KAN", "--fields", "summary,status,priority",
+    ])
+    .expect("should parse");
+
+    match cli.command {
+        Command::Issue { command: IssueCommand::Search { fields, .. } } => {
+            assert_eq!(fields.as_deref(), Some("summary,status,priority"));
+        }
+        other => panic!("unexpected: {other:?}"),
+    }
+}
+
+#[test]
+fn rejects_issue_search_missing_jql() {
+    let result = Cli::try_parse_from(["jira", "issue", "search"]);
+    assert!(result.is_err());
 }
 
 #[test]

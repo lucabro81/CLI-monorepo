@@ -4,12 +4,12 @@ use clap::{Parser, Subcommand};
 #[derive(Debug, Parser)]
 #[command(name = "jira", version, about)]
 pub struct Cli {
-    /// Comma-separated dot-notation paths to include in the JSON output.
+    /// Comma-separated dot-notation paths to project from the JSON output (client-side).
     /// If omitted, the full response from Jira is printed.
-    /// Example: --fields summary,status.name,assignee.displayName
-    /// Example: --fields transitions.id,transitions.name
+    /// Example: --select summary,status.name,assignee.displayName
+    /// Example: --select transitions.id,transitions.name
     #[arg(long, global = true, value_name = "PATHS")]
-    pub fields: Option<String>,
+    pub select: Option<String>,
 
     #[command(subcommand)]
     pub command: Command,
@@ -53,6 +53,24 @@ pub enum IssueCommand {
     Transitions {
         /// Issue key, e.g. PROJ-123
         key: String,
+    },
+    /// Search issues using JQL (Jira Query Language) and return matching issues as JSON
+    #[command(after_help = "Examples:\n  jira issue search --jql \"project=KAN AND status=\\\"In Progress\\\"\"\n  jira issue search --jql \"assignee=currentUser() ORDER BY created DESC\" --max-results 10\n  jira issue search --jql \"project=KAN\" --fields summary,status,priority\n\nPagination: the response includes a nextPageToken field when more results exist.\nPass its value to --page-token on the next call to fetch the following page.")]
+    Search {
+        /// JQL query string, e.g. "project=KAN AND status=\"Done\""
+        #[arg(long)]
+        jql: String,
+        /// Maximum number of issues to return (default: 50, max: 100)
+        #[arg(long, default_value = "50")]
+        max_results: u32,
+        /// Cursor token for the next page, from the nextPageToken field of a previous response
+        #[arg(long)]
+        page_token: Option<String>,
+        /// Comma-separated Jira field names to include in each issue (server-side).
+        /// Reduces response size. Use *all for every field, *navigable for navigable fields.
+        /// Example: --fields summary,status,assignee,priority
+        #[arg(long)]
+        fields: Option<String>,
     },
     /// Create a new issue in a Jira project
     #[command(after_help = "Examples:\n  jira issue create --project KAN --type Task --summary \"Fix login bug\"\n  jira issue create --project KAN --type Bug --summary \"Crash on startup\" --description \"Happens on macOS 14\" --priority High")]

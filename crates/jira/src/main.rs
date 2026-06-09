@@ -15,14 +15,14 @@ use error::CliError;
 fn run() -> Result<(), CliError> {
     let cli = Cli::parse();
 
-    // Parse --fields once; empty slice means "no filtering, print raw".
-    let fields_string = cli.fields.unwrap_or_default();
-    let fields: Vec<&str> = if fields_string.is_empty() {
+    // Parse --select once; empty slice means "no filtering, print raw".
+    let select_string = cli.select.unwrap_or_default();
+    let select: Vec<&str> = if select_string.is_empty() {
         vec![]
     } else {
-        fields_string.split(',').map(str::trim).collect()
+        select_string.split(',').map(str::trim).collect()
     };
-    let fields = fields.as_slice();
+    let select = select.as_slice();
 
     match cli.command {
         Command::Auth {
@@ -47,21 +47,27 @@ fn run() -> Result<(), CliError> {
             command: AuthCommand::Whoami,
         } => {
             let value = authenticated_client()?.get_myself().map_err(client_error_to_cli)?;
-            print_json(&value, fields)
+            print_json(&value, select)
         }
 
         Command::Issue { command } => {
-            run_issue(command, fields)
+            run_issue(command, select)
         }
     }
 }
 
-fn run_issue(command: IssueCommand, fields: &[&str]) -> Result<(), CliError> {
+fn run_issue(command: IssueCommand, select: &[&str]) -> Result<(), CliError> {
     let client = authenticated_client()?;
     match command {
+        IssueCommand::Search { jql, max_results, page_token, fields } => {
+            let value = client
+                .search_issues(&jql, max_results, page_token.as_deref(), fields.as_deref())
+                .map_err(client_error_to_cli)?;
+            print_json(&value, select)
+        }
         IssueCommand::Get { key } => {
             let value = client.get_issue(&key).map_err(client_error_to_cli)?;
-            print_json(&value, fields)
+            print_json(&value, select)
         }
         IssueCommand::Create {
             project,
@@ -81,7 +87,7 @@ fn run_issue(command: IssueCommand, fields: &[&str]) -> Result<(), CliError> {
                     priority.as_deref(),
                 )
                 .map_err(client_error_to_cli)?;
-            print_json(&value, fields)
+            print_json(&value, select)
         }
         IssueCommand::Delete {
             key,
@@ -95,13 +101,13 @@ fn run_issue(command: IssueCommand, fields: &[&str]) -> Result<(), CliError> {
                 .delete_issue(&key, delete_subtasks)
                 .map_err(client_error_to_cli)?;
             let result = serde_json::json!({"deleted": true, "key": key});
-            print_json(&result, fields)
+            print_json(&result, select)
         }
         IssueCommand::Transitions { key } => {
             let value = client
                 .list_transitions_json(&key)
                 .map_err(client_error_to_cli)?;
-            print_json(&value, fields)
+            print_json(&value, select)
         }
         IssueCommand::Transition { key, to } => {
             let transitions = client.get_transitions(&key).map_err(client_error_to_cli)?;
@@ -122,13 +128,13 @@ fn run_issue(command: IssueCommand, fields: &[&str]) -> Result<(), CliError> {
                 .map_err(client_error_to_cli)?;
             let result =
                 serde_json::json!({"transitioned": true, "key": key, "to": transition.name});
-            print_json(&result, fields)
+            print_json(&result, select)
         }
         IssueCommand::Comment {
             command: CommentCommand::Add { key, body },
         } => {
             let value = client.add_comment(&key, &body).map_err(client_error_to_cli)?;
-            print_json(&value, fields)
+            print_json(&value, select)
         }
         IssueCommand::Comment {
             command: CommentCommand::Remove { key, id },
@@ -137,7 +143,7 @@ fn run_issue(command: IssueCommand, fields: &[&str]) -> Result<(), CliError> {
                 .delete_comment(&key, &id)
                 .map_err(client_error_to_cli)?;
             let result = serde_json::json!({"deleted": true, "id": id});
-            print_json(&result, fields)
+            print_json(&result, select)
         }
     }
 }
