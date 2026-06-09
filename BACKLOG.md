@@ -95,6 +95,22 @@ the current behaviour, why it was deferred, and what a future fix would look lik
 
 
 
+### COMMENT-1 — Add `issue comment get <KEY> <COMMENT_ID>` command
+**Context:** currently the only way to retrieve a specific comment is via `issue get <KEY> --select fields.comment.comments`, which downloads the full issue. Jira exposes `GET /rest/api/3/issue/{key}/comment/{id}` returning the same comment object in isolation.  
+**When useful:** issues with many comments where fetching the full issue is wasteful; LLM workflows that store a comment ID and need to re-read it later.  
+**Current workaround:** `issue get <KEY> --select fields.comment.comments` — sufficient for the common case.  
+**Add when:** a concrete performance or usability issue is observed in practice.
+
+---
+
+### SEARCH-1 — Add convenience flags as JQL shorthands
+**Context:** `issue search` currently requires full JQL syntax. Common patterns like filtering by assignee, project, or status could be expressed as dedicated flags (`--assignee`, `--project`, `--status`) compiled into JQL internally.  
+**When useful:** if the target LLM struggles with JQL syntax or if certain patterns appear so frequently that a shorthand reduces friction meaningfully.  
+**Current approach:** JQL only — LLMs trained on Jira data handle it well and Jira returns clear syntax errors for self-correction.  
+**Add when:** a recurring pattern proves awkward in practice (e.g. "find my open issues" typed repeatedly).
+
+---
+
 ### HELP-1 — Trim verbose flag descriptions in the Options section
 **Context:** CLI is intended to be driven by a local LLM with limited context. The Options section is generated automatically by clap and cannot be removed, but individual flag *descriptions* can be stripped where the flag name is self-explanatory.  
 **Approach:** keep descriptions only where there is a non-obvious constraint (default value, cap, special format, side effect). Move everything else to `after_help` examples. Full human-readable documentation stays in the README.  
