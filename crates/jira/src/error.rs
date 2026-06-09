@@ -59,4 +59,10 @@ pub enum CliError {
         Available transitions: {available}"
     )]
     TransitionNotFound { name: String, available: String },
+
+    #[error(
+        "deleting {key} is permanent and cannot be undone. \
+        Pass --confirm to execute: jira issue delete {key} --confirm"
+    )]
+    DeleteNotConfirmed { key: String },
 }

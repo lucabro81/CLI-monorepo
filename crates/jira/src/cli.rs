@@ -54,6 +54,40 @@ pub enum IssueCommand {
         /// Issue key, e.g. PROJ-123
         key: String,
     },
+    /// Create a new issue in a Jira project
+    #[command(after_help = "Examples:\n  jira issue create --project KAN --type Task --summary \"Fix login bug\"\n  jira issue create --project KAN --type Bug --summary \"Crash on startup\" --description \"Happens on macOS 14\" --priority High")]
+    Create {
+        /// Project key, e.g. KAN
+        #[arg(long)]
+        project: String,
+        /// Issue type name, e.g. Task, Bug, Story
+        #[arg(long = "type")]
+        issue_type: String,
+        /// One-line summary of the issue
+        #[arg(long)]
+        summary: String,
+        /// Optional description (plain text; converted to Jira document format)
+        #[arg(long)]
+        description: Option<String>,
+        /// Optional assignee account ID (use `auth whoami` to get your own)
+        #[arg(long)]
+        assignee: Option<String>,
+        /// Optional priority name, e.g. High, Medium, Low
+        #[arg(long)]
+        priority: Option<String>,
+    },
+    /// Permanently delete an issue — requires --confirm
+    #[command(after_help = "Example: jira issue delete KAN-5 --confirm\n\nThis action is irreversible. --confirm must be passed explicitly so the caller acknowledges the deletion. Pass --delete-subtasks if the issue has subtasks, otherwise Jira will refuse the request.")]
+    Delete {
+        /// Issue key to delete, e.g. PROJ-123
+        key: String,
+        /// Acknowledge that this action is permanent and irreversible
+        #[arg(long)]
+        confirm: bool,
+        /// Also delete subtasks; required if the issue has any
+        #[arg(long)]
+        delete_subtasks: bool,
+    },
     /// Move an issue to a different status via a workflow transition
     #[command(after_help = "Example: jira issue transition KAN-4 --to \"In Progress\"\n\nUse the exact status name as it appears in Jira. If the name does not match any available transition, the command fails and lists the valid options.")]
     Transition {

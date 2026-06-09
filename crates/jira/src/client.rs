@@ -70,6 +70,67 @@ impl JiraClient {
         self.post_json(&format!("/rest/api/3/issue/{key}/comment"), &body)
     }
 
+    /// Creates a new issue and returns the Jira response (contains `id`, `key`, `self`).
+    pub fn create_issue(
+        &self,
+        project: &str,
+        issue_type: &str,
+        summary: &str,
+        description: Option<&str>,
+        assignee: Option<&str>,
+        priority: Option<&str>,
+    ) -> Result<serde_json::Value, ClientError> {
+        let mut fields = serde_json::json!({
+            "project": {"key": project},
+            "issuetype": {"name": issue_type},
+            "summary": summary,
+        });
+
+        if let Some(text) = description {
+            fields["description"] = serde_json::json!({
+                "type": "doc",
+                "version": 1,
+                "content": [{"type": "paragraph", "content": [{"type": "text", "text": text}]}]
+            });
+        }
+        if let Some(id) = assignee {
+            fields["assignee"] = serde_json::json!({"accountId": id});
+        }
+        if let Some(p) = priority {
+            fields["priority"] = serde_json::json!({"name": p});
+        }
+
+        self.post_json("/rest/api/3/issue", &serde_json::json!({"fields": fields}))
+    }
+
+    /// Permanently deletes an issue by key.
+    /// Set `delete_subtasks` to true if the issue has subtasks; Jira returns 400 otherwise.
+    /// Returns `()` on success (Jira responds with 204 No Content).
+    pub fn delete_issue(&self, key: &str, delete_subtasks: bool) -> Result<(), ClientError> {
+        let url = format!(
+            "{}/rest/api/3/issue/{key}?deleteSubtasks={}",
+            self.base_url, delete_subtasks
+        );
+
+        let response = self
+            .http
+            .delete(&url)
+            .bearer_auth(&self.access_token)
+            .send()
+            .map_err(|e| ClientError::Request(e.to_string()))?;
+
+        let status = response.status();
+        if !status.is_success() {
+            let body = response.text().unwrap_or_default();
+            return Err(ClientError::Status {
+                status: status.as_u16(),
+                body,
+            });
+        }
+
+        Ok(())
+    }
+
     /// Returns the raw JSON response for available transitions (for display to the caller).
     /// Use this when you want to forward the full response as-is.
     pub fn list_transitions_json(&self, key: &str) -> Result<serde_json::Value, ClientError> {

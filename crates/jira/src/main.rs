@@ -51,62 +51,93 @@ fn run() -> Result<(), CliError> {
         }
 
         Command::Issue { command } => {
-            let client = authenticated_client()?;
-            match command {
-                IssueCommand::Get { key } => {
-                    let value = client.get_issue(&key).map_err(client_error_to_cli)?;
-                    print_json(&value, fields)
-                }
-                IssueCommand::Transitions { key } => {
-                    let value = client
-                        .list_transitions_json(&key)
-                        .map_err(client_error_to_cli)?;
-                    print_json(&value, fields)
-                }
-                IssueCommand::Transition { key, to } => {
-                    let transitions =
-                        client.get_transitions(&key).map_err(client_error_to_cli)?;
+            run_issue(command, fields)
+        }
+    }
+}
 
-                    let matched = transitions
-                        .iter()
-                        .find(|t| t.name.eq_ignore_ascii_case(&to));
-
-                    let transition = matched.ok_or_else(|| {
-                        let available = transitions
-                            .iter()
-                            .map(|t| t.name.as_str())
-                            .collect::<Vec<_>>()
-                            .join(", ");
-                        CliError::TransitionNotFound {
-                            name: to.clone(),
-                            available,
-                        }
-                    })?;
-
-                    client
-                        .apply_transition(&key, &transition.id)
-                        .map_err(client_error_to_cli)?;
-
-                    let result =
-                        serde_json::json!({"transitioned": true, "key": key, "to": transition.name});
-                    print_json(&result, fields)
-                }
-                IssueCommand::Comment {
-                    command: CommentCommand::Add { key, body },
-                } => {
-                    let value = client.add_comment(&key, &body).map_err(client_error_to_cli)?;
-                    print_json(&value, fields)
-                }
-                IssueCommand::Comment {
-                    command: CommentCommand::Remove { key, id },
-                } => {
-                    client
-                        .delete_comment(&key, &id)
-                        .map_err(client_error_to_cli)?;
-                    let result = serde_json::json!({"deleted": true, "id": id});
-                    print_json(&result, fields)
-                }
+fn run_issue(command: IssueCommand, fields: &[&str]) -> Result<(), CliError> {
+    let client = authenticated_client()?;
+    match command {
+        IssueCommand::Get { key } => {
+            let value = client.get_issue(&key).map_err(client_error_to_cli)?;
+            print_json(&value, fields)
+        }
+        IssueCommand::Create {
+            project,
+            issue_type,
+            summary,
+            description,
+            assignee,
+            priority,
+        } => {
+            let value = client
+                .create_issue(
+                    &project,
+                    &issue_type,
+                    &summary,
+                    description.as_deref(),
+                    assignee.as_deref(),
+                    priority.as_deref(),
+                )
+                .map_err(client_error_to_cli)?;
+            print_json(&value, fields)
+        }
+        IssueCommand::Delete {
+            key,
+            confirm,
+            delete_subtasks,
+        } => {
+            if !confirm {
+                return Err(CliError::DeleteNotConfirmed { key });
             }
+            client
+                .delete_issue(&key, delete_subtasks)
+                .map_err(client_error_to_cli)?;
+            let result = serde_json::json!({"deleted": true, "key": key});
+            print_json(&result, fields)
+        }
+        IssueCommand::Transitions { key } => {
+            let value = client
+                .list_transitions_json(&key)
+                .map_err(client_error_to_cli)?;
+            print_json(&value, fields)
+        }
+        IssueCommand::Transition { key, to } => {
+            let transitions = client.get_transitions(&key).map_err(client_error_to_cli)?;
+            let matched = transitions.iter().find(|t| t.name.eq_ignore_ascii_case(&to));
+            let transition = matched.ok_or_else(|| {
+                let available = transitions
+                    .iter()
+                    .map(|t| t.name.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                CliError::TransitionNotFound {
+                    name: to.clone(),
+                    available,
+                }
+            })?;
+            client
+                .apply_transition(&key, &transition.id)
+                .map_err(client_error_to_cli)?;
+            let result =
+                serde_json::json!({"transitioned": true, "key": key, "to": transition.name});
+            print_json(&result, fields)
+        }
+        IssueCommand::Comment {
+            command: CommentCommand::Add { key, body },
+        } => {
+            let value = client.add_comment(&key, &body).map_err(client_error_to_cli)?;
+            print_json(&value, fields)
+        }
+        IssueCommand::Comment {
+            command: CommentCommand::Remove { key, id },
+        } => {
+            client
+                .delete_comment(&key, &id)
+                .map_err(client_error_to_cli)?;
+            let result = serde_json::json!({"deleted": true, "id": id});
+            print_json(&result, fields)
         }
     }
 }

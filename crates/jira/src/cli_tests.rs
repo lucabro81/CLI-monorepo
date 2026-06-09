@@ -241,3 +241,133 @@ fn fields_flag_with_spaces_around_comma_parses_as_string() {
 
     assert_eq!(cli.fields.as_deref(), Some("summary, status.name"));
 }
+
+// --- issue create ---
+
+#[test]
+fn parses_issue_create_with_required_fields() {
+    let cli = Cli::try_parse_from([
+        "jira", "issue", "create",
+        "--project", "KAN",
+        "--type", "Task",
+        "--summary", "Fix the bug",
+    ])
+    .expect("should parse");
+
+    match cli.command {
+        Command::Issue {
+            command: IssueCommand::Create { project, issue_type, summary, .. },
+        } => {
+            assert_eq!(project, "KAN");
+            assert_eq!(issue_type, "Task");
+            assert_eq!(summary, "Fix the bug");
+        }
+        other => panic!("unexpected: {other:?}"),
+    }
+}
+
+#[test]
+fn parses_issue_create_with_all_optional_fields() {
+    let cli = Cli::try_parse_from([
+        "jira", "issue", "create",
+        "--project", "KAN",
+        "--type", "Bug",
+        "--summary", "Login broken",
+        "--description", "Steps to reproduce",
+        "--assignee", "account-id-123",
+        "--priority", "High",
+    ])
+    .expect("should parse");
+
+    match cli.command {
+        Command::Issue {
+            command: IssueCommand::Create { description, assignee, priority, .. },
+        } => {
+            assert_eq!(description.as_deref(), Some("Steps to reproduce"));
+            assert_eq!(assignee.as_deref(), Some("account-id-123"));
+            assert_eq!(priority.as_deref(), Some("High"));
+        }
+        other => panic!("unexpected: {other:?}"),
+    }
+}
+
+#[test]
+fn rejects_issue_create_missing_project() {
+    let result = Cli::try_parse_from([
+        "jira", "issue", "create",
+        "--type", "Task", "--summary", "x",
+    ]);
+    assert!(result.is_err());
+}
+
+#[test]
+fn rejects_issue_create_missing_type() {
+    let result = Cli::try_parse_from([
+        "jira", "issue", "create",
+        "--project", "KAN", "--summary", "x",
+    ]);
+    assert!(result.is_err());
+}
+
+#[test]
+fn rejects_issue_create_missing_summary() {
+    let result = Cli::try_parse_from([
+        "jira", "issue", "create",
+        "--project", "KAN", "--type", "Task",
+    ]);
+    assert!(result.is_err());
+}
+
+// --- issue delete ---
+
+#[test]
+fn parses_issue_delete_with_confirm() {
+    let cli =
+        Cli::try_parse_from(["jira", "issue", "delete", "KAN-5", "--confirm"])
+            .expect("should parse");
+
+    match cli.command {
+        Command::Issue {
+            command: IssueCommand::Delete { key, confirm, delete_subtasks },
+        } => {
+            assert_eq!(key, "KAN-5");
+            assert!(confirm);
+            assert!(!delete_subtasks);
+        }
+        other => panic!("unexpected: {other:?}"),
+    }
+}
+
+#[test]
+fn parses_issue_delete_without_confirm_defaults_false() {
+    // --confirm absent → confirm=false; runtime (not clap) rejects execution.
+    let cli = Cli::try_parse_from(["jira", "issue", "delete", "KAN-5"]).expect("should parse");
+
+    match cli.command {
+        Command::Issue {
+            command: IssueCommand::Delete { confirm, .. },
+        } => assert!(!confirm),
+        other => panic!("unexpected: {other:?}"),
+    }
+}
+
+#[test]
+fn parses_issue_delete_with_delete_subtasks() {
+    let cli = Cli::try_parse_from([
+        "jira", "issue", "delete", "KAN-5", "--confirm", "--delete-subtasks",
+    ])
+    .expect("should parse");
+
+    match cli.command {
+        Command::Issue {
+            command: IssueCommand::Delete { delete_subtasks, .. },
+        } => assert!(delete_subtasks),
+        other => panic!("unexpected: {other:?}"),
+    }
+}
+
+#[test]
+fn rejects_issue_delete_missing_key() {
+    let result = Cli::try_parse_from(["jira", "issue", "delete", "--confirm"]);
+    assert!(result.is_err());
+}
