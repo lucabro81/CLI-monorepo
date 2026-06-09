@@ -54,7 +54,9 @@ fn builds_authorization_url_with_required_params() {
     assert!(url.contains("response_type=code"));
     assert!(url.contains("audience=api.atlassian.com"));
     assert!(url.contains("redirect_uri=http%3A%2F%2Flocalhost%3A8080%2Fcallback"));
-    assert!(url.contains("scope=read%3Ajira-work+read%3Ajira-user+offline_access"));
+    assert!(url.contains(
+        "scope=read%3Ajira-work+read%3Ajira-user+write%3Ajira-work+offline_access"
+    ));
 }
 
 #[test]

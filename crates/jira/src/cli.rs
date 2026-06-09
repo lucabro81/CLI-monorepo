@@ -37,6 +37,32 @@ pub enum IssueCommand {
         /// Issue key, e.g. PROJ-123
         key: String,
     },
+    /// Manage comments on a Jira issue
+    Comment {
+        #[command(subcommand)]
+        command: CommentCommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum CommentCommand {
+    /// Add a comment to an issue and print the created comment as JSON
+    #[command(after_help = "Example: jira issue comment add KAN-4 --body \"Blocked by network issue, retrying tomorrow\"")]
+    Add {
+        /// Issue key, e.g. PROJ-123
+        key: String,
+        /// Comment text (plain text; the CLI converts it to Jira's document format)
+        #[arg(long)]
+        body: String,
+    },
+    /// Delete a comment from an issue by its ID
+    #[command(after_help = "Example: jira issue comment remove KAN-4 10012\n\nThe comment ID is the \"id\" field in the JSON returned by comment add or issue get.")]
+    Remove {
+        /// Issue key, e.g. PROJ-123
+        key: String,
+        /// Comment ID to delete
+        id: String,
+    },
 }
 
 #[cfg(test)]

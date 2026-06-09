@@ -7,7 +7,7 @@ mod error;
 use std::process::ExitCode;
 
 use clap::Parser;
-use cli::{AuthCommand, Cli, Command, IssueCommand};
+use cli::{AuthCommand, Cli, Command, CommentCommand, IssueCommand};
 use context::{authenticated_client, load_oauth_config, print_json};
 use error::CliError;
 
@@ -36,24 +36,41 @@ fn run() -> Result<(), CliError> {
         Command::Auth {
             command: AuthCommand::Whoami,
         } => {
-            let value = authenticated_client()?.get_myself().map_err(|e| match e {
-                client::ClientError::Request(r) => CliError::ApiRequestFailed { reason: r },
-                client::ClientError::Status { status, body } => CliError::ApiError { status, body },
-            })?;
+            let value = authenticated_client()?.get_myself().map_err(client_error_to_cli)?;
             print_json(&value)
         }
 
         Command::Issue { command } => {
             let client = authenticated_client()?;
-            let result = match command {
-                IssueCommand::Get { key } => client.get_issue(&key),
-            };
-            let value = result.map_err(|e| match e {
-                client::ClientError::Request(r) => CliError::ApiRequestFailed { reason: r },
-                client::ClientError::Status { status, body } => CliError::ApiError { status, body },
-            })?;
-            print_json(&value)
+            match command {
+                IssueCommand::Get { key } => {
+                    let value = client.get_issue(&key).map_err(client_error_to_cli)?;
+                    print_json(&value)
+                }
+                IssueCommand::Comment {
+                    command: CommentCommand::Add { key, body },
+                } => {
+                    let value = client.add_comment(&key, &body).map_err(client_error_to_cli)?;
+                    print_json(&value)
+                }
+                IssueCommand::Comment {
+                    command: CommentCommand::Remove { key, id },
+                } => {
+                    client
+                        .delete_comment(&key, &id)
+                        .map_err(client_error_to_cli)?;
+                    let result = serde_json::json!({"deleted": true, "id": id});
+                    print_json(&result)
+                }
+            }
         }
+    }
+}
+
+fn client_error_to_cli(e: client::ClientError) -> CliError {
+    match e {
+        client::ClientError::Request(r) => CliError::ApiRequestFailed { reason: r },
+        client::ClientError::Status { status, body } => CliError::ApiError { status, body },
     }
 }
 

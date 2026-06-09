@@ -42,6 +42,79 @@ impl JiraClient {
         self.get_json("/rest/api/3/myself")
     }
 
+    /// Adds a plain-text comment to an issue and returns the created comment as JSON.
+    /// The text is wrapped in Jira's Atlassian Document Format (ADF) automatically.
+    pub fn add_comment(&self, key: &str, text: &str) -> Result<serde_json::Value, ClientError> {
+        let body = serde_json::json!({
+            "body": {
+                "type": "doc",
+                "version": 1,
+                "content": [{
+                    "type": "paragraph",
+                    "content": [{
+                        "type": "text",
+                        "text": text
+                    }]
+                }]
+            }
+        });
+        self.post_json(&format!("/rest/api/3/issue/{key}/comment"), &body)
+    }
+
+    /// Deletes a comment from an issue by its ID.
+    /// Returns `()` on success (Jira responds with 204 No Content).
+    pub fn delete_comment(&self, key: &str, comment_id: &str) -> Result<(), ClientError> {
+        let url = format!("{}/rest/api/3/issue/{key}/comment/{comment_id}", self.base_url);
+
+        let response = self
+            .http
+            .delete(&url)
+            .bearer_auth(&self.access_token)
+            .send()
+            .map_err(|e| ClientError::Request(e.to_string()))?;
+
+        let status = response.status();
+        if !status.is_success() {
+            let body = response.text().unwrap_or_default();
+            return Err(ClientError::Status {
+                status: status.as_u16(),
+                body,
+            });
+        }
+
+        Ok(())
+    }
+
+    fn post_json(
+        &self,
+        path: &str,
+        body: &serde_json::Value,
+    ) -> Result<serde_json::Value, ClientError> {
+        let url = format!("{}{path}", self.base_url);
+
+        let response = self
+            .http
+            .post(&url)
+            .bearer_auth(&self.access_token)
+            .header("Accept", "application/json")
+            .json(body)
+            .send()
+            .map_err(|e| ClientError::Request(e.to_string()))?;
+
+        let status = response.status();
+        if !status.is_success() {
+            let body = response.text().unwrap_or_default();
+            return Err(ClientError::Status {
+                status: status.as_u16(),
+                body,
+            });
+        }
+
+        response
+            .json::<serde_json::Value>()
+            .map_err(|e| ClientError::Request(e.to_string()))
+    }
+
     fn get_json(&self, path: &str) -> Result<serde_json::Value, ClientError> {
         let url = format!("{}{path}", self.base_url);
 

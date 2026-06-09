@@ -9,7 +9,8 @@ pub struct OAuthConfig {
 }
 
 impl OAuthConfig {
-    pub const SCOPES: &'static str = "read:jira-work read:jira-user offline_access";
+    pub const SCOPES: &'static str =
+        "read:jira-work read:jira-user write:jira-work offline_access";
     pub const REDIRECT_URI: &'static str = "http://localhost:8080/callback";
 
     /// Parses app credentials (`client_id`, `client_secret`) from the contents of `app.json`.
