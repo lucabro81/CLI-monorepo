@@ -111,7 +111,7 @@ impl JiraClient {
             ("fields", fields_value.to_string()),
         ];
         if let Some(token) = page_token {
-            pairs.push(("pageToken", token.to_string()));
+            pairs.push(("nextPageToken", token.to_string()));
         }
         let params = serde_urlencoded::to_string(&pairs)
             .map_err(|e| ClientError::Request(format!("failed to encode query params: {e}")))?;
