@@ -159,3 +159,98 @@ fn rejects_malformed_app_json() {
 
     assert!(matches!(result, Err(OAuthConfigError::InvalidJson(_))));
 }
+
+#[test]
+fn rejects_app_json_missing_client_id() {
+    let result = OAuthConfig::from_json(r#"{"client_secret": "shh"}"#);
+
+    assert!(matches!(result, Err(OAuthConfigError::InvalidJson(_))));
+}
+
+#[test]
+fn rejects_app_json_missing_client_secret() {
+    let result = OAuthConfig::from_json(r#"{"client_id": "abc"}"#);
+
+    assert!(matches!(result, Err(OAuthConfigError::InvalidJson(_))));
+}
+
+#[test]
+fn accepts_app_json_with_extra_fields() {
+    // serde ignores unknown fields — extra keys in app.json must not break loading.
+    let json = r#"{"client_id": "abc", "client_secret": "shh", "extra": "ignored"}"#;
+
+    let config = OAuthConfig::from_json(json).expect("should parse");
+
+    assert_eq!(config.client_id, "abc");
+    assert_eq!(config.client_secret, "shh");
+}
+
+#[test]
+fn code_challenge_is_url_safe_and_unpadded() {
+    // RFC 7636 §4.2: base64url encoding without padding; no +, /, or = characters.
+    let challenge = code_challenge("any-verifier");
+
+    assert!(!challenge.contains('='), "must not contain padding '='");
+    assert!(!challenge.contains('+'), "must not contain '+'");
+    assert!(!challenge.contains('/'), "must not contain '/'");
+}
+
+#[test]
+fn callback_with_extra_query_params_extracts_code_and_state() {
+    // Atlassian (or future Jira versions) may append extra params — must be ignored.
+    let line = "GET /callback?code=abc123&state=xyz789&scope=read%3Ajira-work HTTP/1.1";
+
+    let params = parse_callback_request_line(line).expect("should parse");
+
+    assert_eq!(params.code, "abc123");
+    assert_eq!(params.state, "xyz789");
+}
+
+#[test]
+fn callback_with_url_encoded_code_is_decoded() {
+    // Authorization codes can contain characters that get percent-encoded in the redirect.
+    let line = "GET /callback?code=abc%2B123&state=xyz HTTP/1.1";
+
+    let params = parse_callback_request_line(line).expect("should parse");
+
+    assert_eq!(params.code, "abc+123");
+}
+
+#[test]
+fn callback_without_query_string_is_malformed() {
+    // No '?' at all — must be MalformedRequestLine, not MissingParam.
+    let line = "GET /callback HTTP/1.1";
+
+    assert_eq!(
+        parse_callback_request_line(line),
+        Err(CallbackError::MalformedRequestLine)
+    );
+}
+
+#[test]
+fn callback_with_empty_query_string_missing_code() {
+    let line = "GET /callback? HTTP/1.1";
+
+    assert_eq!(
+        parse_callback_request_line(line),
+        Err(CallbackError::MissingParam("code"))
+    );
+}
+
+#[test]
+fn credentials_json_field_names_are_stable() {
+    // Regression guard: if serde field names change, existing credentials.json files break.
+    let creds = Credentials {
+        access_token: "at".to_string(),
+        refresh_token: "rt".to_string(),
+        expires_at: 1_000,
+        cloud_id: "cid".to_string(),
+    };
+
+    let json = serde_json::to_string(&creds).unwrap();
+
+    assert!(json.contains("\"access_token\""));
+    assert!(json.contains("\"refresh_token\""));
+    assert!(json.contains("\"expires_at\""));
+    assert!(json.contains("\"cloud_id\""));
+}

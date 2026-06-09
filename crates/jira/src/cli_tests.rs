@@ -197,3 +197,47 @@ fn fields_flag_accepted_after_subcommand() {
 
     assert_eq!(cli.fields.as_deref(), Some("transitions.name"));
 }
+
+#[test]
+fn comment_add_accepts_empty_body() {
+    // clap does not reject empty strings — an LLM could pass --body "".
+    // Whether to reject at runtime is a separate concern (see BACKLOG).
+    let cli = Cli::try_parse_from(["jira", "issue", "comment", "add", "KAN-1", "--body", ""])
+        .expect("should parse");
+
+    match cli.command {
+        Command::Issue {
+            command: IssueCommand::Comment {
+                command: CommentCommand::Add { body, .. },
+            },
+        } => assert_eq!(body, ""),
+        other => panic!("unexpected: {other:?}"),
+    }
+}
+
+#[test]
+fn fields_flag_with_trailing_comma_parses_as_string() {
+    // BACKLOG FIELDS-1: trailing comma produces an empty segment after split in run().
+    // This test documents that clap accepts the raw string; trimming/filtering is run()'s job.
+    let cli =
+        Cli::try_parse_from(["jira", "issue", "get", "KAN-4", "--fields", "summary,"])
+            .expect("should parse");
+
+    assert_eq!(cli.fields.as_deref(), Some("summary,"));
+}
+
+#[test]
+fn fields_flag_with_spaces_around_comma_parses_as_string() {
+    // Spaces are preserved by clap; run() uses str::trim on each segment.
+    let cli = Cli::try_parse_from([
+        "jira",
+        "issue",
+        "get",
+        "KAN-4",
+        "--fields",
+        "summary, status.name",
+    ])
+    .expect("should parse");
+
+    assert_eq!(cli.fields.as_deref(), Some("summary, status.name"));
+}
