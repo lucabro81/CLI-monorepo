@@ -113,7 +113,7 @@ Lists the workflow transitions available for an issue in its current state, as r
 cargo run -p jira -- issue transitions KAN-4
 ```
 
-Useful before `issue transition` to discover valid target states. Use `--fields transitions.id,transitions.name` to get a compact list.
+Useful before `issue transition` to discover valid target states. Use `--select transitions.id,transitions.name` to get a compact list.
 
 ### `jira issue transition <KEY> --to <STATUS>`
 
@@ -142,22 +142,44 @@ Deletes a comment by ID (the `id` field in the comment JSON from `comment add` o
 cargo run -p jira -- issue comment remove KAN-4 10033
 ```
 
-### `--fields <PATHS>` (global flag)
+### `jira issue search --jql <QUERY>`
 
-All commands that return JSON support a `--fields` flag for selective output. Pass a comma-separated list of dot-notation paths; only those fields are included in the output. If omitted, the full response from Jira is printed.
+Searches issues using JQL (Jira Query Language). Returns the raw response including `issues`, `isLast`, and `nextPageToken` (when more pages exist).
+
+```sh
+cargo run -p jira -- issue search --jql "project=KAN AND status=\"In Progress\""
+cargo run -p jira -- issue search --jql "project=KAN" --fields summary,status,priority --max-results 10
+```
+
+**Flags:**
+- `--max-results <N>` — how many issues to return (default 50, max 100)
+- `--fields <NAMES>` — comma-separated Jira field names to include per issue (server-side, reduces payload). Use `*all` for every field, `*navigable` for defaults. Example: `summary,status,assignee,priority`
+- `--page-token <TOKEN>` — cursor for the next page, taken from `nextPageToken` in a previous response
+
+Combine `--fields` (server-side) with `--select` (client-side) for maximum control:
+
+```sh
+cargo run -p jira -- issue search --jql "project=KAN" \
+  --fields summary,status \
+  --select issues.key,issues.fields.summary,issues.fields.status.name,isLast
+```
+
+### `--select <PATHS>` (global flag)
+
+All commands that return JSON support a `--select` flag for client-side field projection. Pass a comma-separated list of dot-notation paths; only those paths are included in the output. If omitted, the full response from Jira is printed.
 
 ```sh
 # compact transitions list
-cargo run -p jira -- issue transitions KAN-4 --fields transitions.id,transitions.name
+cargo run -p jira -- issue transitions KAN-4 --select transitions.id,transitions.name
 
 # just the key fields of an issue
-cargo run -p jira -- issue get KAN-4 --fields summary,status.name,assignee.displayName
+cargo run -p jira -- issue get KAN-4 --select summary,status.name,assignee.displayName
 
 # only your account details
-cargo run -p jira -- auth whoami --fields accountId,displayName,emailAddress
+cargo run -p jira -- auth whoami --select accountId,displayName,emailAddress
 ```
 
-The flag can appear before or after the subcommand. Arrays (like `transitions`) are filtered element-wise automatically — no special syntax needed.
+The flag can appear before or after the subcommand. Arrays (like `transitions`) are projected element-wise automatically — no special syntax needed.
 
 ## Error design
 

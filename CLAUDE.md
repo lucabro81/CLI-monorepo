@@ -63,10 +63,10 @@ Cargo workspace; each service CLI is its own binary crate under `crates/<service
   - `Credentials` — `access_token`/`refresh_token`/`expires_at`/`cloud_id`, persisted to `<config>/jira-cli/credentials.json` (dynamic, rewritten by the CLI on login/refresh)
   - `refresh()` / `load_credentials()` — transparent refresh-before-expiry; Atlassian refresh tokens **rotate on every use**, so the stored credentials must be replaced after each refresh
 - `client.rs` — `JiraClient` wraps a blocking `reqwest` client, authenticates with `Bearer <access_token>` against `https://api.atlassian.com/ex/jira/<cloud_id>/rest/api/3/...`, returns raw `serde_json::Value`. Private `get_json(path)` and `post_json(path, body)` helpers shared by all methods. DELETE operations build the URL directly.
-- `context.rs` — setup helpers used by `run()`: `config_dir()`, `load_oauth_config()`, `authenticated_client()`, `print_json(value, fields)`. Centralises the credential-load → refresh → client-build sequence so each command in `main.rs` calls one function. `print_json` applies `--fields` filtering before printing.
+- `context.rs` — setup helpers used by `run()`: `config_dir()`, `load_oauth_config()`, `authenticated_client()`, `print_json(value, select)`. Centralises the credential-load → refresh → client-build sequence so each command in `main.rs` calls one function. `print_json` applies `--select` projection before printing.
 - `error.rs` — `CliError` enum (top-level, `thiserror`-derived). All internal errors are mapped to `CliError` at the `run()` boundary.
-- `fields.rs` — `filter_fields(value, fields)` applies dot-notation field selection to any `serde_json::Value`. Arrays are filtered element-wise automatically. Used by `print_json` when `--fields` is set.
-- `main.rs` — `run() -> Result<(), CliError>` parses `--fields` then dispatches to `run_issue()` or handles auth commands inline; `main() -> ExitCode` calls `run()` and prints any error. No logic, no `process::exit`.
+- `fields.rs` — `filter_fields(value, select)` applies dot-notation field projection to any `serde_json::Value`. Arrays are projected element-wise automatically. Used by `print_json` when `--select` is set.
+- `main.rs` — `run() -> Result<(), CliError>` parses `--select` then dispatches to `run_issue()` or handles auth commands inline; `main() -> ExitCode` calls `run()` and prints any error. No logic, no `process::exit`.
 
 #### Test file convention
 
