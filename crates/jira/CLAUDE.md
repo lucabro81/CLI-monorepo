@@ -29,6 +29,19 @@ src/
   main.rs         — pure dispatch: parse --select, match Command, call commands::*.
 ```
 
+## Running tests
+
+```sh
+# Unit tests (no credentials needed)
+cargo test -p jira
+
+# E2e tests (requires login + a writable Jira project)
+JIRA_E2E_PROJECT=KAN cargo test -p jira -- --ignored
+
+# Recovery: delete all [jira-cli-e2e] orphaned issues
+JIRA_E2E_PROJECT=KAN cargo test -p jira e2e_cleanup -- --ignored
+```
+
 ## Test file convention
 
 Tests live in a separate `<module>_tests.rs` file referenced with:

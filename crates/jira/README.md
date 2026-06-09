@@ -209,6 +209,43 @@ cargo run -p jira -- auth whoami --select accountId,displayName,emailAddress
 
 The flag can appear before or after the subcommand. Arrays (like `transitions`) are projected element-wise automatically — no special syntax needed.
 
+## Testing
+
+### Unit tests
+
+No external dependencies. Run with:
+
+```sh
+cargo test -p jira
+```
+
+### End-to-end tests
+
+E2e tests call the real Jira API. They are all marked `#[ignore]` and never run as part of the normal test suite.
+
+**Prerequisites:**
+
+1. `jira auth login` must have been completed on this machine.
+2. A writable Jira project must exist. Set its key via the `JIRA_E2E_PROJECT` environment variable (e.g. `KAN`). The project must allow creating and deleting Task issues.
+
+**Running:**
+
+```sh
+# Run all e2e tests
+JIRA_E2E_PROJECT=KAN cargo test -p jira -- --ignored
+
+# Run a single test
+JIRA_E2E_PROJECT=KAN cargo test -p jira e2e_smoke_doctor -- --ignored
+```
+
+**Isolation:** every issue created by the tests has the `[jira-cli-e2e]` prefix in its summary. An `IssueGuard` (RAII) deletes each issue on drop, so cleanup happens even when a test panics. If a test is interrupted before the guard is set up, run the recovery command:
+
+```sh
+JIRA_E2E_PROJECT=KAN cargo test -p jira e2e_cleanup -- --ignored
+```
+
+This searches for all `[jira-cli-e2e]` issues in the project and deletes them.
+
 ## Error design
 
 All errors are plain text, no colors or symbols — designed to be read by an LLM. Each message is self-contained: it states what went wrong and what to do next. Example:
