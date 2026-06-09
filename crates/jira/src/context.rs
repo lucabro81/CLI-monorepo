@@ -45,10 +45,14 @@ pub fn authenticated_client() -> Result<JiraClient, CliError> {
     Ok(JiraClient::new(&credentials))
 }
 
-pub fn print_json(value: &serde_json::Value) -> Result<(), CliError> {
-    let output = serde_json::to_string_pretty(value).map_err(|e| CliError::JsonSerialize {
-        reason: e.to_string(),
-    })?;
+/// Prints `value` as pretty-printed JSON to stdout.
+/// If `fields` is non-empty, only the specified dot-notation paths are included.
+pub fn print_json(value: &serde_json::Value, fields: &[&str]) -> Result<(), CliError> {
+    let filtered = crate::fields::filter_fields(value.clone(), fields);
+    let output =
+        serde_json::to_string_pretty(&filtered).map_err(|e| CliError::JsonSerialize {
+            reason: e.to_string(),
+        })?;
     println!("{output}");
     Ok(())
 }

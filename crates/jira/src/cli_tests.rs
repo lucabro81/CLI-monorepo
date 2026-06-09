@@ -165,3 +165,35 @@ fn rejects_transitions_list_missing_key() {
 
     assert!(result.is_err());
 }
+
+#[test]
+fn parses_fields_flag_on_issue_get() {
+    let cli =
+        Cli::try_parse_from(["jira", "--fields", "summary,status.name", "issue", "get", "KAN-4"])
+            .expect("should parse");
+
+    assert_eq!(cli.fields.as_deref(), Some("summary,status.name"));
+}
+
+#[test]
+fn fields_flag_is_none_when_absent() {
+    let cli = Cli::try_parse_from(["jira", "issue", "get", "KAN-4"]).expect("should parse");
+
+    assert!(cli.fields.is_none());
+}
+
+#[test]
+fn fields_flag_accepted_after_subcommand() {
+    // global flag can appear after the subcommand too
+    let cli = Cli::try_parse_from([
+        "jira",
+        "issue",
+        "transitions",
+        "KAN-4",
+        "--fields",
+        "transitions.name",
+    ])
+    .expect("should parse");
+
+    assert_eq!(cli.fields.as_deref(), Some("transitions.name"));
+}

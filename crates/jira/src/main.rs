@@ -3,6 +3,7 @@ mod cli;
 mod client;
 mod context;
 mod error;
+mod fields;
 
 use std::process::ExitCode;
 
@@ -13,6 +14,15 @@ use error::CliError;
 
 fn run() -> Result<(), CliError> {
     let cli = Cli::parse();
+
+    // Parse --fields once; empty slice means "no filtering, print raw".
+    let fields_string = cli.fields.unwrap_or_default();
+    let fields: Vec<&str> = if fields_string.is_empty() {
+        vec![]
+    } else {
+        fields_string.split(',').map(str::trim).collect()
+    };
+    let fields = fields.as_slice();
 
     match cli.command {
         Command::Auth {
@@ -37,7 +47,7 @@ fn run() -> Result<(), CliError> {
             command: AuthCommand::Whoami,
         } => {
             let value = authenticated_client()?.get_myself().map_err(client_error_to_cli)?;
-            print_json(&value)
+            print_json(&value, fields)
         }
 
         Command::Issue { command } => {
@@ -45,19 +55,13 @@ fn run() -> Result<(), CliError> {
             match command {
                 IssueCommand::Get { key } => {
                     let value = client.get_issue(&key).map_err(client_error_to_cli)?;
-                    print_json(&value)
-                }
-                IssueCommand::Comment {
-                    command: CommentCommand::Add { key, body },
-                } => {
-                    let value = client.add_comment(&key, &body).map_err(client_error_to_cli)?;
-                    print_json(&value)
+                    print_json(&value, fields)
                 }
                 IssueCommand::Transitions { key } => {
                     let value = client
                         .list_transitions_json(&key)
                         .map_err(client_error_to_cli)?;
-                    print_json(&value)
+                    print_json(&value, fields)
                 }
                 IssueCommand::Transition { key, to } => {
                     let transitions =
@@ -85,7 +89,13 @@ fn run() -> Result<(), CliError> {
 
                     let result =
                         serde_json::json!({"transitioned": true, "key": key, "to": transition.name});
-                    print_json(&result)
+                    print_json(&result, fields)
+                }
+                IssueCommand::Comment {
+                    command: CommentCommand::Add { key, body },
+                } => {
+                    let value = client.add_comment(&key, &body).map_err(client_error_to_cli)?;
+                    print_json(&value, fields)
                 }
                 IssueCommand::Comment {
                     command: CommentCommand::Remove { key, id },
@@ -94,7 +104,7 @@ fn run() -> Result<(), CliError> {
                         .delete_comment(&key, &id)
                         .map_err(client_error_to_cli)?;
                     let result = serde_json::json!({"deleted": true, "id": id});
-                    print_json(&result)
+                    print_json(&result, fields)
                 }
             }
         }

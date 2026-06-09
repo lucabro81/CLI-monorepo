@@ -4,6 +4,13 @@ use clap::{Parser, Subcommand};
 #[derive(Debug, Parser)]
 #[command(name = "jira", version, about)]
 pub struct Cli {
+    /// Comma-separated dot-notation paths to include in the JSON output.
+    /// If omitted, the full response from Jira is printed.
+    /// Example: --fields summary,status.name,assignee.displayName
+    /// Example: --fields transitions.id,transitions.name
+    #[arg(long, global = true, value_name = "PATHS")]
+    pub fields: Option<String>,
+
     #[command(subcommand)]
     pub command: Command,
 }
