@@ -91,3 +91,10 @@ the current behaviour, why it was deferred, and what a future fix would look lik
 **Current behaviour:** empty strings pass `from_json`; the error surfaces later as a 401 from Atlassian with a generic message.  
 **Acceptable?** Marginal. Early validation would give a clearer error.  
 **Future fix:** add validation in `OAuthConfig::from_json` — return `InvalidJson` (or a new `EmptyCredential` variant) if either field is blank.
+
+
+
+- valutare se splittare claude.md, tra root e crate
+- valutare se organizzare meglio i crate, types in un file separato? file per singolo comando? cose così 
+- nell'help esempi di uso anche per i comandi get, command, transition, non solo nelle options
+- documentare con commenti ovunque sia possibile

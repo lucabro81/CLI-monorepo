@@ -66,7 +66,9 @@ Cargo workspace; each service CLI is its own binary crate under `crates/<service
 - `context.rs` — setup helpers used by `run()`: `config_dir()`, `load_oauth_config()`, `authenticated_client()`, `print_json(value, select)`. Centralises the credential-load → refresh → client-build sequence so each command in `main.rs` calls one function. `print_json` applies `--select` projection before printing.
 - `error.rs` — `CliError` enum (top-level, `thiserror`-derived). All internal errors are mapped to `CliError` at the `run()` boundary.
 - `fields.rs` — `filter_fields(value, select)` applies dot-notation field projection to any `serde_json::Value`. Arrays are projected element-wise automatically. Used by `print_json` when `--select` is set.
-- `main.rs` — `run() -> Result<(), CliError>` parses `--select` then dispatches to `run_issue()` or handles auth commands inline; `main() -> ExitCode` calls `run()` and prints any error. No logic, no `process::exit`.
+- `doctor.rs` — `run_doctor() -> Result<(Value, bool), CliError>`: cascading checks (`app_config` → `credentials` → `api`), each with `status: ok/error/skipped`. Never fails with `CliError` for check failures — all captured in JSON. Used by both `Command::Doctor` and `init::run_init()`.
+- `init.rs` — `run_init(client_id, client_secret)`: human onboarding flow. Prints numbered setup instructions, reads client credentials (from flags or stdin prompts), writes `app.json` via `write_app_config()`, runs `auth::login()`, then calls `doctor::run_doctor()` as confirmation.
+- `main.rs` — `run() -> Result<(), CliError>` parses `--select` then dispatches to `run_issue()` or handles auth/doctor/init commands inline; `main() -> ExitCode` calls `run()` and prints any error. No logic, no `process::exit`.
 
 #### Test file convention
 

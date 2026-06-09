@@ -34,6 +34,16 @@ The OAuth account you log in with must have access to at least one Jira Cloud si
 
 ### 4. Log in
 
+**Quickest path** — let `jira init` handle steps 2–4 for you:
+
+```sh
+cargo run -p jira -- init
+```
+
+It will print the setup instructions, prompt for Client ID and Client Secret, write `app.json`, open the browser for OAuth consent, and finally run `jira doctor` as a confirmation.
+
+Or manually:
+
 ```sh
 cargo run -p jira -- auth login
 ```
@@ -59,6 +69,24 @@ Before each API call, the CLI checks whether the access token is expired (or abo
 This matters because **Atlassian refresh tokens rotate on every use**: each refresh invalidates the previous refresh token and issues a new one. The CLI always persists the freshest pair — if you copy `credentials.json` to another machine and both machines try to refresh independently, one will end up with a stale, invalidated token.
 
 ## Usage
+
+### `jira init`
+
+Interactive onboarding. Prints setup instructions, prompts for Client ID and Client Secret (or accepts `--client-id`/`--client-secret` flags for non-interactive use), writes `app.json`, runs the OAuth login flow, and prints a `jira doctor` JSON report as final confirmation.
+
+```sh
+cargo run -p jira -- init
+cargo run -p jira -- init --client-id <ID> --client-secret <SECRET>
+```
+
+### `jira doctor`
+
+Runs three checks and prints a structured JSON report: `app_config` (app.json exists and is valid), `credentials` (tokens exist and are not expired), `api` (live call to Jira succeeds). Exits non-zero if any check fails.
+
+```sh
+cargo run -p jira -- doctor
+cargo run -p jira -- doctor --select app_config.status,credentials.status,api.status
+```
 
 ### `jira auth login`
 

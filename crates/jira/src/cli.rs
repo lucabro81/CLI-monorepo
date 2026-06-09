@@ -17,6 +17,20 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
+    /// Interactive onboarding: create app.json, run auth login, verify with doctor
+    ///
+    /// Guides a human through setting up the Atlassian OAuth 2.0 app, writes app.json,
+    /// runs the login flow, then prints a doctor JSON report as confirmation.
+    /// Pass --client-id and --client-secret to skip interactive prompts.
+    #[command(after_help = "Example (interactive):\n  jira init\n\nExample (non-interactive):\n  jira init --client-id <ID> --client-secret <SECRET>")]
+    Init {
+        /// Atlassian OAuth app client ID (skips interactive prompt if provided)
+        #[arg(long)]
+        client_id: Option<String>,
+        /// Atlassian OAuth app client secret (skips interactive prompt if provided)
+        #[arg(long)]
+        client_secret: Option<String>,
+    },
     /// Check that the CLI is correctly configured and can reach the Jira API
     ///
     /// Runs three checks in order: app credentials file, stored OAuth tokens,

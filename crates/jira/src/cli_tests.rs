@@ -391,6 +391,66 @@ fn issue_create_accepts_empty_summary() {
     }
 }
 
+// --- init ---
+
+#[test]
+fn parses_init_no_flags() {
+    let cli = Cli::try_parse_from(["jira", "init"]).expect("should parse");
+
+    match cli.command {
+        Command::Init { client_id, client_secret } => {
+            assert!(client_id.is_none());
+            assert!(client_secret.is_none());
+        }
+        other => panic!("unexpected: {other:?}"),
+    }
+}
+
+#[test]
+fn parses_init_with_both_flags() {
+    let cli = Cli::try_parse_from([
+        "jira", "init", "--client-id", "abc123", "--client-secret", "s3cr3t",
+    ])
+    .expect("should parse");
+
+    match cli.command {
+        Command::Init { client_id, client_secret } => {
+            assert_eq!(client_id.as_deref(), Some("abc123"));
+            assert_eq!(client_secret.as_deref(), Some("s3cr3t"));
+        }
+        other => panic!("unexpected: {other:?}"),
+    }
+}
+
+#[test]
+fn parses_init_with_only_client_id() {
+    // Partial flags are allowed at parse time; runtime will prompt for missing value.
+    let cli = Cli::try_parse_from(["jira", "init", "--client-id", "abc123"])
+        .expect("should parse");
+
+    match cli.command {
+        Command::Init { client_id, client_secret } => {
+            assert_eq!(client_id.as_deref(), Some("abc123"));
+            assert!(client_secret.is_none());
+        }
+        other => panic!("unexpected: {other:?}"),
+    }
+}
+
+#[test]
+fn parses_init_with_only_client_secret() {
+    let cli = Cli::try_parse_from(["jira", "init", "--client-secret", "s3cr3t"])
+        .expect("should parse");
+
+    match cli.command {
+        Command::Init { client_id, client_secret } => {
+            assert!(client_id.is_none());
+            assert_eq!(client_secret.as_deref(), Some("s3cr3t"));
+        }
+        other => panic!("unexpected: {other:?}"),
+    }
+}
+
 // --- doctor ---
 
 #[test]

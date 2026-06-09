@@ -5,6 +5,7 @@ mod context;
 mod doctor;
 mod error;
 mod fields;
+mod init;
 
 use std::process::ExitCode;
 
@@ -26,6 +27,9 @@ fn run() -> Result<(), CliError> {
     let select = select.as_slice();
 
     match cli.command {
+        Command::Init { client_id, client_secret } => {
+            init::run_init(client_id, client_secret)
+        }
         Command::Doctor => {
             let (report, all_ok) = doctor::run_doctor()?;
             print_json(&report, select)?;
