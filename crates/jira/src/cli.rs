@@ -17,6 +17,12 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
+    /// Check that the CLI is correctly configured and can reach the Jira API
+    ///
+    /// Runs three checks in order: app credentials file, stored OAuth tokens,
+    /// and a live API call. Prints a JSON object with a status field per check.
+    /// Exits non-zero if any check fails or is skipped.
+    Doctor,
     /// Manage authentication with Jira
     Auth {
         #[command(subcommand)]

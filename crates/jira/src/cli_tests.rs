@@ -391,6 +391,26 @@ fn issue_create_accepts_empty_summary() {
     }
 }
 
+// --- doctor ---
+
+#[test]
+fn parses_doctor() {
+    let cli = Cli::try_parse_from(["jira", "doctor"]).expect("should parse");
+
+    assert!(matches!(cli.command, Command::Doctor));
+}
+
+#[test]
+fn doctor_with_select_flag() {
+    let cli = Cli::try_parse_from([
+        "jira", "doctor", "--select", "app_config.status,credentials.status",
+    ])
+    .expect("should parse");
+
+    assert!(matches!(cli.command, Command::Doctor));
+    assert_eq!(cli.select.as_deref(), Some("app_config.status,credentials.status"));
+}
+
 // --- issue search ---
 
 #[test]

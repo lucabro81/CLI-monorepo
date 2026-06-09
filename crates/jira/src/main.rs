@@ -2,6 +2,7 @@ mod auth;
 mod cli;
 mod client;
 mod context;
+mod doctor;
 mod error;
 mod fields;
 
@@ -25,6 +26,14 @@ fn run() -> Result<(), CliError> {
     let select = select.as_slice();
 
     match cli.command {
+        Command::Doctor => {
+            let (report, all_ok) = doctor::run_doctor()?;
+            print_json(&report, select)?;
+            if !all_ok {
+                return Err(CliError::DoctorCheckFailed);
+            }
+            Ok(())
+        }
         Command::Auth {
             command: AuthCommand::Login,
         } => {

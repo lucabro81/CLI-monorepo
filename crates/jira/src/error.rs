@@ -65,4 +65,7 @@ pub enum CliError {
         Pass --confirm to execute: jira issue delete {key} --confirm"
     )]
     DeleteNotConfirmed { key: String },
+
+    #[error("one or more doctor checks failed. See JSON output above for details.")]
+    DoctorCheckFailed,
 }
