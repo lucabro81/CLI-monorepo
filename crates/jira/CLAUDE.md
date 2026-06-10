@@ -23,6 +23,8 @@ src/
                     IssueCommand, CommentCommand. No logic.
   context.rs      — config_dir(), load_oauth_config(), authenticated_client(),
                     print_json(value, select). Shared by all command handlers.
+  endpoints.rs    — URL/path constants for Atlassian OAuth and Jira REST API v3,
+                    used by auth.rs and client.rs. No logic.
   error.rs        — CliError (top-level, thiserror-derived). Includes IoError
                     for stdin prompts in init.
   fields.rs       — filter_fields(value, select): dot-notation projection,

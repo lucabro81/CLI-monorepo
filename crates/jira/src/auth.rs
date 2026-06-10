@@ -27,6 +27,8 @@
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
+use crate::endpoints;
+
 /// Static OAuth 2.0 app identity loaded from `app.json`.
 /// Written once by hand (or by `jira init`); never modified by the CLI at runtime.
 #[derive(Debug, PartialEq, Eq)]
@@ -251,7 +253,7 @@ pub fn login_client_credentials(config: &OAuthConfig) -> Result<Credentials, Log
         "grant_type": "client_credentials",
         "client_id": config.client_id,
         "client_secret": config.client_secret,
-        "audience": "api.atlassian.com",
+        "audience": endpoints::ATLASSIAN_AUDIENCE,
     });
 
     let token = request_token(&body)?;
@@ -267,7 +269,7 @@ pub fn login_client_credentials(config: &OAuthConfig) -> Result<Credentials, Log
 
 fn request_token(body: &serde_json::Value) -> Result<TokenResponse, LoginError> {
     let response = reqwest::blocking::Client::new()
-        .post("https://auth.atlassian.com/oauth/token")
+        .post(endpoints::ATLASSIAN_TOKEN_URL)
         .json(body)
         .send()
         .map_err(|e| LoginError::TokenExchange(e.to_string()))?;
@@ -285,7 +287,7 @@ fn request_token(body: &serde_json::Value) -> Result<TokenResponse, LoginError> 
 
 fn fetch_cloud_id(access_token: &str) -> Result<String, LoginError> {
     let resources: Vec<AccessibleResource> = reqwest::blocking::Client::new()
-        .get("https://api.atlassian.com/oauth/token/accessible-resources")
+        .get(endpoints::ATLASSIAN_ACCESSIBLE_RESOURCES_URL)
         .bearer_auth(access_token)
         .header("Accept", "application/json")
         .send()
@@ -404,7 +406,7 @@ pub fn authorization_url(
     state: &str,
 ) -> Result<String, LoginError> {
     let params = [
-        ("audience", "api.atlassian.com"),
+        ("audience", endpoints::ATLASSIAN_AUDIENCE),
         ("client_id", &config.client_id),
         ("scope", OAuthConfig::SCOPES),
         ("redirect_uri", &config.redirect_uri),
@@ -417,7 +419,7 @@ pub fn authorization_url(
 
     let query = serde_urlencoded::to_string(params)
         .map_err(|e| LoginError::Internal(format!("failed to encode authorization URL: {e}")))?;
-    Ok(format!("https://auth.atlassian.com/authorize?{query}"))
+    Ok(format!("{}?{query}", endpoints::ATLASSIAN_AUTHORIZE_URL))
 }
 
 /// Parses the first line of the local callback HTTP request, e.g.

@@ -16,6 +16,7 @@
 use serde::Deserialize;
 
 use crate::auth::Credentials;
+use crate::endpoints;
 
 /// A workflow transition available for an issue.
 #[derive(Debug, Deserialize)]
@@ -58,7 +59,7 @@ impl JiraClient {
     /// Builds a client from stored credentials. The base URL is derived from `cloud_id`.
     pub fn new(credentials: &Credentials) -> Self {
         Self {
-            base_url: format!("https://api.atlassian.com/ex/jira/{}", credentials.cloud_id),
+            base_url: format!("{}/{}", endpoints::JIRA_API_BASE_URL, credentials.cloud_id),
             access_token: credentials.access_token.clone(),
             http: reqwest::blocking::Client::new(),
         }
@@ -66,12 +67,12 @@ impl JiraClient {
 
     /// Fetches a Jira issue by key and returns the raw JSON response.
     pub fn get_issue(&self, key: &str) -> Result<serde_json::Value, ClientError> {
-        self.get_json(&format!("/rest/api/3/issue/{key}"))
+        self.get_json(&endpoints::issue_path(key))
     }
 
     /// Returns the currently authenticated user as raw JSON.
     pub fn get_myself(&self) -> Result<serde_json::Value, ClientError> {
-        self.get_json("/rest/api/3/myself")
+        self.get_json(endpoints::PATH_MYSELF)
     }
 
     /// Returns the global permissions granted to the current user/token, restricted
@@ -80,7 +81,7 @@ impl JiraClient {
     pub fn get_my_permissions(&self, permission_keys: &[&str]) -> Result<serde_json::Value, ClientError> {
         let query = serde_urlencoded::to_string([("permissions", permission_keys.join(","))])
             .map_err(|e| ClientError::Request(format!("failed to encode query params: {e}")))?;
-        self.get_json(&format!("/rest/api/3/mypermissions?{query}"))
+        self.get_json(&format!("{}?{query}", endpoints::PATH_MY_PERMISSIONS))
     }
 
     /// Adds a plain-text comment to an issue and returns the created comment as JSON.
@@ -99,7 +100,7 @@ impl JiraClient {
                 }]
             }
         });
-        self.post_json(&format!("/rest/api/3/issue/{key}/comment"), &body)
+        self.post_json(&endpoints::issue_comment_path(key), &body)
     }
 
     /// Searches issues using JQL and returns the raw Jira response.
@@ -125,7 +126,7 @@ impl JiraClient {
         let params = serde_urlencoded::to_string(&pairs)
             .map_err(|e| ClientError::Request(format!("failed to encode query params: {e}")))?;
 
-        self.get_json(&format!("/rest/api/3/search/jql?{params}"))
+        self.get_json(&format!("{}?{params}", endpoints::PATH_SEARCH_JQL))
     }
 
     /// Creates a new issue and returns the Jira response (contains `id`, `key`, `self`).
@@ -158,7 +159,7 @@ impl JiraClient {
             fields["priority"] = serde_json::json!({"name": p});
         }
 
-        self.post_json("/rest/api/3/issue", &serde_json::json!({"fields": fields}))
+        self.post_json(endpoints::PATH_ISSUE, &serde_json::json!({"fields": fields}))
     }
 
     /// Permanently deletes an issue by key.
@@ -166,8 +167,10 @@ impl JiraClient {
     /// Returns `()` on success (Jira responds with 204 No Content).
     pub fn delete_issue(&self, key: &str, delete_subtasks: bool) -> Result<(), ClientError> {
         let url = format!(
-            "{}/rest/api/3/issue/{key}?deleteSubtasks={}",
-            self.base_url, delete_subtasks
+            "{}{}?deleteSubtasks={}",
+            self.base_url,
+            endpoints::issue_path(key),
+            delete_subtasks
         );
 
         let response = self
@@ -192,7 +195,7 @@ impl JiraClient {
     /// Returns the raw JSON response for available transitions (for display to the caller).
     /// Use this when you want to forward the full response as-is.
     pub fn list_transitions_json(&self, key: &str) -> Result<serde_json::Value, ClientError> {
-        self.get_json(&format!("/rest/api/3/issue/{key}/transitions"))
+        self.get_json(&endpoints::issue_transitions_path(key))
     }
 
     /// Returns the list of workflow transitions available for an issue in its current state.
@@ -202,7 +205,7 @@ impl JiraClient {
             transitions: Vec<JiraTransition>,
         }
 
-        let value = self.get_json(&format!("/rest/api/3/issue/{key}/transitions"))?;
+        let value = self.get_json(&endpoints::issue_transitions_path(key))?;
         let resp: TransitionsResponse = serde_json::from_value(value)
             .map_err(|e| ClientError::Request(format!("failed to parse transitions: {e}")))?;
         Ok(resp.transitions)
@@ -212,7 +215,7 @@ impl JiraClient {
     /// Returns `()` on success (Jira responds with 204 No Content).
     pub fn apply_transition(&self, key: &str, transition_id: &str) -> Result<(), ClientError> {
         let body = serde_json::json!({"transition": {"id": transition_id}});
-        let url = format!("{}/rest/api/3/issue/{key}/transitions", self.base_url);
+        let url = format!("{}{}", self.base_url, endpoints::issue_transitions_path(key));
 
         let response = self
             .http
@@ -238,7 +241,11 @@ impl JiraClient {
     /// Deletes a comment from an issue by its ID.
     /// Returns `()` on success (Jira responds with 204 No Content).
     pub fn delete_comment(&self, key: &str, comment_id: &str) -> Result<(), ClientError> {
-        let url = format!("{}/rest/api/3/issue/{key}/comment/{comment_id}", self.base_url);
+        let url = format!(
+            "{}{}",
+            self.base_url,
+            endpoints::issue_comment_id_path(key, comment_id)
+        );
 
         let response = self
             .http

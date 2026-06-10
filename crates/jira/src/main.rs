@@ -13,6 +13,7 @@ mod cli;
 mod client;
 mod commands;
 mod context;
+mod endpoints;
 mod error;
 mod fields;
 
