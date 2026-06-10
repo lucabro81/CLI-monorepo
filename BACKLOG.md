@@ -123,3 +123,23 @@ the current behaviour, why it was deferred, and what a future fix would look lik
 **Risk:** a mid-size local model (30-70B) via Ollama or another provider may not recognize these tools/files at all, silently skip steps that depend on them (e.g. the initial scoping questions), or fail to sustain the long verification loop.  
 **Possible directions:** (a) generalize tool references to "ask the user, using whatever clarification mechanism is available" / "use available web research tools"; (b) add a leaner variant of the skill scoped to what a 30-70B model can reliably execute (fewer steps, more explicit checkpoints, less reliance on long unsupervised loops).  
 **Add when:** there's an actual attempt to run this skill with a non-Claude-Code agent or a smaller model — don't generalize speculatively before that.
+
+---
+
+### client.rs
+
+#### CLIENT-1 — No handling for Jira API rate limiting (HTTP 429)
+**Found:** review session 2026-06-10  
+**Trigger:** an agent issuing many requests in quick succession (e.g. bulk operations, tight retry loops) hits Jira Cloud's rate limit.  
+**Current behaviour:** `ClientError::Status { status: 429, body }` surfaces as a generic "Jira returned status 429: ..." — no indication of `Retry-After`, no distinction from other 4xx errors.  
+**Acceptable?** Yes for now — current command set is low-volume, single-request-per-invocation.  
+**Future fix:** read the `Retry-After` header and surface it in the error message ("rate limited, retry after Ns") so an agent can self-correct by waiting; consider a dedicated `ClientError::RateLimited { retry_after_secs }` variant.
+
+---
+
+#### CLIENT-2 — `cloud_id` resolution picks the first accessible resource arbitrarily
+**Found:** review session 2026-06-10  
+**Trigger:** an Atlassian account/app with access to more than one Jira Cloud site — `fetch_cloud_id` (auth.rs) takes `resources.into_iter().next()`.  
+**Current behaviour:** silently picks whichever site the accessible-resources endpoint lists first; no way to target a different site.  
+**Acceptable?** Yes — current setup (and documented setup flow) assumes a single Jira site per app/account.  
+**Future fix:** if multi-site support is ever needed, add a `--site` flag or `JIRA_SITE` config value, and have `fetch_cloud_id` match against it (erroring with the list of available sites if not found/ambiguous).
