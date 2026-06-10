@@ -12,7 +12,8 @@ src/
     doctor.rs     — run_doctor(); also called by init as final verification
     init.rs       — run_init(), write_app_config(); human onboarding flow
     issue.rs      — run(IssueCommand); dispatches all issue subcommands
-  auth.rs         — OAuth infrastructure: OAuthConfig, Credentials, login(), refresh(),
+  auth.rs         — OAuth infrastructure: OAuthConfig, Credentials, login(),
+                    login_client_credentials(), refresh(), renew(),
                     save_credentials(), load_credentials(), path helpers
   client.rs       — JiraClient (blocking reqwest); get_json/post_json helpers;
                     all Jira API methods: get_issue, get_myself, add_comment,
@@ -62,7 +63,7 @@ Two grant types, both using `client_id`/`client_secret` from `app.json`:
 Both grants resolve `cloud_id` via the accessible-resources endpoint after obtaining the access token.
 
 - **Refresh tokens rotate**: Atlassian invalidates the previous refresh token on every use. The new token pair must be written to `credentials.json` immediately after each refresh.
-- **Transparent renewal**: `load_credentials()` checks expiry (with a 60s buffer). If `credentials.refresh_token` is `Some`, calls `refresh()`; if `None` (service account), re-runs `login_client_credentials()`. `refresh()` returns `LoginError::Internal` if called with `refresh_token: None` — this should be unreachable since `load_credentials` guards it.
+- **Transparent renewal**: `renew(config, credentials)` dispatches to `refresh()` (if `refresh_token` is `Some`) or re-runs `login_client_credentials()` (if `None`, service account). `refresh()` itself returns `LoginError::Internal` if called with `refresh_token: None`. Both `load_credentials()` and `doctor`'s `check_credentials` go through `renew()` (with a 60s expiry buffer) — never call `refresh()` directly on possibly-expired credentials.
 - **Scopes**: `read:jira-work read:jira-user write:jira-work offline_access` (requested by the 3LO authorization URL; `client_credentials` inherits whatever scopes were granted to the app during the 3LO consent).
 - The `client_credentials` grant requires the `--user` flow to have been completed at least once for the app to have site access (e.g. via `jira init`).
 

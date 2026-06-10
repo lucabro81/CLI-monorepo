@@ -300,19 +300,29 @@ fn fetch_cloud_id(access_token: &str) -> Result<String, LoginError> {
         .ok_or(LoginError::NoAccessibleResources)
 }
 
-/// Loads credentials from disk, renewing them first if the access token has expired.
+/// Renews credentials whose access token has expired (or is about to).
 /// Credentials with a `refresh_token` (3LO) are renewed via `refresh`; credentials
 /// with none (service accounts) are renewed by re-running `login_client_credentials`.
+///
+/// Every caller that may encounter an expired access token (`load_credentials`,
+/// `doctor`'s credentials check, ...) must go through this function rather than
+/// calling `refresh` directly — `refresh` errors out for service account
+/// credentials, which have no `refresh_token`.
+pub fn renew(config: &OAuthConfig, credentials: &Credentials) -> Result<Credentials, LoginError> {
+    match &credentials.refresh_token {
+        Some(_) => refresh(config, credentials),
+        None => login_client_credentials(config),
+    }
+}
+
+/// Loads credentials from disk, renewing them first if the access token has expired.
 pub fn load_credentials(config: &OAuthConfig, path: &Path) -> Result<Credentials, LoginError> {
     let raw = std::fs::read_to_string(path).map_err(LoginError::Io)?;
     let credentials: Credentials =
         serde_json::from_str(&raw).map_err(|e| LoginError::TokenExchange(e.to_string()))?;
 
     if now_unix() + 60 >= credentials.expires_at {
-        let renewed = match &credentials.refresh_token {
-            Some(_) => refresh(config, &credentials)?,
-            None => login_client_credentials(config)?,
-        };
+        let renewed = renew(config, &credentials)?;
         save_credentials(path, &renewed)?;
         return Ok(renewed);
     }

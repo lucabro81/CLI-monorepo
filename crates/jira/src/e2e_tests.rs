@@ -124,6 +124,32 @@ fn e2e_smoke_whoami() {
     assert!(user["displayName"].is_string(), "response must contain displayName");
 }
 
+#[test]
+#[ignore = "e2e: requires credentials and JIRA_E2E_PROJECT"]
+fn e2e_renew_service_account_credentials() {
+    // Regression: doctor's check_credentials previously called auth::refresh()
+    // directly on an expired token. refresh() requires a refresh_token, which
+    // service account (client_credentials) credentials don't have, so it
+    // returned LoginError::Internal instead of renewing — doctor would report
+    // "token expired and refresh failed: internal error: ..." for a perfectly
+    // healthy service account. auth::renew() must dispatch to
+    // login_client_credentials() for credentials with refresh_token: None.
+    let (_, creds) = setup();
+    let config_dir = context::config_dir().expect("could not resolve config dir");
+    let oauth_config = auth::OAuthConfig::load(&auth::app_config_path(&config_dir))
+        .expect("app.json not found — run `jira init` first");
+
+    let mut expired = creds;
+    expired.expires_at = 0;
+    expired.refresh_token = None;
+
+    let renewed = auth::renew(&oauth_config, &expired)
+        .expect("renew should renew service-account credentials via client_credentials");
+
+    assert!(renewed.expires_at > 0, "renewed credentials must have a future expiry");
+    assert_eq!(renewed.refresh_token, None, "client_credentials renewal yields no refresh_token");
+}
+
 // ── Issue lifecycle ──────────────────────────────────────────────────────────
 
 #[test]

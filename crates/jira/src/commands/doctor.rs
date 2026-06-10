@@ -107,24 +107,24 @@ fn check_credentials(
         .as_secs();
 
     if now >= credentials.expires_at {
-        return match auth::refresh(oauth_config, &credentials) {
-            Ok(refreshed) => {
-                let _ = auth::save_credentials(&path, &refreshed);
+        return match auth::renew(oauth_config, &credentials) {
+            Ok(renewed) => {
+                let _ = auth::save_credentials(&path, &renewed);
                 (
                     json!({
                         "status": "ok",
                         "path": path_str,
-                        "expires_at": refreshed.expires_at,
-                        "note": "token was expired and has been refreshed"
+                        "expires_at": renewed.expires_at,
+                        "note": "token was expired and has been renewed"
                     }),
-                    Some(refreshed),
+                    Some(renewed),
                 )
             }
             Err(e) => (
                 json!({
                     "status": "error",
                     "path": path_str,
-                    "message": format!("token expired and refresh failed: {e}. Run: jira auth login")
+                    "message": format!("token expired and renewal failed: {e}. Run: jira auth login")
                 }),
                 None,
             ),
