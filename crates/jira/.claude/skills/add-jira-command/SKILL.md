@@ -17,7 +17,14 @@ both are short and define conventions this skill assumes.
 ## 1. Scope the command — ask, don't assume
 
 Before writing anything, make sure these are nailed down. Use AskUserQuestion
-for anything ambiguous — guessing wrong here means rework later:
+for anything ambiguous — guessing wrong here means rework later. This initial
+briefing is the most important step: the rest of this skill runs largely
+unsupervised, so anything not pinned down here becomes an assumption baked
+into the implementation.
+
+Also check `BACKLOG.md` (workspace root) for existing entries related to this
+area of the crate (e.g. `FIELDS-*`, `CREATE-*`) — a planned edge case may be
+directly relevant to the command being added.
 
 - **Command shape**: top-level (`Command` enum) or subcommand of an existing
   group (`IssueCommand`, `AuthCommand`, `CommentCommand`)? Exact name —
@@ -58,7 +65,8 @@ Don't guess endpoint paths or payload shapes. For each endpoint involved:
 
 If the endpoint behavior is uncertain (e.g. exact permission key, or whether
 a field is required), it's faster to do a quick manual `curl`/`cargo run`
-probe against the real `KAN` test project than to keep re-reading docs.
+probe against the real test project (`JIRA_E2E_PROJECT`, e.g. `KAN`) than to
+keep re-reading docs.
 
 ## 3. Design — write it down before coding
 
@@ -73,6 +81,12 @@ Sketch (briefly, in your own response, not a separate doc):
   multiple meaningful flag combinations.
 - The `commands/<group>.rs` handler function signature.
 
+Then implement **incrementally, one logical unit at a time** (per root
+CLAUDE.md): e.g. endpoints → client method → error variants → cli parsing →
+handler → dispatch, each as its own edit with a one-line description of what
+it does and why, so the pieces remain individually reviewable even though the
+loop runs end-to-end without pausing for approval between them.
+
 ## 4. TDD — red, then green
 
 Per root CLAUDE.md, tests must exist and fail before implementation:
@@ -84,10 +98,18 @@ Per root CLAUDE.md, tests must exist and fail before implementation:
 2. If the command involves new client-side logic beyond a passthrough HTTP
    call (e.g. new `fields.rs` projection behavior, new ADF construction,
    response reshaping) — write unit tests for that logic first too.
-3. Implement the minimum code to make these pass: `endpoints.rs` →
+3. **Review the tests as a senior engineer would**, before implementing
+   anything (per root CLAUDE.md): are edge cases covered, are assertions
+   meaningful (exact-output where practical, not just "doesn't crash"), do
+   they reflect realistic LLM-agent usage? Revise the tests until satisfied
+   — only then move on.
+4. If a new `<module>_tests.rs` file is created, it needs
+   `#![allow(clippy::unwrap_used, clippy::expect_used)]` at the top (test
+   files are exempt from the workspace-wide deny on those lints).
+5. Implement the minimum code to make these pass: `endpoints.rs` →
    `client.rs` → `error.rs` (if needed) → `cli.rs` → `commands/<group>.rs` →
    `main.rs` dispatch.
-4. `cargo test -p jira` — all green. `cargo clippy -p jira` — zero warnings
+6. `cargo test -p jira` — all green. `cargo clippy -p jira` — zero warnings
    (fix `pedantic` lints too, don't `#[allow]` them away unless there's a
    real reason).
 
@@ -95,7 +117,7 @@ Per root CLAUDE.md, tests must exist and fail before implementation:
 
 ```sh
 cargo run -p jira -- <command> --help          # accurate, complete help text?
-cargo run -p jira -- <command> ...              # against the real KAN project
+cargo run -p jira -- <command> ...              # against the real test project
 ```
 
 Iterate here against the live API until the output looks right — this is
@@ -121,7 +143,7 @@ assertions or adding `--allow` to silence problems):
 ```sh
 cargo test -p jira
 cargo clippy -p jira
-JIRA_E2E_PROJECT=KAN cargo test -p jira -- --ignored --test-threads=1
+JIRA_E2E_PROJECT=<your-test-project> cargo test -p jira -- --ignored --test-threads=1
 ```
 
 `--test-threads=1` for e2e is a hard requirement in this crate (shared site
@@ -145,3 +167,23 @@ it, and re-run the full loop — don't patch around it locally.
   client+endpoints+cli+handler+unit tests, one for e2e test, one for docs —
   or combine if it's genuinely one logical unit). Each commit message ends
   with `Co-Authored-By: Claude Sonnet 4.6`.
+
+## 9. Final report
+
+This skill is meant to run largely unsupervised end-to-end — possibly invoked
+by an agent that is itself a user of this CLI, not a human watching every
+step. Compensate for that with a **detailed final report** to the user,
+covering:
+
+- What was added (command, flags, endpoint(s), files touched, commits made).
+- Every assumption made during step 1 that wasn't explicitly confirmed by the
+  user (there shouldn't be many, but name them if they exist).
+- **Specific points the user should double-check**, called out clearly —
+  e.g. "the Jira permission key X couldn't be verified against a real
+  response because the test account lacks that permission", "the new
+  `--foo` flag's interaction with `--select` wasn't covered by an e2e test",
+  "this endpoint's pagination behavior was inferred from docs, not observed
+  live". Don't bury these in a wall of text — a short bulleted "needs human
+  review" section at the end of the report.
+- Final state of the verification loop (test/clippy/e2e results) and any
+  known-skipped checks with a reason.
