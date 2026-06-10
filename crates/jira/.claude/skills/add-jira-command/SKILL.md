@@ -9,7 +9,7 @@ This skill drives the full lifecycle of adding one command (or subcommand) to
 `crates/jira`. Follow the steps in order. Don't skip the research or the e2e
 loop — "compiles and unit tests pass" is not "done" for this crate.
 
-Read `/Users/lucabrognara/MyProjects/CLIs/CLAUDE.md` (root, monorepo-wide rules:
+Read the workspace root `CLAUDE.md` (monorepo-wide rules:
 TDD, error handling, flag conventions) and `crates/jira/CLAUDE.md` (module map,
 OAuth design, API design notes, implemented commands table) before starting —
 both are short and define conventions this skill assumes.
