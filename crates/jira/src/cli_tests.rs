@@ -22,8 +22,20 @@ fn parses_auth_login() {
 
     match cli.command {
         Command::Auth {
-            command: AuthCommand::Login,
-        } => {}
+            command: AuthCommand::Login { user },
+        } => assert!(!user, "default should be service account (client_credentials)"),
+        other => panic!("unexpected command: {other:?}"),
+    }
+}
+
+#[test]
+fn parses_auth_login_with_user_flag() {
+    let cli = Cli::try_parse_from(["jira", "auth", "login", "--user"]).expect("should parse");
+
+    match cli.command {
+        Command::Auth {
+            command: AuthCommand::Login { user },
+        } => assert!(user, "--user should select the interactive 3LO flow"),
         other => panic!("unexpected command: {other:?}"),
     }
 }

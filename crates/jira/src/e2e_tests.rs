@@ -345,15 +345,25 @@ fn e2e_search_complex() {
 #[test]
 #[ignore = "e2e: requires credentials and JIRA_E2E_PROJECT"]
 fn e2e_search_pagination() {
-    // This test verifies the pagination mechanism (nextPageToken → next page)
-    // without relying on a specific result set. Jira's cursor pagination is
-    // not stable for small `issue in (...)` queries, so we query the whole
-    // project (which always has multiple issues) and verify that two sequential
-    // pages of size 1 return different issues.
-    let (client, _) = setup();
+    // Self-contained: creates two issues of its own and paginates over exactly
+    // those two via `issue in (...)`, so the result set is unaffected by issues
+    // created/deleted by other tests running concurrently.
+    let (client, creds) = setup();
     let project = project_key();
 
-    let jql = format!("project = {project} ORDER BY id ASC");
+    let created1 = client
+        .create_issue(&project, "Task", &e2e_summary("pagination-1"), None, None, None)
+        .expect("create_issue (1) should succeed");
+    let key1 = created1["key"].as_str().expect("key missing").to_string();
+    let _guard1 = IssueGuard::new(&key1, creds.clone());
+
+    let created2 = client
+        .create_issue(&project, "Task", &e2e_summary("pagination-2"), None, None, None)
+        .expect("create_issue (2) should succeed");
+    let key2 = created2["key"].as_str().expect("key missing").to_string();
+    let _guard2 = IssueGuard::new(&key2, creds);
+
+    let jql = format!("issue in ({key1}, {key2}) ORDER BY id ASC");
 
     // Page 1 — must return 1 issue and a nextPageToken
     let page1 = client
@@ -365,10 +375,10 @@ fn e2e_search_pagination() {
 
     let next_token = page1["nextPageToken"]
         .as_str()
-        .expect("nextPageToken must be present — project must have at least 2 issues")
+        .expect("nextPageToken must be present — query must have 2 issues")
         .to_string();
 
-    // Page 2 — must return a different issue
+    // Page 2 — must return the other issue
     let page2 = client
         .search_issues(&jql, 1, Some(&next_token), Some("summary"))
         .expect("page 2 search should succeed");
@@ -379,6 +389,8 @@ fn e2e_search_pagination() {
     let key_p1 = issues_p1[0]["key"].as_str().expect("key missing in p1");
     let key_p2 = issues_p2[0]["key"].as_str().expect("key missing in p2");
     assert_ne!(key_p1, key_p2, "page 2 must return a different issue than page 1");
+    assert_eq!(key_p1, key1, "page 1 should return the first issue (ORDER BY id ASC)");
+    assert_eq!(key_p2, key2, "page 2 should return the second issue (ORDER BY id ASC)");
 }
 
 // ── Cleanup (recovery) ───────────────────────────────────────────────────────

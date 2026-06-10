@@ -4,8 +4,8 @@ use std::path::{Path, PathBuf};
 
 use super::{
     app_config_path, authorization_url, code_challenge, credentials_path, generate_code_verifier,
-    generate_state, parse_callback_request_line, CallbackError, CallbackParams, Credentials,
-    OAuthConfig, OAuthConfigError,
+    generate_state, parse_callback_request_line, refresh, CallbackError, CallbackParams,
+    Credentials, LoginError, OAuthConfig, OAuthConfigError,
 };
 
 #[test]
@@ -106,7 +106,7 @@ fn rejects_malformed_request_line() {
 fn credentials_round_trip_through_json() {
     let creds = Credentials {
         access_token: "access".to_string(),
-        refresh_token: "refresh".to_string(),
+        refresh_token: Some("refresh".to_string()),
         expires_at: 1_700_000_000,
         cloud_id: "cloud-123".to_string(),
     };
@@ -115,6 +115,56 @@ fn credentials_round_trip_through_json() {
     let parsed: Credentials = serde_json::from_str(&json).unwrap();
 
     assert_eq!(parsed, creds);
+}
+
+#[test]
+fn credentials_round_trip_with_no_refresh_token() {
+    // Service account (client_credentials) credentials have no refresh token.
+    let creds = Credentials {
+        access_token: "access".to_string(),
+        refresh_token: None,
+        expires_at: 1_700_000_000,
+        cloud_id: "cloud-123".to_string(),
+    };
+
+    let json = serde_json::to_string(&creds).unwrap();
+    let parsed: Credentials = serde_json::from_str(&json).unwrap();
+
+    assert_eq!(parsed, creds);
+}
+
+#[test]
+fn credentials_without_refresh_token_field_deserializes_to_none() {
+    // Forward/backward compatibility: a credentials.json missing the
+    // refresh_token key entirely (e.g. hand-written for a service account)
+    // must still parse, with refresh_token defaulting to None.
+    let json = r#"{"access_token": "at", "expires_at": 1000, "cloud_id": "cid"}"#;
+
+    let creds: Credentials = serde_json::from_str(json).unwrap();
+
+    assert_eq!(creds.refresh_token, None);
+}
+
+#[test]
+fn refresh_without_refresh_token_returns_internal_error() {
+    // Service account credentials (refresh_token: None) cannot be renewed via
+    // the refresh_token grant — refresh() must reject this before making any
+    // network call, so load_credentials can fall back to login_client_credentials.
+    let config = OAuthConfig {
+        client_id: "id".to_string(),
+        client_secret: "secret".to_string(),
+        redirect_uri: OAuthConfig::REDIRECT_URI.to_string(),
+    };
+    let creds = Credentials {
+        access_token: "access".to_string(),
+        refresh_token: None,
+        expires_at: 0,
+        cloud_id: "cloud-123".to_string(),
+    };
+
+    let result = refresh(&config, &creds);
+
+    assert!(matches!(result, Err(LoginError::Internal(_))));
 }
 
 #[test]
@@ -242,7 +292,7 @@ fn credentials_json_field_names_are_stable() {
     // Regression guard: if serde field names change, existing credentials.json files break.
     let creds = Credentials {
         access_token: "at".to_string(),
-        refresh_token: "rt".to_string(),
+        refresh_token: Some("rt".to_string()),
         expires_at: 1_000,
         cloud_id: "cid".to_string(),
     };

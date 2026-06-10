@@ -50,7 +50,7 @@ fn run() -> Result<(), CliError> {
             }
             Ok(())
         }
-        Command::Auth { command: AuthCommand::Login } => commands::auth::run_login(),
+        Command::Auth { command: AuthCommand::Login { user } } => commands::auth::run_login(user),
         Command::Auth { command: AuthCommand::Whoami } => commands::auth::run_whoami(select),
         Command::Issue { command } => commands::issue::run(command, select),
     }

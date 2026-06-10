@@ -35,8 +35,8 @@ src/
 # Unit tests (no credentials needed)
 cargo test -p jira
 
-# E2e tests (requires login + a writable Jira project)
-JIRA_E2E_PROJECT=KAN cargo test -p jira -- --ignored
+# E2e tests (requires login + a writable Jira project) — sequential, see README
+JIRA_E2E_PROJECT=KAN cargo test -p jira -- --ignored --test-threads=1
 
 # Recovery: delete all [jira-cli-e2e] orphaned issues
 JIRA_E2E_PROJECT=KAN cargo test -p jira e2e_cleanup -- --ignored
@@ -54,10 +54,17 @@ Test files for commands go in `src/commands/` alongside their module. The `#![al
 
 ## OAuth / auth design
 
-- **Flow**: OAuth 2.0 (3LO) + PKCE. `login()` builds the authorization URL, opens the browser, runs a one-shot TCP server on `localhost:8080` for the callback, exchanges the code for tokens, resolves `cloud_id` via the accessible-resources endpoint.
+Two grant types, both using `client_id`/`client_secret` from `app.json`:
+
+- **`client_credentials`** (default, `auth login`) — `login_client_credentials()` POSTs `grant_type=client_credentials` + `audience=api.atlassian.com`, no browser. Returns `Credentials` with `refresh_token: None`. Expected mode for agent-driven usage; resulting account has `accountType: "app"`.
+- **3LO + PKCE** (`auth login --user`, also used by `init`) — `login()` builds the authorization URL, opens the browser, runs a one-shot TCP server on `localhost:8080` for the callback, exchanges the code for tokens, resolves `cloud_id` via the accessible-resources endpoint. Returns `Credentials` with `refresh_token: Some(...)`.
+
+Both grants resolve `cloud_id` via the accessible-resources endpoint after obtaining the access token.
+
 - **Refresh tokens rotate**: Atlassian invalidates the previous refresh token on every use. The new token pair must be written to `credentials.json` immediately after each refresh.
-- **Transparent refresh**: `load_credentials()` checks expiry (with a 60s buffer) and refreshes before returning.
-- **Scopes**: `read:jira-work read:jira-user write:jira-work offline_access`
+- **Transparent renewal**: `load_credentials()` checks expiry (with a 60s buffer). If `credentials.refresh_token` is `Some`, calls `refresh()`; if `None` (service account), re-runs `login_client_credentials()`. `refresh()` returns `LoginError::Internal` if called with `refresh_token: None` — this should be unreachable since `load_credentials` guards it.
+- **Scopes**: `read:jira-work read:jira-user write:jira-work offline_access` (requested by the 3LO authorization URL; `client_credentials` inherits whatever scopes were granted to the app during the 3LO consent).
+- The `client_credentials` grant requires the `--user` flow to have been completed at least once for the app to have site access (e.g. via `jira init`).
 
 ## Config layout (XDG-style)
 
@@ -82,7 +89,7 @@ Kept separate so automatic token writes never clobber the app identity.
 |---------|-------|
 | `init [--client-id --client-secret]` | Human onboarding; only command with narrative output |
 | `doctor` | Cascading JSON health check; exit non-zero on any failure |
-| `auth login` | Interactive OAuth flow |
+| `auth login [--user]` | Default: `client_credentials` (service account, no browser). `--user`: interactive 3LO + PKCE |
 | `auth whoami` | GET /myself |
 | `issue get <KEY>` | Fetch single issue |
 | `issue create` | POST with ADF description/body |

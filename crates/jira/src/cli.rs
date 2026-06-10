@@ -65,11 +65,23 @@ pub enum Command {
 pub enum AuthCommand {
     /// Run the OAuth 2.0 login flow and store credentials locally
     ///
-    /// Opens the browser for Atlassian consent, receives the callback on
-    /// localhost:8080, exchanges the code for tokens, and writes credentials.json.
-    /// Run this once per machine; tokens are refreshed automatically after that.
-    #[command(after_help = "Example: jira auth login\n\nRequires app.json to exist at ~/.config/jira-cli/app.json.\nRun `jira init` first if you have not set up the OAuth app yet.")]
-    Login,
+    /// By default runs the `client_credentials` flow for a service account: no
+    /// browser, no user interaction — the access token is exchanged directly
+    /// from `client_id/client_secret` in app.json. This is the expected mode for
+    /// agent-driven usage.
+    ///
+    /// Pass --user for the interactive OAuth 2.0 (3LO) + PKCE flow for a human
+    /// Atlassian account: opens the browser for consent, receives the callback
+    /// on localhost:8080, exchanges the code for tokens, and stores a
+    /// `refresh_token` for automatic renewal.
+    ///
+    /// Run this once per machine; tokens are renewed automatically after that.
+    #[command(after_help = "Examples:\n  jira auth login              # service account (client_credentials)\n  jira auth login --user       # human account (OAuth 2.0 3LO + PKCE)\n\nRequires app.json to exist at ~/.config/jira-cli/app.json.\nRun `jira init` first if you have not set up the OAuth app yet.")]
+    Login {
+        /// Use the interactive OAuth 2.0 (3LO) + PKCE flow for a human Atlassian account
+        #[arg(long)]
+        user: bool,
+    },
     /// Print the currently authenticated user as JSON
     #[command(after_help = "Examples:\n  jira auth whoami\n  jira auth whoami --select displayName,emailAddress,accountId")]
     Whoami,

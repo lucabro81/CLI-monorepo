@@ -1,20 +1,24 @@
-//! OAuth 2.0 (3LO) + PKCE authentication infrastructure.
+//! OAuth 2.0 authentication infrastructure, supporting two grant types:
 //!
-//! Provides two layers:
+//! - **3LO + PKCE** (`login`) — interactive consent flow for a human Atlassian
+//!   account: PKCE challenge generation, browser launch, one-shot local HTTP
+//!   server for the callback, authorization code exchange, and cloud ID
+//!   resolution via the accessible-resources endpoint. Issues a `refresh_token`.
+//! - **`client_credentials`** (`login_client_credentials`) — non-interactive flow
+//!   for a service account: exchanges `client_id`/`client_secret` directly for
+//!   an access token, no browser involved. Issues no `refresh_token`.
+//!
+//! Other layers:
 //!
 //! - **App identity** (`OAuthConfig`) — the static Atlassian OAuth app credentials
 //!   loaded from `app.json`. Includes helpers for loading and validating the file.
 //! - **Session credentials** (`Credentials`) — the dynamic token set (access token,
-//!   refresh token, expiry, cloud ID) persisted to `credentials.json`.
-//!
-//! The `login` function drives the full interactive consent flow: PKCE challenge
-//! generation, browser launch, one-shot local HTTP server for the callback,
-//! authorization code exchange, and cloud ID resolution via the accessible-resources
-//! endpoint.
+//!   optional refresh token, expiry, cloud ID) persisted to `credentials.json`.
 //!
 //! `refresh` exchanges a refresh token for a new token pair. Atlassian refresh
 //! tokens **rotate on every use** — the new pair must always be persisted immediately
-//! to avoid invalidating the stored token.
+//! to avoid invalidating the stored token. Credentials with no `refresh_token`
+//! (service accounts) are renewed by re-running `login_client_credentials` instead.
 //!
 //! Path helpers (`app_config_path`, `credentials_path`) and persistence helpers
 //! (`save_credentials`, `load_credentials`) are kept here so every caller uses the
@@ -108,7 +112,10 @@ pub enum LoginError {
 #[derive(Debug, Deserialize)]
 struct TokenResponse {
     access_token: String,
-    refresh_token: String,
+    /// Present for the `authorization_code` and `refresh_token` grants; absent
+    /// for `client_credentials` (service accounts get no refresh token).
+    #[serde(default)]
+    refresh_token: Option<String>,
     expires_in: u64,
 }
 
@@ -204,12 +211,24 @@ fn exchange_code_for_token(
 
 /// Exchanges a refresh token for a new access/refresh token pair.
 /// Atlassian refresh tokens rotate on every use — the returned credentials must replace the stored ones.
+///
+/// Requires `credentials.refresh_token` to be `Some`. Callers must check this first
+/// (`load_credentials` does); credentials with no refresh token (service accounts)
+/// must be renewed via `login_client_credentials` instead.
 pub fn refresh(config: &OAuthConfig, credentials: &Credentials) -> Result<Credentials, LoginError> {
+    let refresh_token = credentials.refresh_token.as_ref().ok_or_else(|| {
+        LoginError::Internal(
+            "refresh() called on credentials with no refresh_token (service account \
+             credentials cannot be refreshed this way — re-run `jira auth login`)"
+                .to_string(),
+        )
+    })?;
+
     let body = serde_json::json!({
         "grant_type": "refresh_token",
         "client_id": config.client_id,
         "client_secret": config.client_secret,
-        "refresh_token": credentials.refresh_token,
+        "refresh_token": refresh_token,
     });
 
     let token = request_token(&body)?;
@@ -219,6 +238,30 @@ pub fn refresh(config: &OAuthConfig, credentials: &Credentials) -> Result<Creden
         refresh_token: token.refresh_token,
         expires_at: now_unix() + token.expires_in,
         cloud_id: credentials.cloud_id.clone(),
+    })
+}
+
+/// Runs the OAuth 2.0 `client_credentials` flow for a service account: exchanges
+/// the app's `client_id`/`client_secret` directly for an access token (no browser,
+/// no user interaction), then resolves the Jira cloud id. The returned credentials
+/// have no `refresh_token` — `load_credentials` renews an expired token by
+/// re-running this flow.
+pub fn login_client_credentials(config: &OAuthConfig) -> Result<Credentials, LoginError> {
+    let body = serde_json::json!({
+        "grant_type": "client_credentials",
+        "client_id": config.client_id,
+        "client_secret": config.client_secret,
+        "audience": "api.atlassian.com",
+    });
+
+    let token = request_token(&body)?;
+    let cloud_id = fetch_cloud_id(&token.access_token)?;
+
+    Ok(Credentials {
+        access_token: token.access_token,
+        refresh_token: token.refresh_token,
+        expires_at: now_unix() + token.expires_in,
+        cloud_id,
     })
 }
 
@@ -257,16 +300,21 @@ fn fetch_cloud_id(access_token: &str) -> Result<String, LoginError> {
         .ok_or(LoginError::NoAccessibleResources)
 }
 
-/// Loads credentials from disk, refreshing them first if the access token has expired.
+/// Loads credentials from disk, renewing them first if the access token has expired.
+/// Credentials with a `refresh_token` (3LO) are renewed via `refresh`; credentials
+/// with none (service accounts) are renewed by re-running `login_client_credentials`.
 pub fn load_credentials(config: &OAuthConfig, path: &Path) -> Result<Credentials, LoginError> {
     let raw = std::fs::read_to_string(path).map_err(LoginError::Io)?;
     let credentials: Credentials =
         serde_json::from_str(&raw).map_err(|e| LoginError::TokenExchange(e.to_string()))?;
 
     if now_unix() + 60 >= credentials.expires_at {
-        let refreshed = refresh(config, &credentials)?;
-        save_credentials(path, &refreshed)?;
-        return Ok(refreshed);
+        let renewed = match &credentials.refresh_token {
+            Some(_) => refresh(config, &credentials)?,
+            None => login_client_credentials(config)?,
+        };
+        save_credentials(path, &renewed)?;
+        return Ok(renewed);
     }
 
     Ok(credentials)
@@ -300,7 +348,11 @@ pub enum CallbackError {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Credentials {
     pub access_token: String,
-    pub refresh_token: String,
+    /// `Some` for 3LO (human) logins, which can be renewed via `refresh`.
+    /// `None` for service account (`client_credentials`) logins, which are
+    /// renewed by re-running `login_client_credentials`.
+    #[serde(default)]
+    pub refresh_token: Option<String>,
     /// Unix timestamp (seconds) after which the access token is no longer valid.
     pub expires_at: u64,
     /// Jira Cloud instance ID, resolved once at login via the accessible-resources endpoint.

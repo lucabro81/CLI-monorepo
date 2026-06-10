@@ -32,41 +32,64 @@ This file is static and hand-written — the CLI never modifies it. It's kept se
 
 The OAuth account you log in with must have access to at least one Jira Cloud site (e.g. `your-name.atlassian.net`). If it doesn't, authorization fails with "Access denied — this app requires access to a Jira site...". Create a free site at [atlassian.com/software/jira/free](https://www.atlassian.com/software/jira/free) if needed.
 
-### 4. Log in
+### 4. Grant the app access to your site (one-time, human step)
 
-**Quickest path** — let `jira init` handle steps 2–4 for you:
+The app you registered in step 1 has no access to any Jira site until a human explicitly grants it, by completing the consent screen once:
 
 ```sh
 cargo run -p jira -- init
 ```
 
-It will print the setup instructions, prompt for Client ID and Client Secret, write `app.json`, open the browser for OAuth consent, and finally run `jira doctor` as a confirmation.
+(or `cargo run -p jira -- auth login --user` if `app.json` is already set up)
 
-Or manually:
+This opens the Atlassian **consent screen** in your browser, listing the site(s) the app is requesting access to (`read:jira-work read:jira-user write:jira-work offline_access`). **Approving this is the actual "install"/authorization step** — it's what makes the site show up in `https://api.atlassian.com/oauth/token/accessible-resources`, which both grant types use to resolve `cloud_id`.
+
+`jira init` does this plus steps 2 and writes `app.json` for you: it prints setup instructions, prompts for Client ID and Client Secret, writes `app.json`, runs this consent flow, and finally runs `jira doctor` as a confirmation.
+
+You must do this **at least once per Atlassian site**, signed in as a user who has access to that site. Until then, every login attempt — including the default `client_credentials` one below — fails (no accessible resources).
+
+### 5. Day-to-day login
+
+Once step 4 has been completed, day-to-day login (e.g. for an agent) is non-interactive:
 
 ```sh
 cargo run -p jira -- auth login
 ```
 
-This prints an authorization URL and opens it in your browser. Approve access on the Atlassian consent screen; the CLI runs a one-shot local server on `localhost:8080` to receive the callback, exchanges the authorization code for tokens, and writes `$XDG_CONFIG_HOME/jira-cli/credentials.json`.
-
-You only need to do this once per machine — after that, the CLI refreshes tokens automatically (see below).
+You only need to do this once per machine — after that, the CLI renews tokens automatically (see below).
 
 ## How the OAuth flow works
 
-The CLI uses **OAuth 2.0 (3LO) with PKCE** — the standard flow for apps that can't keep a secret fully safe (a CLI binary on a user's machine), combined with a confidential client (since Atlassian 3LO apps do issue a client secret).
+The CLI supports two OAuth 2.0 grant types, both using the same `client_id`/`client_secret` from `app.json`.
 
-1. **Authorization request** — the CLI generates a PKCE `code_verifier` (random string) and its `code_challenge` (SHA-256 + base64url), plus a random `state` value (CSRF protection). It builds the authorization URL with these, the requested scopes (`read:jira-work read:jira-user offline_access`), and `redirect_uri=http://localhost:8080/callback`, then opens it in the browser.
+### Service account login (default): `client_credentials`
+
+`jira auth login` (no flags) requests an access token directly:
+
+1. **Token request** — the CLI POSTs `grant_type=client_credentials`, `client_id`, `client_secret`, and `audience=api.atlassian.com` to `https://auth.atlassian.com/oauth/token`. No browser, no user interaction. Receives an `access_token` and expiry (no `refresh_token`).
+2. **Cloud ID resolution** — same as below: `https://api.atlassian.com/oauth/token/accessible-resources` with the new access token.
+3. **Persisting credentials** — `access_token`, `expires_at`, and `cloud_id` are written to `credentials.json` (`refresh_token` is omitted/`null`).
+
+This is the expected mode for agent-driven usage: fast, no human interaction, and the resulting account has `accountType: "app"` (visible via `jira auth whoami`).
+
+This requires the OAuth app to already have been granted access to a Jira site — i.e. step 4 above (`jira init` / `jira auth login --user`) must have been completed at least once.
+
+### Human login: OAuth 2.0 (3LO) + PKCE — `jira auth login --user` or `jira init`
+
+The standard flow for apps that can't keep a secret fully safe (a CLI binary on a user's machine), combined with a confidential client (since Atlassian 3LO apps do issue a client secret).
+
+1. **Authorization request** — the CLI generates a PKCE `code_verifier` (random string) and its `code_challenge` (SHA-256 + base64url), plus a random `state` value (CSRF protection). It builds the authorization URL with these, the requested scopes (`read:jira-work read:jira-user write:jira-work offline_access`), and `redirect_uri=http://localhost:8080/callback`, then opens it in the browser.
 2. **Local callback** — the CLI binds a TCP listener on `127.0.0.1:8080` and waits for exactly one request. After you approve access in the browser, Atlassian redirects to `http://localhost:8080/callback?code=...&state=...`. The CLI parses this, checks `state` matches (aborting on mismatch — a sign of a hijacked flow), and replies with a small HTML confirmation page.
 3. **Token exchange** — the CLI POSTs the authorization `code`, the PKCE `code_verifier`, and the app's `client_id`/`client_secret` to `https://auth.atlassian.com/oauth/token`, receiving an `access_token`, `refresh_token`, and expiry.
 4. **Cloud ID resolution** — Jira's OAuth API is accessed through `https://api.atlassian.com/ex/jira/<cloud_id>/...`, not the site's own URL. The CLI calls `https://api.atlassian.com/oauth/token/accessible-resources` with the new access token to discover the `cloud_id` of the authorized site.
 5. **Persisting credentials** — `access_token`, `refresh_token`, `expires_at` (unix timestamp), and `cloud_id` are written to `credentials.json`.
 
-### Automatic refresh
+### Automatic renewal
 
-Before each API call, the CLI checks whether the access token is expired (or about to expire within 60s). If so, it exchanges the `refresh_token` for a new token pair via the `refresh_token` grant and **overwrites** `credentials.json` with the new values.
+Before each API call, the CLI checks whether the access token is expired (or about to expire within 60s). How it renews depends on whether the stored credentials have a `refresh_token`:
 
-This matters because **Atlassian refresh tokens rotate on every use**: each refresh invalidates the previous refresh token and issues a new one. The CLI always persists the freshest pair — if you copy `credentials.json` to another machine and both machines try to refresh independently, one will end up with a stale, invalidated token.
+- **3LO credentials** (`refresh_token` present) — exchanges it for a new token pair via the `refresh_token` grant and **overwrites** `credentials.json` with the new values. **Atlassian refresh tokens rotate on every use**: each refresh invalidates the previous refresh token and issues a new one. The CLI always persists the freshest pair — if you copy `credentials.json` to another machine and both machines try to refresh independently, one will end up with a stale, invalidated token.
+- **Service account credentials** (`refresh_token` absent) — re-runs the `client_credentials` token request to get a fresh access token.
 
 ## Usage
 
@@ -90,7 +113,14 @@ cargo run -p jira -- doctor --select app_config.status,credentials.status,api.st
 
 ### `jira auth login`
 
-Runs the interactive OAuth login described above and stores credentials locally. Run this once per machine, or again if `credentials.json` is lost or revoked.
+Stores credentials locally. By default runs the non-interactive `client_credentials` flow (service account) — no browser, no human interaction. Pass `--user` for the interactive OAuth 2.0 (3LO) + PKCE flow for a human Atlassian account.
+
+```sh
+cargo run -p jira -- auth login              # service account (client_credentials)
+cargo run -p jira -- auth login --user       # human account (OAuth 2.0 3LO + PKCE)
+```
+
+Run this once per machine, or again if `credentials.json` is lost or revoked. The `--user` flow must have been completed at least once (e.g. via `jira init`) before the default flow can succeed.
 
 ### `jira auth whoami`
 
@@ -231,12 +261,14 @@ E2e tests call the real Jira API. They are all marked `#[ignore]` and never run 
 **Running:**
 
 ```sh
-# Run all e2e tests
-JIRA_E2E_PROJECT=KAN cargo test -p jira -- --ignored
+# Run all e2e tests (sequentially — see note below)
+JIRA_E2E_PROJECT=KAN cargo test -p jira -- --ignored --test-threads=1
 
 # Run a single test
 JIRA_E2E_PROJECT=KAN cargo test -p jira e2e_smoke_doctor -- --ignored
 ```
+
+> **Note:** use `--test-threads=1`. The search tests run JQL queries scoped to the whole project (e.g. for pagination); when other tests create/delete issues concurrently, those queries can return inconsistent results.
 
 **Isolation:** every issue created by the tests has the `[jira-cli-e2e]` prefix in its summary. An `IssueGuard` (RAII) deletes each issue on drop, so cleanup happens even when a test panics. If a test is interrupted before the guard is set up, run the recovery command:
 
