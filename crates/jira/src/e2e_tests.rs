@@ -112,6 +112,11 @@ fn e2e_smoke_doctor() {
     assert_eq!(report["app_config"]["status"], "ok");
     assert_eq!(report["credentials"]["status"], "ok");
     assert_eq!(report["api"]["status"], "ok");
+    assert_eq!(report["permissions"]["status"], "ok");
+    assert!(
+        report["permissions"]["permissions"]["BROWSE_PROJECTS"].as_bool().unwrap_or(false),
+        "service account must have BROWSE_PROJECTS for e2e tests to work"
+    );
 }
 
 #[test]

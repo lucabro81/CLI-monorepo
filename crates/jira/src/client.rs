@@ -74,6 +74,15 @@ impl JiraClient {
         self.get_json("/rest/api/3/myself")
     }
 
+    /// Returns the global permissions granted to the current user/token, restricted
+    /// to `permission_keys` (e.g. `["CREATE_ISSUES", "BROWSE_PROJECTS"]`). The result
+    /// is the raw Jira response: `{"permissions": {"<KEY>": {"havePermission": bool, ...}}}`.
+    pub fn get_my_permissions(&self, permission_keys: &[&str]) -> Result<serde_json::Value, ClientError> {
+        let query = serde_urlencoded::to_string([("permissions", permission_keys.join(","))])
+            .map_err(|e| ClientError::Request(format!("failed to encode query params: {e}")))?;
+        self.get_json(&format!("/rest/api/3/mypermissions?{query}"))
+    }
+
     /// Adds a plain-text comment to an issue and returns the created comment as JSON.
     /// The text is wrapped in Jira's Atlassian Document Format (ADF) automatically.
     pub fn add_comment(&self, key: &str, text: &str) -> Result<serde_json::Value, ClientError> {

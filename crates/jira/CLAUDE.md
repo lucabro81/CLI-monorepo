@@ -16,8 +16,8 @@ src/
                     login_client_credentials(), refresh(), renew(),
                     save_credentials(), load_credentials(), path helpers
   client.rs       — JiraClient (blocking reqwest); get_json/post_json helpers;
-                    all Jira API methods: get_issue, get_myself, add_comment,
-                    delete_comment, get_transitions, list_transitions_json,
+                    all Jira API methods: get_issue, get_myself, get_my_permissions,
+                    add_comment, delete_comment, get_transitions, list_transitions_json,
                     apply_transition, create_issue, delete_issue, search_issues
   cli.rs          — clap structs: Cli (--select global), Command, AuthCommand,
                     IssueCommand, CommentCommand. No logic.
@@ -89,7 +89,7 @@ Kept separate so automatic token writes never clobber the app identity.
 | Command | Notes |
 |---------|-------|
 | `init [--client-id --client-secret]` | Human onboarding; only command with narrative output |
-| `doctor` | Cascading JSON health check; exit non-zero on any failure |
+| `doctor` | Cascading JSON health check (app_config, credentials, api, permissions); exit non-zero on any failure |
 | `auth login [--user]` | Default: `client_credentials` (service account, no browser). `--user`: interactive 3LO + PKCE |
 | `auth whoami` | GET /myself |
 | `issue get <KEY>` | Fetch single issue |

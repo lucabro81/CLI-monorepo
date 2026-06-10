@@ -1,18 +1,21 @@
 //! Handler for the `doctor` command.
 //!
-//! Runs three sequential checks and returns a structured JSON report:
+//! Runs four sequential checks and returns a structured JSON report:
 //!
 //! 1. `app_config` — verifies that `app.json` exists at the expected path and
 //!    contains valid OAuth credentials.
 //! 2. `credentials` — verifies that `credentials.json` exists and holds a
-//!    non-expired token. If the token is expired, a refresh is attempted and
+//!    non-expired token. If the token is expired, a renewal is attempted and
 //!    the result (success or failure) is reported transparently.
 //! 3. `api` — makes a live call to `/rest/api/3/myself` to confirm the Jira
 //!    API is reachable with the current token.
+//! 4. `permissions` — calls `/rest/api/3/mypermissions` to report which Jira
+//!    permissions (as opposed to OAuth scopes) are actually granted.
 //!
 //! Checks cascade: if `app_config` fails, the remaining checks are marked
-//! `skipped` (no credentials to load). If `credentials` fails, `api` is
-//! skipped (no token to use).
+//! `skipped` (no credentials to load). If `credentials` fails, `api` and
+//! `permissions` are skipped (no token to use). `permissions` does not
+//! depend on `api` and runs whenever `credentials` succeeds.
 //!
 //! The function never returns `Err` for check failures — all outcomes are
 //! captured in the JSON report. The caller decides whether to exit non-zero
@@ -48,16 +51,34 @@ pub fn run_doctor() -> Result<(Value, bool), CliError> {
     };
     let jira_passed = jira_check["status"] == "ok";
 
-    let all_ok = app_passed && creds_passed && jira_passed;
+    let permissions_check = match credentials {
+        Some(ref creds) if creds_passed => check_permissions(creds),
+        _ => skipped("credentials check failed"),
+    };
+    let permissions_passed = permissions_check["status"] == "ok";
+
+    let all_ok = app_passed && creds_passed && jira_passed && permissions_passed;
 
     let report = json!({
         "app_config": app_check,
         "credentials": creds_check,
         "api": jira_check,
+        "permissions": permissions_check,
     });
 
     Ok((report, all_ok))
 }
+
+/// Jira permission keys checked by the `permissions` doctor check. These are
+/// the project-level permissions the CLI's `issue` commands rely on.
+const PERMISSION_KEYS: &[&str] = &[
+    "BROWSE_PROJECTS",
+    "CREATE_ISSUES",
+    "EDIT_ISSUES",
+    "DELETE_ISSUES",
+    "ADD_COMMENTS",
+    "TRANSITION_ISSUES",
+];
 
 fn check_app_config(config_dir: &std::path::Path) -> (Value, Option<OAuthConfig>) {
     let path = auth::app_config_path(config_dir);
@@ -144,6 +165,36 @@ fn check_api(credentials: &auth::Credentials) -> Value {
             let account = user["displayName"].as_str().unwrap_or("unknown").to_string();
             let email = user["emailAddress"].as_str().unwrap_or("unknown").to_string();
             json!({"status": "ok", "account": account, "email": email})
+        }
+        Err(e) => json!({"status": "error", "message": e.to_string()}),
+    }
+}
+
+/// Reports which Jira permissions (distinct from OAuth scopes) are actually
+/// granted to the authenticated account, via `/rest/api/3/mypermissions`.
+///
+/// `status` is `"ok"` only if `BROWSE_PROJECTS` is granted — without it, no
+/// `issue` command can do anything useful. The other permission keys are
+/// reported informationally regardless of their value, so an LLM can see
+/// exactly which `issue` subcommands are available.
+fn check_permissions(credentials: &auth::Credentials) -> Value {
+    let client = JiraClient::new(credentials);
+    match client.get_my_permissions(PERMISSION_KEYS) {
+        Ok(response) => {
+            let permissions = PERMISSION_KEYS
+                .iter()
+                .map(|key| {
+                    let granted = response["permissions"][key]["havePermission"]
+                        .as_bool()
+                        .unwrap_or(false);
+                    ((*key).to_string(), Value::Bool(granted))
+                })
+                .collect::<serde_json::Map<_, _>>();
+
+            let browse_projects = permissions["BROWSE_PROJECTS"].as_bool().unwrap_or(false);
+            let status = if browse_projects { "ok" } else { "error" };
+
+            json!({"status": status, "permissions": permissions})
         }
         Err(e) => json!({"status": "error", "message": e.to_string()}),
     }

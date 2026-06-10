@@ -104,12 +104,14 @@ cargo run -p jira -- init --client-id <ID> --client-secret <SECRET>
 
 ### `jira doctor`
 
-Runs three checks and prints a structured JSON report: `app_config` (app.json exists and is valid), `credentials` (tokens exist and are not expired), `api` (live call to Jira succeeds). Exits non-zero if any check fails.
+Runs four checks and prints a structured JSON report: `app_config` (app.json exists and is valid), `credentials` (tokens exist and are not expired), `api` (live call to Jira succeeds), `permissions` (actual Jira permissions granted to the account, via `/rest/api/3/mypermissions`). Exits non-zero if any check fails.
 
 ```sh
 cargo run -p jira -- doctor
-cargo run -p jira -- doctor --select app_config.status,credentials.status,api.status
+cargo run -p jira -- doctor --select app_config.status,credentials.status,api.status,permissions
 ```
+
+The `permissions` check reports `BROWSE_PROJECTS`, `CREATE_ISSUES`, `EDIT_ISSUES`, `DELETE_ISSUES`, `ADD_COMMENTS`, and `TRANSITION_ISSUES`. `status` is `"ok"` only if `BROWSE_PROJECTS` is granted (without it no `issue` command works); the others are reported informationally. Note: these are **global** permission checks (no project context), so a permission can show `false` here while still being usable on specific projects you have access to — if an `issue` command unexpectedly fails with a permission error, check this project's permissions directly in Jira.
 
 ### `jira auth login`
 
