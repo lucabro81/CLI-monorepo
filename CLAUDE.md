@@ -18,6 +18,7 @@ Monorepo: single Cargo workspace holding many CLI tools, one per external servic
 - Build CLIs incrementally: start with the smallest useful command set, add new commands only when a concrete need arises. Don't pre-build a full surface area for a service.
 - Each CLI lives as its own crate/binary in the workspace, named after the service it wraps, under `crates/<service>/`.
 - Update this CLAUDE.md, the crate's own CLAUDE.md, and project memory after every significant addition or change — keep them in sync with codebase state.
+- When adding a new crate, add a row for it to the table in the root [README.md](README.md).
 
 ## Structure convention for each crate
 
