@@ -104,3 +104,42 @@ fn parses_repo_list_with_page() {
         other => panic!("expected Repo List, got {other:?}"),
     }
 }
+
+#[test]
+fn parses_repo_create_with_no_optional_flags() {
+    let cli = Cli::try_parse_from(["bitbucket", "repo", "create", "lucabrognaracode/my-repo"]).expect("should parse");
+
+    match cli.command {
+        Command::Repo {
+            command: RepoCommand::Create { repository, description, private, project },
+        } => {
+            assert_eq!(repository, "lucabrognaracode/my-repo");
+            assert_eq!(description, None);
+            assert!(!private);
+            assert_eq!(project, None);
+        }
+        other => panic!("expected Repo Create, got {other:?}"),
+    }
+}
+
+#[test]
+fn parses_repo_create_with_all_flags() {
+    let cli = Cli::try_parse_from([
+        "bitbucket", "repo", "create", "lucabrognaracode/my-repo",
+        "--description", "my repo",
+        "--private",
+        "--project", "PROJ",
+    ]).expect("should parse");
+
+    match cli.command {
+        Command::Repo {
+            command: RepoCommand::Create { repository, description, private, project },
+        } => {
+            assert_eq!(repository, "lucabrognaracode/my-repo");
+            assert_eq!(description, Some("my repo".to_string()));
+            assert!(private);
+            assert_eq!(project, Some("PROJ".to_string()));
+        }
+        other => panic!("expected Repo Create, got {other:?}"),
+    }
+}

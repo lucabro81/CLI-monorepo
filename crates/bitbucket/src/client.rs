@@ -64,6 +64,17 @@ impl BitbucketClient {
         self.get_json(&endpoints::path_repositories(workspace, page))
     }
 
+    /// Creates a repository at `workspace`/`repo_slug` with the given JSON body.
+    /// Returns the created repository, as raw JSON.
+    pub fn create_repository(
+        &self,
+        workspace: &str,
+        repo_slug: &str,
+        body: &serde_json::Value,
+    ) -> Result<serde_json::Value, ClientError> {
+        self.post_json(&endpoints::path_repository(workspace, repo_slug), body)
+    }
+
     fn get_json(&self, path: &str) -> Result<serde_json::Value, ClientError> {
         let url = format!("{}{path}", self.base_url);
 
@@ -72,6 +83,32 @@ impl BitbucketClient {
             .get(&url)
             .bearer_auth(&self.access_token)
             .header("Accept", "application/json")
+            .send()
+            .map_err(|e| ClientError::Request(e.to_string()))?;
+
+        let status = response.status();
+        if !status.is_success() {
+            let body = response.text().unwrap_or_default();
+            return Err(ClientError::Status {
+                status: status.as_u16(),
+                body,
+            });
+        }
+
+        response
+            .json()
+            .map_err(|e| ClientError::Request(e.to_string()))
+    }
+
+    fn post_json(&self, path: &str, body: &serde_json::Value) -> Result<serde_json::Value, ClientError> {
+        let url = format!("{}{path}", self.base_url);
+
+        let response = self
+            .http
+            .post(&url)
+            .bearer_auth(&self.access_token)
+            .header("Accept", "application/json")
+            .json(body)
             .send()
             .map_err(|e| ClientError::Request(e.to_string()))?;
 

@@ -172,3 +172,10 @@ the current behaviour, why it was deferred, and what a future fix would look lik
 **Priority:** medium — not urgent, but don't let a third crate get built with a third copy-paste before this is addressed.
 
 ---
+
+### REPO-1 (bitbucket) — `repo update`/`repo edit` command, raw JSON body vs flags
+**Found:** 2026-06-11, design discussion for `repo create`  
+**Context:** `repo create` was implemented with typed flags (`--description`, `--private`, `--project`), matching jira's `issue create` convention — only ~9 settable fields on `POST /2.0/repositories/{workspace}/{repo_slug}`, most rarely used. A future `repo update` (`PUT` on the same endpoint, supports a larger/overlapping set of fields plus things like `fork_policy`, `language`, `has_issues`, `has_wiki`, `mainbranch`) might instead take a single `--body <JSON>` (or stdin) parameter passed through as-is, since enumerating a flag per field gets unwieldy for an edit command that may touch any subset of fields.  
+**Add when:** `repo update`/`repo edit` is actually implemented — decide then whether typed flags (consistent but verbose) or a raw JSON body (flexible, less discoverable via `--help`) fits better; could also revisit `repo create` for consistency at that point.
+
+---

@@ -7,7 +7,7 @@ A Cargo workspace of CLI tools, one per external service, designed to be driven 
 | Crate | Service | Status |
 |-------|---------|--------|
 | [jira](crates/jira/README.md) | Jira Cloud (issues, comments, transitions, search) | Implemented — see crate README for setup and commands |
-| [bitbucket](crates/bitbucket/README.md) | Bitbucket Cloud (PRs, repos) | init/doctor/auth/repo get/repo list implemented — see crate CLAUDE.md for planned commands |
+| [bitbucket](crates/bitbucket/README.md) | Bitbucket Cloud (PRs, repos) | init/doctor/auth/repo get/list/create implemented — see crate CLAUDE.md for planned commands |
 
 ## Development
 

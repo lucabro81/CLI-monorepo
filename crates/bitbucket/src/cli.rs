@@ -80,6 +80,21 @@ pub enum RepoCommand {
         #[arg(long)]
         page: Option<u32>,
     },
+    /// Create a new repository, as JSON
+    #[command(after_help = "Examples:\n  bitbucket repo create lucabrognaracode/my-new-repo\n  bitbucket repo create lucabrognaracode/my-new-repo --description \"My new repo\" --private\n  bitbucket repo create lucabrognaracode/my-new-repo --project PROJ")]
+    Create {
+        /// Full repository identifier in the form `workspace/repo_slug`
+        repository: String,
+        /// Optional repository description
+        #[arg(long)]
+        description: Option<String>,
+        /// Create as a private repository (default: workspace default)
+        #[arg(long)]
+        private: bool,
+        /// Project key to assign the repository to, e.g. PROJ
+        #[arg(long)]
+        project: Option<String>,
+    },
 }
 
 #[cfg(test)]

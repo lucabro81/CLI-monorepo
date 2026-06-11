@@ -4,7 +4,7 @@ Architecture and design notes for the `bitbucket` crate. Global rules (TDD, erro
 
 ## Status
 
-`init`, `doctor`, `auth login`, `auth whoami`, `repo get`, `repo list` implemented. Other commands not started yet.
+`init`, `doctor`, `auth login`, `auth whoami`, `repo get`, `repo list`, `repo create` implemented. Other commands not started yet.
 
 ## Module map (mirrors crates/jira)
 
@@ -15,13 +15,13 @@ src/
     auth.rs       — run_login(), run_whoami()      [implemented]
     doctor.rs     — run_doctor(); also called by init as final verification [implemented]
     init.rs       — run_init(), write_app_config(); human onboarding flow [implemented]
-    repo.rs       — run(RepoCommand); dispatches all repo subcommands   [get, list implemented]
+    repo.rs       — run(RepoCommand); dispatches all repo subcommands   [get, list, create implemented]
     pr.rs         — run(PrCommand); dispatches all pr subcommands       [planned]
   auth.rs         — OAuthConfig, Credentials, login_client_credentials(),
                     load_credentials()/save_credentials() [implemented]
-  client.rs       — BitbucketClient (blocking reqwest); get_json helper;
+  client.rs       — BitbucketClient (blocking reqwest); get_json/post_json helpers;
                     Bitbucket REST API v2.0 methods [get_current_user, get_repository,
-                    list_repositories implemented]
+                    list_repositories, create_repository implemented]
   cli.rs          — clap structs: Cli (--select global), Command, AuthCommand, RepoCommand.
                     PrCommand to be added later. No logic.
   context.rs      — config_dir(), authenticated_client(), print_json(value, select).
@@ -72,6 +72,7 @@ Config layout, mirroring jira (`$XDG_CONFIG_HOME/bitbucket-cli/`, falling back t
 | `auth whoami` | `GET /2.0/user`, supports `--select` |
 | `repo get <workspace>/<repo_slug>` | `GET /2.0/repositories/{workspace}/{repo_slug}`, supports `--select` |
 | `repo list <workspace> [--page]` | `GET /2.0/repositories/{workspace}`, paginated (`--page`), supports `--select` |
+| `repo create <workspace>/<repo_slug> [--description --private --project]` | `POST /2.0/repositories/{workspace}/{repo_slug}`, `scm` always `git`, supports `--select` |
 
 `doctor`/`init` are duplicated from jira's pattern (see "Future: shared Atlassian
 library" below). Unlike jira (which calls `/rest/api/3/mypermissions` and reports a
@@ -86,7 +87,6 @@ scopes a command needs is documented per-command, not enforced by `doctor`.
 
 | Command | Notes |
 |---------|-------|
-| `repo create` | `POST /2.0/repositories/{workspace}/{repo_slug}` — write command, not destructive but should log clearly |
 | `pr list` | filter by repo, state, author |
 | `pr get <id>` | details + diffstat |
 | `pr create` | source/dest branch, title, description, reviewers |
