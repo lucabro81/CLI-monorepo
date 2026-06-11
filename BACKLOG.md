@@ -92,6 +92,14 @@ the current behaviour, why it was deferred, and what a future fix would look lik
 **Acceptable?** Marginal. Early validation would give a clearer error.  
 **Future fix:** add validation in `OAuthConfig::from_json` — return `InvalidJson` (or a new `EmptyCredential` variant) if either field is blank.
 
+---
+
+### DOCTOR-1 — `permissions` check's fixed boolean map is arbitrary; consider reporting raw permissions instead
+**Found:** 2026-06-11, while building bitbucket's `doctor` permissions check  
+**Context:** jira's `doctor` `permissions` check (`PERMISSION_KEYS` + `mypermissions`) reports a fixed map of booleans for permissions the CLI happens to rely on today, with `status: ok` gated arbitrarily on `BROWSE_PROJECTS`. When designing the bitbucket equivalent, we initially copied this pattern (fixed scope list + booleans) but decided it added little value: the "required" list is arbitrary, drifts from reality as commands are added, and hides the actual granted permissions. bitbucket's `permissions` check now just reports `granted_scopes` as-is (`status: error` only if empty).  
+**Possible direction:** simplify jira's `permissions` check the same way — report the raw `mypermissions` response (or the granted permission keys) instead of a fixed boolean map, with `status: error` only if essentially nothing is granted (e.g. `BROWSE_PROJECTS` false, the one permission that gates everything else).  
+**Add when:** next time `crates/jira/src/commands/doctor.rs` is touched — not worth a standalone change right now.
+
 
 
 
@@ -143,3 +151,24 @@ the current behaviour, why it was deferred, and what a future fix would look lik
 **Current behaviour:** silently picks whichever site the accessible-resources endpoint lists first; no way to target a different site.  
 **Acceptable?** Yes — current setup (and documented setup flow) assumes a single Jira site per app/account.  
 **Future fix:** if multi-site support is ever needed, add a `--site` flag or `JIRA_SITE` config value, and have `fetch_cloud_id` match against it (erroring with the list of available sites if not found/ambiguous).
+
+---
+
+## Cross-crate
+
+### AUTH-3 (bitbucket) — 3LO/PKCE "human" auth flow not needed, deferred
+**Found:** 2026-06-11, design discussion  
+**Context:** considered mirroring jira's `auth login --user` (3LO + PKCE) for bitbucket.  
+**Why deferred:** in jira, `--user` exists mainly as a one-time bootstrap — a human must grant the OAuth app consent/installation on the site before `client_credentials` has any scope (see `jira init`). Bitbucket's workspace-level OAuth consumer is granted permissions directly at creation time; `client_credentials` works standalone with no bootstrap step. So bitbucket has less need for 3LO than jira does, not more.  
+**Add when:** a concrete use case appears that `client_credentials`/workspace identity can't satisfy (e.g. accessing personal repos outside the workspace, or an action Bitbucket restricts to user identities).
+
+---
+
+### LIB-1 — Shared library for Atlassian-product OAuth/config code
+**Found:** 2026-06-11, after implementing `crates/bitbucket/src/auth.rs`  
+**Context:** `crates/bitbucket/src/auth.rs` duplicates patterns from `crates/jira/src/auth.rs` — config dir resolution (`$XDG_CONFIG_HOME/<cli>-cli/`), `app.json`/`credentials.json` layout, `OAuthConfig`/`Credentials`/`LoginError`/`now_unix()` naming and structure — simplified for `client_credentials` (no PKCE/refresh_token/cloud_id). Deliberately duplicated for now ("duplica codice per ora, quando è fatta vediamo se riusciamo ad astrarre").  
+**Risk if deferred too long:** a third Atlassian (or similar OAuth-shaped) CLI would triple the duplication and make fixing a bug (e.g. token-expiry leeway, config-path bug) require touching N crates.  
+**Possible direction:** extract a small workspace-local crate (e.g. `crates/atlassian-auth` or more general `crates/oauth-cli-support`) covering: config dir resolution, `app.json`/`credentials.json` read/write, `now_unix()`, and a couple of grant-flow helpers (client_credentials now, 3LO+PKCE for jira). Keep it generic enough that a non-Atlassian product (e.g. a future GitHub/GitLab CLI) could reuse the config-path + credentials-file parts even if the OAuth specifics differ.  
+**Priority:** medium — not urgent, but don't let a third crate get built with a third copy-paste before this is addressed.
+
+---
