@@ -126,8 +126,8 @@ the current behaviour, why it was deferred, and what a future fix would look lik
 
 ---
 
-### SKILL-1 — Generalize/restrict `add-jira-command` skill for non-Claude-Code agents
-**Context:** `crates/jira/.claude/skills/add-jira-command/SKILL.md` (added 2026-06-10) references Claude-Code-specific tools (`AskUserQuestion`, `WebFetch`/`WebSearch`) and assumes the executing agent can read arbitrary repo files (`CLAUDE.md`, `BACKLOG.md`) and run a multi-step unsupervised loop reliably.  
+### SKILL-1 — Generalize/restrict `add-cli-command` skill for non-Claude-Code agents
+**Context:** `.claude/skills/add-cli-command/SKILL.md` (workspace root, originally added as `crates/jira/.claude/skills/add-jira-command/SKILL.md` on 2026-06-10, generalized to a shared root skill with per-crate `ADDENDUM.md` files on 2026-06-11) references Claude-Code-specific tools (`AskUserQuestion`, `WebFetch`/`WebSearch`) and assumes the executing agent can read arbitrary repo files (`CLAUDE.md`, `BACKLOG.md`, `ADDENDUM.md`) and run a multi-step unsupervised loop reliably.  
 **Risk:** a mid-size local model (30-70B) via Ollama or another provider may not recognize these tools/files at all, silently skip steps that depend on them (e.g. the initial scoping questions), or fail to sustain the long verification loop.  
 **Possible directions:** (a) generalize tool references to "ask the user, using whatever clarification mechanism is available" / "use available web research tools"; (b) add a leaner variant of the skill scoped to what a 30-70B model can reliably execute (fewer steps, more explicit checkpoints, less reliance on long unsupervised loops).  
 **Add when:** there's an actual attempt to run this skill with a non-Claude-Code agent or a smaller model — don't generalize speculatively before that.
