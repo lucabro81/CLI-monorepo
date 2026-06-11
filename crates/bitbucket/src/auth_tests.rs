@@ -50,6 +50,7 @@ fn credentials_round_trip_through_json() {
     let creds = Credentials {
         access_token: "token123".to_string(),
         expires_at: 1_700_000_000,
+        scopes: vec!["repository:read".to_string(), "pullrequest:write".to_string()],
     };
 
     let json = serde_json::to_string(&creds).expect("should serialize");
@@ -67,6 +68,7 @@ fn save_and_load_credentials_roundtrip_without_expiry() {
         access_token: "token123".to_string(),
         // Far in the future, so load_credentials doesn't try to renew over the network.
         expires_at: u64::MAX,
+        scopes: vec!["repository:read".to_string()],
     };
     save_credentials(&path, &creds).expect("should save");
 

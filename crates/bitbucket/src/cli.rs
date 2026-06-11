@@ -21,6 +21,19 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
+    /// Guided onboarding: create app.json and run the first login
+    #[command(after_help = "Example:\n  bitbucket init\n  bitbucket init --client-id ABC123 --client-secret xyz")]
+    Init {
+        /// Bitbucket OAuth consumer Key (skips interactive prompt if provided)
+        #[arg(long)]
+        client_id: Option<String>,
+        /// Bitbucket OAuth consumer Secret (skips interactive prompt if provided)
+        #[arg(long)]
+        client_secret: Option<String>,
+    },
+    /// Check that the CLI is correctly configured and can reach the Bitbucket API
+    #[command(after_help = "Example:\n  bitbucket doctor")]
+    Doctor,
     /// Manage authentication with Bitbucket
     Auth {
         #[command(subcommand)]

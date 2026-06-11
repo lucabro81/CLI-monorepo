@@ -21,6 +21,7 @@ use std::process::ExitCode;
 
 use clap::Parser;
 use cli::{AuthCommand, Cli, Command};
+use context::print_json;
 use error::CliError;
 
 fn run() -> Result<(), CliError> {
@@ -36,6 +37,15 @@ fn run() -> Result<(), CliError> {
     let select = select.as_slice();
 
     match cli.command {
+        Command::Init { client_id, client_secret } => commands::init::run_init(client_id, client_secret),
+        Command::Doctor => {
+            let (report, all_ok) = commands::doctor::run_doctor()?;
+            print_json(&report, select)?;
+            if !all_ok {
+                return Err(CliError::DoctorCheckFailed);
+            }
+            Ok(())
+        }
         Command::Auth { command: AuthCommand::Login } => commands::auth::run_login(),
         Command::Auth { command: AuthCommand::Whoami } => commands::auth::run_whoami(select),
         Command::Repo { command } => commands::repo::run(command, select),

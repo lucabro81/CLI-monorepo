@@ -96,6 +96,9 @@ pub enum LoginError {
 struct TokenResponse {
     access_token: String,
     expires_in: u64,
+    /// Space-separated list of OAuth scopes granted to the consumer, e.g.
+    /// "repository:read pullrequest:write account:read".
+    scopes: String,
 }
 
 /// Dynamic session credentials persisted to `credentials.json`.
@@ -105,6 +108,10 @@ pub struct Credentials {
     pub access_token: String,
     /// Unix timestamp (seconds) after which the access token is no longer valid.
     pub expires_at: u64,
+    /// OAuth scopes granted to the consumer, as returned by the token endpoint.
+    /// Used by `doctor` to report which commands are likely to work without
+    /// an extra API call.
+    pub scopes: Vec<String>,
 }
 
 fn now_unix() -> u64 {
@@ -141,6 +148,7 @@ pub fn login_client_credentials(config: &OAuthConfig) -> Result<Credentials, Log
     Ok(Credentials {
         access_token: token.access_token,
         expires_at: now_unix() + token.expires_in,
+        scopes: token.scopes.split_whitespace().map(str::to_string).collect(),
     })
 }
 

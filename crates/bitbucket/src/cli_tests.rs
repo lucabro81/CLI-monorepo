@@ -30,6 +30,40 @@ fn parses_auth_whoami_with_select() {
 }
 
 #[test]
+fn parses_init_with_flags() {
+    let cli = Cli::try_parse_from(["bitbucket", "init", "--client-id", "abc", "--client-secret", "xyz"])
+        .expect("should parse");
+
+    match cli.command {
+        Command::Init { client_id, client_secret } => {
+            assert_eq!(client_id.as_deref(), Some("abc"));
+            assert_eq!(client_secret.as_deref(), Some("xyz"));
+        }
+        other => panic!("expected Init, got {other:?}"),
+    }
+}
+
+#[test]
+fn parses_init_without_flags() {
+    let cli = Cli::try_parse_from(["bitbucket", "init"]).expect("should parse");
+
+    match cli.command {
+        Command::Init { client_id, client_secret } => {
+            assert_eq!(client_id, None);
+            assert_eq!(client_secret, None);
+        }
+        other => panic!("expected Init, got {other:?}"),
+    }
+}
+
+#[test]
+fn parses_doctor() {
+    let cli = Cli::try_parse_from(["bitbucket", "doctor"]).expect("should parse");
+
+    assert!(matches!(cli.command, Command::Doctor));
+}
+
+#[test]
 fn parses_repo_get() {
     let cli = Cli::try_parse_from(["bitbucket", "repo", "get", "lucabrognaracode/my-repo"]).expect("should parse");
 

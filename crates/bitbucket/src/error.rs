@@ -62,4 +62,10 @@ pub enum CliError {
 
     #[error("failed to serialize response to JSON: {reason}")]
     JsonSerialize { reason: String },
+
+    #[error("doctor check failed. See the report above for details.")]
+    DoctorCheckFailed,
+
+    #[error("I/O error: {reason}")]
+    IoError { reason: String },
 }

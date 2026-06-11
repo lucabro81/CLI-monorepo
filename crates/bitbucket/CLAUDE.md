@@ -4,7 +4,7 @@ Architecture and design notes for the `bitbucket` crate. Global rules (TDD, erro
 
 ## Status
 
-`auth login` and `auth whoami` implemented. Other commands not started yet.
+`init`, `doctor`, `auth login`, `auth whoami`, `repo get` implemented. Other commands not started yet.
 
 ## Module map (mirrors crates/jira)
 
@@ -13,14 +13,16 @@ src/
   commands/
     mod.rs        — pub mod declarations for all command handlers
     auth.rs       — run_login(), run_whoami()      [implemented]
+    doctor.rs     — run_doctor(); also called by init as final verification [implemented]
+    init.rs       — run_init(), write_app_config(); human onboarding flow [implemented]
+    repo.rs       — run(RepoCommand); dispatches all repo subcommands   [get implemented]
     pr.rs         — run(PrCommand); dispatches all pr subcommands       [planned]
-    repo.rs       — run(RepoCommand); dispatches all repo subcommands   [planned]
   auth.rs         — OAuthConfig, Credentials, login_client_credentials(),
                     load_credentials()/save_credentials() [implemented]
   client.rs       — BitbucketClient (blocking reqwest); get_json helper;
-                    Bitbucket REST API v2.0 methods [get_current_user implemented]
-  cli.rs          — clap structs: Cli (--select global), Command, AuthCommand.
-                    PrCommand, RepoCommand to be added later. No logic.
+                    Bitbucket REST API v2.0 methods [get_current_user, get_repository implemented]
+  cli.rs          — clap structs: Cli (--select global), Command, AuthCommand, RepoCommand.
+                    PrCommand to be added later. No logic.
   context.rs      — config_dir(), authenticated_client(), print_json(value, select).
   endpoints.rs    — URL/path constants for OAuth and REST API v2.0.
   error.rs        — CliError (top-level, thiserror-derived).
@@ -63,9 +65,20 @@ Config layout, mirroring jira (`$XDG_CONFIG_HOME/bitbucket-cli/`, falling back t
 
 | Command | Notes |
 |---------|-------|
+| `init [--client-id --client-secret]` | Human onboarding; only command with narrative output |
+| `doctor` | Cascading JSON health check (app_config, credentials, api, permissions); exit non-zero on any failure |
 | `auth login` | runs `client_credentials` exchange, stores `credentials.json` |
 | `auth whoami` | `GET /2.0/user`, supports `--select` |
 | `repo get <workspace>/<repo_slug>` | `GET /2.0/repositories/{workspace}/{repo_slug}`, supports `--select` |
+
+`doctor`/`init` are duplicated from jira's pattern (see "Future: shared Atlassian
+library" below). Unlike jira (which calls `/rest/api/3/mypermissions` and reports a
+fixed map of permission booleans), Bitbucket's token response already includes the
+granted `scopes` — `auth::Credentials` persists them, and `doctor`'s `permissions`
+check reports them as-is (`granted_scopes`), no extra API call. `status: "error"`
+only if the list is empty (nothing will work); otherwise purely informational —
+deliberately not matched against a fixed list of "required" scopes, since which
+scopes a command needs is documented per-command, not enforced by `doctor`.
 
 ## Planned commands (build incrementally, smallest first)
 
