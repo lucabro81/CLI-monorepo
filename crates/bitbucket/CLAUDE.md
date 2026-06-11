@@ -65,12 +65,14 @@ Config layout, mirroring jira (`$XDG_CONFIG_HOME/bitbucket-cli/`, falling back t
 |---------|-------|
 | `auth login` | runs `client_credentials` exchange, stores `credentials.json` |
 | `auth whoami` | `GET /2.0/user`, supports `--select` |
+| `repo get <workspace>/<repo_slug>` | `GET /2.0/repositories/{workspace}/{repo_slug}`, supports `--select` |
 
 ## Planned commands (build incrementally, smallest first)
 
 | Command | Notes |
 |---------|-------|
-| `repo get` | repo info for current/given workspace+repo |
+| `repo list` | `GET /2.0/repositories/{workspace}` — list repos in a workspace, useful to discover valid slugs |
+| `repo create` | `POST /2.0/repositories/{workspace}/{repo_slug}` — write command, not destructive but should log clearly |
 | `pr list` | filter by repo, state, author |
 | `pr get <id>` | details + diffstat |
 | `pr create` | source/dest branch, title, description, reviewers |

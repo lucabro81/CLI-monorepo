@@ -38,6 +38,7 @@ fn run() -> Result<(), CliError> {
     match cli.command {
         Command::Auth { command: AuthCommand::Login } => commands::auth::run_login(),
         Command::Auth { command: AuthCommand::Whoami } => commands::auth::run_whoami(select),
+        Command::Repo { command } => commands::repo::run(command, select),
     }
 }
 

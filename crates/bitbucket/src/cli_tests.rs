@@ -1,6 +1,6 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use super::{AuthCommand, Cli, Command};
+use super::{AuthCommand, Cli, Command, RepoCommand};
 use clap::Parser;
 
 #[test]
@@ -27,4 +27,16 @@ fn parses_auth_whoami_with_select() {
             command: AuthCommand::Whoami
         }
     ));
+}
+
+#[test]
+fn parses_repo_get() {
+    let cli = Cli::try_parse_from(["bitbucket", "repo", "get", "lucabrognaracode/my-repo"]).expect("should parse");
+
+    match cli.command {
+        Command::Repo {
+            command: RepoCommand::Get { repository },
+        } => assert_eq!(repository, "lucabrognaracode/my-repo"),
+        other => panic!("expected Repo Get, got {other:?}"),
+    }
 }

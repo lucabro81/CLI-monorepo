@@ -26,6 +26,11 @@ pub enum Command {
         #[command(subcommand)]
         command: AuthCommand,
     },
+    /// Inspect repositories
+    Repo {
+        #[command(subcommand)]
+        command: RepoCommand,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -43,6 +48,16 @@ pub enum AuthCommand {
     /// Print the currently authenticated account as JSON
     #[command(after_help = "Examples:\n  bitbucket auth whoami\n  bitbucket auth whoami --select uuid,display_name")]
     Whoami,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum RepoCommand {
+    /// Print repository details as JSON
+    #[command(after_help = "Examples:\n  bitbucket repo get lucabrognaracode/my-repo\n  bitbucket repo get lucabrognaracode/my-repo --select description,language")]
+    Get {
+        /// Full repository identifier in the form `workspace/repo_slug`
+        repository: String,
+    },
 }
 
 #[cfg(test)]

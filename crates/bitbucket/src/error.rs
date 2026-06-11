@@ -54,6 +54,12 @@ pub enum CliError {
     #[error("Bitbucket API request failed: {reason}")]
     ApiRequestFailed { reason: String },
 
+    #[error(
+        "invalid repository identifier '{value}'. \
+        Expected the form workspace/repo_slug, e.g. lucabrognaracode/my-repo"
+    )]
+    InvalidRepository { value: String },
+
     #[error("failed to serialize response to JSON: {reason}")]
     JsonSerialize { reason: String },
 }

@@ -14,3 +14,8 @@ pub const BITBUCKET_API_BASE_URL: &str = "https://api.bitbucket.org/2.0";
 
 /// The authenticated user's account.
 pub const PATH_USER: &str = "/user";
+
+/// A single repository, identified by workspace slug and repo slug.
+pub fn path_repository(workspace: &str, repo_slug: &str) -> String {
+    format!("/repositories/{workspace}/{repo_slug}")
+}
