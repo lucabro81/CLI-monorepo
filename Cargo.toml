@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/jira"]
+members = ["crates/jira", "crates/bitbucket"]
 
 [workspace.lints.clippy]
 # Enforce the no-unwrap/expect rule for all production code in the workspace.
