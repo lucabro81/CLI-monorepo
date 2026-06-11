@@ -27,3 +27,22 @@ pub fn path_repositories(workspace: &str, page: Option<u32>) -> String {
         None => format!("/repositories/{workspace}"),
     }
 }
+
+/// Pull requests for a repository, optionally filtered by `state`
+/// (`OPEN`, `MERGED`, `DECLINED`, `SUPERSEDED`) and paginated.
+pub fn path_pull_requests(workspace: &str, repo_slug: &str, state: Option<&str>, page: Option<u32>) -> String {
+    let mut params = Vec::new();
+    if let Some(state) = state {
+        params.push(format!("state={state}"));
+    }
+    if let Some(page) = page {
+        params.push(format!("page={page}"));
+    }
+
+    let base = format!("/repositories/{workspace}/{repo_slug}/pullrequests");
+    if params.is_empty() {
+        base
+    } else {
+        format!("{base}?{}", params.join("&"))
+    }
+}

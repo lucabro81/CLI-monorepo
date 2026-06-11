@@ -1,6 +1,6 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use super::{AuthCommand, Cli, Command, RepoCommand};
+use super::{AuthCommand, Cli, Command, PrCommand, RepoCommand};
 use clap::Parser;
 
 #[test]
@@ -141,5 +141,41 @@ fn parses_repo_create_with_all_flags() {
             assert_eq!(project, Some("PROJ".to_string()));
         }
         other => panic!("expected Repo Create, got {other:?}"),
+    }
+}
+
+#[test]
+fn parses_pr_list_with_no_optional_flags() {
+    let cli = Cli::try_parse_from(["bitbucket", "pr", "list", "lucabrognaracode/my-repo"]).expect("should parse");
+
+    match cli.command {
+        Command::Pr {
+            command: PrCommand::List { repository, state, page },
+        } => {
+            assert_eq!(repository, "lucabrognaracode/my-repo");
+            assert_eq!(state, None);
+            assert_eq!(page, None);
+        }
+        other => panic!("expected Pr List, got {other:?}"),
+    }
+}
+
+#[test]
+fn parses_pr_list_with_all_flags() {
+    let cli = Cli::try_parse_from([
+        "bitbucket", "pr", "list", "lucabrognaracode/my-repo",
+        "--state", "MERGED",
+        "--page", "2",
+    ]).expect("should parse");
+
+    match cli.command {
+        Command::Pr {
+            command: PrCommand::List { repository, state, page },
+        } => {
+            assert_eq!(repository, "lucabrognaracode/my-repo");
+            assert_eq!(state, Some("MERGED".to_string()));
+            assert_eq!(page, Some(2));
+        }
+        other => panic!("expected Pr List, got {other:?}"),
     }
 }

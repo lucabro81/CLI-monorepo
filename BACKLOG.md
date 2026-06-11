@@ -173,6 +173,13 @@ the current behaviour, why it was deferred, and what a future fix would look lik
 
 ---
 
+### PR-1 (bitbucket) — `pr list` default-state behavior unverified live
+**Found:** 2026-06-11, while implementing `pr list`  
+**Context:** docs say omitting `--state` returns pull requests in any state. Both test repos (`lucabrognaracode/repo-test`, `lucabrognaracode/cli-test-repo`) currently have zero pull requests in any state, so `pr list` (with and without `--state`) only returned `{"page":1,"pagelen":10,"size":0,"values":[]}` — the empty-result shape, endpoint path, and query-param wiring (`--state`, `--page`) were verified, but the actual filtering behavior of `--state` and the default-no-filter behavior were not observed against real data.  
+**Add when:** a repo with pull requests in mixed states becomes available — re-run `pr list` with and without `--state` and confirm the docs/help text match observed behavior.
+
+---
+
 ### REPO-1 (bitbucket) — `repo update`/`repo edit` command, raw JSON body vs flags
 **Found:** 2026-06-11, design discussion for `repo create`  
 **Context:** `repo create` was implemented with typed flags (`--description`, `--private`, `--project`), matching jira's `issue create` convention — only ~9 settable fields on `POST /2.0/repositories/{workspace}/{repo_slug}`, most rarely used. A future `repo update` (`PUT` on the same endpoint, supports a larger/overlapping set of fields plus things like `fork_policy`, `language`, `has_issues`, `has_wiki`, `mainbranch`) might instead take a single `--body <JSON>` (or stdin) parameter passed through as-is, since enumerating a flag per field gets unwieldy for an edit command that may touch any subset of fields.  

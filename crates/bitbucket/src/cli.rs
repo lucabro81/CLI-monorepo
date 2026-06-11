@@ -44,6 +44,11 @@ pub enum Command {
         #[command(subcommand)]
         command: RepoCommand,
     },
+    /// Inspect pull requests
+    Pr {
+        #[command(subcommand)]
+        command: PrCommand,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -94,6 +99,23 @@ pub enum RepoCommand {
         /// Project key to assign the repository to, e.g. PROJ
         #[arg(long)]
         project: Option<String>,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum PrCommand {
+    /// List pull requests in a repository, as JSON
+    #[command(after_help = "Examples:\n  bitbucket pr list lucabrognaracode/my-repo\n  bitbucket pr list lucabrognaracode/my-repo --state MERGED\n  bitbucket pr list lucabrognaracode/my-repo --page 2\n  bitbucket pr list lucabrognaracode/my-repo --select values.title,values.state")]
+    List {
+        /// Full repository identifier in the form `workspace/repo_slug`
+        repository: String,
+        /// Filter by pull request state: OPEN, MERGED, DECLINED, or SUPERSEDED.
+        /// If omitted, Bitbucket returns pull requests in all states.
+        #[arg(long)]
+        state: Option<String>,
+        /// Page number to fetch (Bitbucket pagination starts at 1)
+        #[arg(long)]
+        page: Option<u32>,
     },
 }
 

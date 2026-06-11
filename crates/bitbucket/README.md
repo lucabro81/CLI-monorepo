@@ -4,7 +4,7 @@ CLI for Bitbucket Cloud, designed to be driven by an LLM agent (output is JSON, 
 
 ## Status
 
-`init`, `doctor`, `auth login`/`auth whoami`, `repo get`, `repo list`, `repo create` implemented. See [CLAUDE.md](CLAUDE.md) for architecture and the planned command list.
+`init`, `doctor`, `auth login`/`auth whoami`, `repo get`, `repo list`, `repo create`, `pr list` implemented. See [CLAUDE.md](CLAUDE.md) for architecture and the planned command list.
 
 ## Setup
 
@@ -145,6 +145,23 @@ cargo run -p bitbucket -- repo create lucabrognaracode/my-new-repo --project PRO
 - `--project <KEY>` — assign the repository to a project in the workspace
 
 Requires the `repository:write` scope. Note: some workspaces reject public repositories under a private project (`"Private projects cannot contain public repositories"`) — pass `--private` in that case.
+
+### `bitbucket pr list <workspace>/<repo_slug>`
+
+Lists pull requests in a repository, paginated.
+
+```sh
+cargo run -p bitbucket -- pr list lucabrognaracode/my-repo
+cargo run -p bitbucket -- pr list lucabrognaracode/my-repo --state MERGED
+cargo run -p bitbucket -- pr list lucabrognaracode/my-repo --page 2
+cargo run -p bitbucket -- pr list lucabrognaracode/my-repo --select values.title,values.state
+```
+
+**Flags:**
+- `--state <STATE>` — filter by `OPEN`, `MERGED`, `DECLINED`, or `SUPERSEDED`. If omitted, Bitbucket returns pull requests in any state.
+- `--page <N>` — page number to fetch (Bitbucket pagination starts at 1)
+
+Requires the `pullrequest` (read) scope.
 
 ### `--select <PATHS>` (global flag)
 
