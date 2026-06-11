@@ -3,7 +3,7 @@
 use serde_json::{json, Value};
 
 use crate::cli::RepoCommand;
-use crate::context::{authenticated_client, print_json};
+use crate::context::{authenticated_client, print_json, split_repository};
 use crate::error::CliError;
 
 /// Dispatches a `RepoCommand` variant to the appropriate Bitbucket API call.
@@ -36,18 +36,6 @@ pub fn run(command: RepoCommand, select: &[&str]) -> Result<(), CliError> {
                 })?;
             print_json(&value, select)
         }
-    }
-}
-
-/// Splits `workspace/repo_slug` into its two parts, rejecting any other shape.
-fn split_repository(repository: &str) -> Result<(&str, &str), CliError> {
-    match repository.split_once('/') {
-        Some((workspace, repo_slug)) if !workspace.is_empty() && !repo_slug.is_empty() => {
-            Ok((workspace, repo_slug))
-        }
-        _ => Err(CliError::InvalidRepository {
-            value: repository.to_string(),
-        }),
     }
 }
 

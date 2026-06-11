@@ -62,3 +62,20 @@ pub fn print_json(value: &serde_json::Value, fields: &[&str]) -> Result<(), CliE
     println!("{output}");
     Ok(())
 }
+
+/// Splits `workspace/repo_slug` into its two parts, rejecting any other shape.
+/// Shared by command groups that take a `workspace/repo_slug` identifier (`repo`, `pr`).
+pub fn split_repository(repository: &str) -> Result<(&str, &str), CliError> {
+    match repository.split_once('/') {
+        Some((workspace, repo_slug)) if !workspace.is_empty() && !repo_slug.is_empty() => {
+            Ok((workspace, repo_slug))
+        }
+        _ => Err(CliError::InvalidRepository {
+            value: repository.to_string(),
+        }),
+    }
+}
+
+#[cfg(test)]
+#[path = "context_tests.rs"]
+mod tests;
