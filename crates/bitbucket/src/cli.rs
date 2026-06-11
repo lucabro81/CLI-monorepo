@@ -71,6 +71,15 @@ pub enum RepoCommand {
         /// Full repository identifier in the form `workspace/repo_slug`
         repository: String,
     },
+    /// List repositories in a workspace, as JSON
+    #[command(after_help = "Examples:\n  bitbucket repo list lucabrognaracode\n  bitbucket repo list lucabrognaracode --page 2\n  bitbucket repo list lucabrognaracode --select values.full_name")]
+    List {
+        /// Workspace slug, e.g. `lucabrognaracode`
+        workspace: String,
+        /// Page number to fetch (Bitbucket pagination starts at 1)
+        #[arg(long)]
+        page: Option<u32>,
+    },
 }
 
 #[cfg(test)]

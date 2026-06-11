@@ -16,6 +16,14 @@ pub fn run(command: RepoCommand, select: &[&str]) -> Result<(), CliError> {
                 })?;
             print_json(&value, select)
         }
+        RepoCommand::List { workspace, page } => {
+            let value = authenticated_client()?
+                .list_repositories(&workspace, page)
+                .map_err(|e| CliError::ApiRequestFailed {
+                    reason: e.to_string(),
+                })?;
+            print_json(&value, select)
+        }
     }
 }
 

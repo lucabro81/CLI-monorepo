@@ -74,3 +74,33 @@ fn parses_repo_get() {
         other => panic!("expected Repo Get, got {other:?}"),
     }
 }
+
+#[test]
+fn parses_repo_list_without_page() {
+    let cli = Cli::try_parse_from(["bitbucket", "repo", "list", "lucabrognaracode"]).expect("should parse");
+
+    match cli.command {
+        Command::Repo {
+            command: RepoCommand::List { workspace, page },
+        } => {
+            assert_eq!(workspace, "lucabrognaracode");
+            assert_eq!(page, None);
+        }
+        other => panic!("expected Repo List, got {other:?}"),
+    }
+}
+
+#[test]
+fn parses_repo_list_with_page() {
+    let cli = Cli::try_parse_from(["bitbucket", "repo", "list", "lucabrognaracode", "--page", "2"]).expect("should parse");
+
+    match cli.command {
+        Command::Repo {
+            command: RepoCommand::List { workspace, page },
+        } => {
+            assert_eq!(workspace, "lucabrognaracode");
+            assert_eq!(page, Some(2));
+        }
+        other => panic!("expected Repo List, got {other:?}"),
+    }
+}

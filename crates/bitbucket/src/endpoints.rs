@@ -19,3 +19,11 @@ pub const PATH_USER: &str = "/user";
 pub fn path_repository(workspace: &str, repo_slug: &str) -> String {
     format!("/repositories/{workspace}/{repo_slug}")
 }
+
+/// Repositories within a workspace, optionally paginated.
+pub fn path_repositories(workspace: &str, page: Option<u32>) -> String {
+    match page {
+        Some(page) => format!("/repositories/{workspace}?page={page}"),
+        None => format!("/repositories/{workspace}"),
+    }
+}

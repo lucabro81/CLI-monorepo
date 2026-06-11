@@ -59,6 +59,11 @@ impl BitbucketClient {
         self.get_json(&endpoints::path_repository(workspace, repo_slug))
     }
 
+    /// Returns a page of repositories in `workspace`, as raw JSON.
+    pub fn list_repositories(&self, workspace: &str, page: Option<u32>) -> Result<serde_json::Value, ClientError> {
+        self.get_json(&endpoints::path_repositories(workspace, page))
+    }
+
     fn get_json(&self, path: &str) -> Result<serde_json::Value, ClientError> {
         let url = format!("{}{path}", self.base_url);
 

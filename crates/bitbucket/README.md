@@ -4,7 +4,7 @@ CLI for Bitbucket Cloud, designed to be driven by an LLM agent (output is JSON, 
 
 ## Status
 
-`init`, `doctor`, `auth login`/`auth whoami`, `repo get` implemented. See [CLAUDE.md](CLAUDE.md) for architecture and the planned command list.
+`init`, `doctor`, `auth login`/`auth whoami`, `repo get`, `repo list` implemented. See [CLAUDE.md](CLAUDE.md) for architecture and the planned command list.
 
 ## Setup
 
@@ -36,6 +36,9 @@ bitbucket auth whoami
 bitbucket auth whoami --select uuid,display_name
 bitbucket repo get lucabrognaracode/my-repo
 bitbucket repo get lucabrognaracode/my-repo --select description,language
+bitbucket repo list lucabrognaracode
+bitbucket repo list lucabrognaracode --page 2
+bitbucket repo list lucabrognaracode --select values.full_name
 ```
 
 ## Development
