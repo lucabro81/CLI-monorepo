@@ -274,6 +274,68 @@ fn parses_pr_comment_with_inline_flags() {
 }
 
 #[test]
+fn parses_pr_approve() {
+    let cli = Cli::try_parse_from(["bitbucket", "pr", "approve", "lucabrognaracode/my-repo", "42"]).expect("should parse");
+
+    match cli.command {
+        Command::Pr {
+            command: PrCommand::Approve { repository, id },
+        } => {
+            assert_eq!(repository, "lucabrognaracode/my-repo");
+            assert_eq!(id, 42);
+        }
+        other => panic!("expected Pr Approve, got {other:?}"),
+    }
+}
+
+#[test]
+fn parses_pr_unapprove() {
+    let cli = Cli::try_parse_from(["bitbucket", "pr", "unapprove", "lucabrognaracode/my-repo", "42"]).expect("should parse");
+
+    match cli.command {
+        Command::Pr {
+            command: PrCommand::Unapprove { repository, id },
+        } => {
+            assert_eq!(repository, "lucabrognaracode/my-repo");
+            assert_eq!(id, 42);
+        }
+        other => panic!("expected Pr Unapprove, got {other:?}"),
+    }
+}
+
+#[test]
+fn parses_pr_decline_without_confirm() {
+    let cli = Cli::try_parse_from(["bitbucket", "pr", "decline", "lucabrognaracode/my-repo", "42"]).expect("should parse");
+
+    match cli.command {
+        Command::Pr {
+            command: PrCommand::Decline { repository, id, confirm },
+        } => {
+            assert_eq!(repository, "lucabrognaracode/my-repo");
+            assert_eq!(id, 42);
+            assert!(!confirm);
+        }
+        other => panic!("expected Pr Decline, got {other:?}"),
+    }
+}
+
+#[test]
+fn parses_pr_decline_with_confirm() {
+    let cli = Cli::try_parse_from(["bitbucket", "pr", "decline", "lucabrognaracode/my-repo", "42", "--confirm"]).expect("should parse");
+
+    match cli.command {
+        Command::Pr {
+            command: PrCommand::Decline { repository, id, confirm },
+        } => {
+            assert_eq!(repository, "lucabrognaracode/my-repo");
+            assert_eq!(id, 42);
+            assert!(confirm);
+        }
+        other => panic!("expected Pr Decline, got {other:?}"),
+    }
+}
+
+#[test]
 fn parses_pr_get() {
     let cli = Cli::try_parse_from(["bitbucket", "pr", "get", "lucabrognaracode/my-repo", "42"]).expect("should parse");
 

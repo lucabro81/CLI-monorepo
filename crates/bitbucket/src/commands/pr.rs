@@ -19,6 +19,36 @@ pub fn run(command: PrCommand, select: &[&str]) -> Result<(), CliError> {
                 })?;
             print_json(&value, select)
         }
+        PrCommand::Approve { repository, id } => {
+            let (workspace, repo_slug) = split_repository(&repository)?;
+            let value = authenticated_client()?
+                .approve_pull_request(workspace, repo_slug, id)
+                .map_err(|e| CliError::ApiRequestFailed {
+                    reason: e.to_string(),
+                })?;
+            print_json(&value, select)
+        }
+        PrCommand::Unapprove { repository, id } => {
+            let (workspace, repo_slug) = split_repository(&repository)?;
+            authenticated_client()?
+                .unapprove_pull_request(workspace, repo_slug, id)
+                .map_err(|e| CliError::ApiRequestFailed {
+                    reason: e.to_string(),
+                })?;
+            print_json(&json!({"unapproved": true, "id": id}), select)
+        }
+        PrCommand::Decline { repository, id, confirm } => {
+            if !confirm {
+                return Err(CliError::DeclineNotConfirmed { repository, id });
+            }
+            let (workspace, repo_slug) = split_repository(&repository)?;
+            let value = authenticated_client()?
+                .decline_pull_request(workspace, repo_slug, id)
+                .map_err(|e| CliError::ApiRequestFailed {
+                    reason: e.to_string(),
+                })?;
+            print_json(&value, select)
+        }
         PrCommand::Comment { repository, id, content, path, line } => {
             let (workspace, repo_slug) = split_repository(&repository)?;
             let inline = validate_inline_location(path, line)?;

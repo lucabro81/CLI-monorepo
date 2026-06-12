@@ -4,7 +4,7 @@ CLI for Bitbucket Cloud, designed to be driven by an LLM agent (output is JSON, 
 
 ## Status
 
-`init`, `doctor`, `auth login`/`auth whoami`, `repo get`, `repo list`, `repo create`, `pr get`, `pr list`, `pr create`, `pr comment` implemented. See [CLAUDE.md](CLAUDE.md) for architecture and the planned command list.
+`init`, `doctor`, `auth login`/`auth whoami`, `repo get`, `repo list`, `repo create`, `pr get`, `pr list`, `pr create`, `pr comment`, `pr approve`, `pr unapprove`, `pr decline` implemented. See [CLAUDE.md](CLAUDE.md) for architecture and the planned command list.
 
 ## Setup
 
@@ -164,6 +164,36 @@ cargo run -p bitbucket -- pr create lucabrognaracode/my-repo --title "My PR" --s
 - `--close-source-branch` — close the source branch after the pull request is merged
 
 Requires the `pullrequest:write` scope. Reviewers are not yet supported (see CLAUDE.md backlog).
+
+### `bitbucket pr approve <workspace>/<repo_slug> <id>`
+
+Approves a pull request as the authenticated account.
+
+```sh
+cargo run -p bitbucket -- pr approve lucabrognaracode/my-repo 42
+```
+
+Requires the `pullrequest:write` scope.
+
+### `bitbucket pr unapprove <workspace>/<repo_slug> <id>`
+
+Removes the authenticated account's approval from a pull request.
+
+```sh
+cargo run -p bitbucket -- pr unapprove lucabrognaracode/my-repo 42
+```
+
+Requires the `pullrequest:write` scope.
+
+### `bitbucket pr decline <workspace>/<repo_slug> <id>`
+
+Declines a pull request. **Destructive**: changes the pull request's state and cannot be undone by this CLI — requires `--confirm`.
+
+```sh
+cargo run -p bitbucket -- pr decline lucabrognaracode/my-repo 42 --confirm
+```
+
+Requires the `pullrequest:write` scope.
 
 ### `bitbucket pr comment <workspace>/<repo_slug> <id>`
 

@@ -105,6 +105,24 @@ impl BitbucketClient {
         self.post_json(&endpoints::path_pull_request_comments(workspace, repo_slug, id), body)
     }
 
+    /// Approves the pull request identified by `id` in `workspace`/`repo_slug`.
+    /// Returns the participant entry created by the approval, as raw JSON.
+    pub fn approve_pull_request(&self, workspace: &str, repo_slug: &str, id: u64) -> Result<serde_json::Value, ClientError> {
+        self.post_json(&endpoints::path_pull_request_approve(workspace, repo_slug, id), &serde_json::json!({}))
+    }
+
+    /// Removes the current user's approval from the pull request identified by `id`
+    /// in `workspace`/`repo_slug`.
+    pub fn unapprove_pull_request(&self, workspace: &str, repo_slug: &str, id: u64) -> Result<(), ClientError> {
+        self.delete(&endpoints::path_pull_request_approve(workspace, repo_slug, id))
+    }
+
+    /// Declines the pull request identified by `id` in `workspace`/`repo_slug`.
+    /// Returns the updated pull request, as raw JSON.
+    pub fn decline_pull_request(&self, workspace: &str, repo_slug: &str, id: u64) -> Result<serde_json::Value, ClientError> {
+        self.post_json(&endpoints::path_pull_request_decline(workspace, repo_slug, id), &serde_json::json!({}))
+    }
+
     /// Creates a repository at `workspace`/`repo_slug` with the given JSON body.
     /// Returns the created repository, as raw JSON.
     pub fn create_repository(
@@ -139,6 +157,29 @@ impl BitbucketClient {
         response
             .json()
             .map_err(|e| ClientError::Request(e.to_string()))
+    }
+
+    fn delete(&self, path: &str) -> Result<(), ClientError> {
+        let url = format!("{}{path}", self.base_url);
+
+        let response = self
+            .http
+            .delete(&url)
+            .bearer_auth(&self.access_token)
+            .header("Accept", "application/json")
+            .send()
+            .map_err(|e| ClientError::Request(e.to_string()))?;
+
+        let status = response.status();
+        if !status.is_success() {
+            let body = response.text().unwrap_or_default();
+            return Err(ClientError::Status {
+                status: status.as_u16(),
+                body,
+            });
+        }
+
+        Ok(())
     }
 
     fn post_json(&self, path: &str, body: &serde_json::Value) -> Result<serde_json::Value, ClientError> {

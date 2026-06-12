@@ -71,4 +71,10 @@ pub enum CliError {
 
     #[error("invalid input: {reason}")]
     InvalidInput { reason: String },
+
+    #[error(
+        "declining pull request {id} changes its state and cannot be undone by this CLI. \
+        Pass --confirm to execute: bitbucket pr decline {repository} {id} --confirm"
+    )]
+    DeclineNotConfirmed { repository: String, id: u64 },
 }

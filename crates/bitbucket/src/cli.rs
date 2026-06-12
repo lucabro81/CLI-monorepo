@@ -133,6 +133,35 @@ pub enum PrCommand {
         #[arg(long)]
         close_source_branch: bool,
     },
+    /// Approve a pull request, as JSON
+    #[command(after_help = "Example:\n  bitbucket pr approve lucabrognaracode/my-repo 42")]
+    Approve {
+        /// Full repository identifier in the form `workspace/repo_slug`
+        repository: String,
+        /// Pull request ID
+        id: u64,
+    },
+    /// Remove your approval from a pull request, as JSON
+    #[command(after_help = "Example:\n  bitbucket pr unapprove lucabrognaracode/my-repo 42")]
+    Unapprove {
+        /// Full repository identifier in the form `workspace/repo_slug`
+        repository: String,
+        /// Pull request ID
+        id: u64,
+    },
+    /// Decline a pull request, as JSON
+    ///
+    /// This changes the pull request's state and cannot be undone by this CLI.
+    #[command(after_help = "Example:\n  bitbucket pr decline lucabrognaracode/my-repo 42 --confirm")]
+    Decline {
+        /// Full repository identifier in the form `workspace/repo_slug`
+        repository: String,
+        /// Pull request ID
+        id: u64,
+        /// Confirm the decline (required — this changes the pull request's state)
+        #[arg(long)]
+        confirm: bool,
+    },
     /// Add a comment to a pull request, as JSON
     #[command(after_help = "Examples:\n  bitbucket pr comment lucabrognaracode/my-repo 42 --content \"Looks good to me\"\n  bitbucket pr comment lucabrognaracode/my-repo 42 --content \"Fix this\" --path src/main.rs --line 10")]
     Comment {

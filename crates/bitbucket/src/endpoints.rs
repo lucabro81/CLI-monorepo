@@ -38,6 +38,16 @@ pub fn path_pull_request_comments(workspace: &str, repo_slug: &str, id: u64) -> 
     format!("/repositories/{workspace}/{repo_slug}/pullrequests/{id}/comments")
 }
 
+/// The current user's approval of a pull request. `POST` to approve, `DELETE` to unapprove.
+pub fn path_pull_request_approve(workspace: &str, repo_slug: &str, id: u64) -> String {
+    format!("/repositories/{workspace}/{repo_slug}/pullrequests/{id}/approve")
+}
+
+/// Declines a pull request. `POST` only.
+pub fn path_pull_request_decline(workspace: &str, repo_slug: &str, id: u64) -> String {
+    format!("/repositories/{workspace}/{repo_slug}/pullrequests/{id}/decline")
+}
+
 /// Pull requests for a repository, optionally filtered by `state`
 /// (`OPEN`, `MERGED`, `DECLINED`, `SUPERSEDED`) and paginated.
 pub fn path_pull_requests(workspace: &str, repo_slug: &str, state: Option<&str>, page: Option<u32>) -> String {
