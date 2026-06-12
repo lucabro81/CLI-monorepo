@@ -36,6 +36,12 @@ use crate::fields::filter_fields;
 
 const E2E_PREFIX: &str = "[jira-cli-e2e]";
 
+/// JQL `~` (text search) does not match literal `[`/`]`, so a search for
+/// `summary ~ "[jira-cli-e2e]"` returns zero results even though the indexed
+/// text contains those characters. Use this bracket-free term for JQL
+/// searches; `E2E_PREFIX` (with brackets) stays the actual summary prefix.
+const E2E_CLEANUP_JQL_TERM: &str = "jira-cli-e2e";
+
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 /// Returns the project key from the environment, panicking with a clear message if unset.
@@ -440,7 +446,9 @@ fn e2e_cleanup() {
     let (client, _) = setup();
     let project = project_key();
 
-    let jql = format!("project = {project} AND summary ~ \"{E2E_PREFIX}\" ORDER BY created ASC");
+    let jql = format!(
+        "project = {project} AND summary ~ \"{E2E_CLEANUP_JQL_TERM}\" ORDER BY created ASC"
+    );
 
     // Paginate through all results and delete each one.
     let mut page_token: Option<String> = None;

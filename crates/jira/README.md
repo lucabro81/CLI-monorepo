@@ -280,6 +280,8 @@ JIRA_E2E_PROJECT=KAN cargo test -p jira e2e_cleanup -- --ignored
 
 This searches for all `[jira-cli-e2e]` issues in the project and deletes them.
 
+> **Note:** both `IssueGuard` and `e2e_cleanup` require the authenticated account to have `DELETE_ISSUES` permission on `JIRA_E2E_PROJECT` (check via `jira doctor`). If that permission is missing, deletes fail with a 403 that is silently swallowed by `IssueGuard::drop` and reported (but not retried) by `e2e_cleanup`. In that case, leftover `[jira-cli-e2e]` issues must be deleted manually from the Jira UI.
+
 ## Error design
 
 All errors are plain text, no colors or symbols — designed to be read by an LLM. Each message is self-contained: it states what went wrong and what to do next. Example:

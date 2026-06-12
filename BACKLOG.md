@@ -85,6 +85,15 @@ the current behaviour, why it was deferred, and what a future fix would look lik
 
 ---
 
+#### DELETE-2 — Service account lacks `DELETE_ISSUES` on `JIRA_E2E_PROJECT`, breaking e2e cleanup
+**Found:** 2026-06-12, while investigating leftover `[jira-cli-e2e]` issues in KAN  
+**Trigger:** the `client_credentials` service account used by e2e tests does not have `DELETE_ISSUES` granted on the project (`doctor`'s permissions check reports `DELETE_ISSUES: false`).  
+**Current behaviour:** `IssueGuard::drop`'s `delete_issue` call returns 403, which is silently swallowed (`let _ = ...`); `e2e_cleanup` also gets 403 for every issue, reports "failed to delete KAN-X: ... 403 ..." per issue and "deleted 0 issue(s)" overall. Result: e2e-created issues accumulate indefinitely (KAN-45..94 observed).  
+**Acceptable?** No — e2e tests silently fail to clean up after themselves, polluting the real project.  
+**Future fix:** grant `DELETE_ISSUES` to the service account's role on `JIRA_E2E_PROJECT` (Jira admin action, not a code change). Once granted, re-run `e2e_cleanup` to remove the existing orphans (KAN-45..94).
+
+---
+
 #### AUTH-2 — `OAuthConfig` does not validate non-empty client_id / client_secret
 **Found:** review session 2026-06-09  
 **Trigger:** `app.json` with `{"client_id": "", "client_secret": ""}` — parses successfully  
