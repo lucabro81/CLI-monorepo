@@ -64,6 +64,11 @@ impl BitbucketClient {
         self.get_json(&endpoints::path_repositories(workspace, page))
     }
 
+    /// Returns a page of branches in `workspace`/`repo_slug`, as raw JSON.
+    pub fn list_branches(&self, workspace: &str, repo_slug: &str, page: Option<u32>) -> Result<serde_json::Value, ClientError> {
+        self.get_json(&endpoints::path_branches(workspace, repo_slug, page))
+    }
+
     /// Returns the pull request identified by `id` in `workspace`/`repo_slug`, as raw JSON.
     pub fn get_pull_request(&self, workspace: &str, repo_slug: &str, id: u64) -> Result<serde_json::Value, ClientError> {
         self.get_json(&endpoints::path_pull_request(workspace, repo_slug, id))

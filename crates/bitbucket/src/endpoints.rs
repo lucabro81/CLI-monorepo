@@ -53,6 +53,14 @@ pub fn path_pull_request_merge(workspace: &str, repo_slug: &str, id: u64) -> Str
     format!("/repositories/{workspace}/{repo_slug}/pullrequests/{id}/merge")
 }
 
+/// Branches within a repository, optionally paginated.
+pub fn path_branches(workspace: &str, repo_slug: &str, page: Option<u32>) -> String {
+    match page {
+        Some(page) => format!("/repositories/{workspace}/{repo_slug}/refs/branches?page={page}"),
+        None => format!("/repositories/{workspace}/{repo_slug}/refs/branches"),
+    }
+}
+
 /// Pull requests for a repository, optionally filtered by `state`
 /// (`OPEN`, `MERGED`, `DECLINED`, `SUPERSEDED`) and paginated.
 pub fn path_pull_requests(workspace: &str, repo_slug: &str, state: Option<&str>, page: Option<u32>) -> String {

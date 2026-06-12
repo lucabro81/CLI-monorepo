@@ -4,7 +4,7 @@ CLI for Bitbucket Cloud, designed to be driven by an LLM agent (output is JSON, 
 
 ## Status
 
-`init`, `doctor`, `auth login`/`auth whoami`, `repo get`, `repo list`, `repo create`, `pr get`, `pr list`, `pr create`, `pr comment`, `pr approve`, `pr unapprove`, `pr decline`, `pr merge` implemented. See [CLAUDE.md](CLAUDE.md) for architecture and the planned command list.
+`init`, `doctor`, `auth login`/`auth whoami`, `repo get`, `repo list`, `repo create`, `pr get`, `pr list`, `pr create`, `pr comment`, `pr approve`, `pr unapprove`, `pr decline`, `pr merge`, `branch list` implemented. See [CLAUDE.md](CLAUDE.md) for architecture and the planned command list.
 
 ## Setup
 
@@ -253,6 +253,21 @@ cargo run -p bitbucket -- pr list lucabrognaracode/my-repo --select values.title
 - `--page <N>` — page number to fetch (Bitbucket pagination starts at 1)
 
 Requires the `pullrequest` (read) scope.
+
+### `bitbucket branch list <workspace>/<repo_slug>`
+
+Lists branches in a repository, paginated.
+
+```sh
+cargo run -p bitbucket -- branch list lucabrognaracode/my-repo
+cargo run -p bitbucket -- branch list lucabrognaracode/my-repo --page 2
+cargo run -p bitbucket -- branch list lucabrognaracode/my-repo --select values.name
+```
+
+**Flags:**
+- `--page <N>` — page number to fetch (Bitbucket pagination starts at 1)
+
+Requires the `repository` (read) scope.
 
 ### `--select <PATHS>` (global flag)
 

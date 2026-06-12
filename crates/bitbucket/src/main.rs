@@ -50,6 +50,7 @@ fn run() -> Result<(), CliError> {
         Command::Auth { command: AuthCommand::Whoami } => commands::auth::run_whoami(select),
         Command::Repo { command } => commands::repo::run(command, select),
         Command::Pr { command } => commands::pr::run(command, select),
+        Command::Branch { command } => commands::branch::run(command, select),
     }
 }
 

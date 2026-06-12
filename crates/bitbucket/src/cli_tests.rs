@@ -1,6 +1,6 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use super::{AuthCommand, Cli, Command, PrCommand, RepoCommand};
+use super::{AuthCommand, BranchCommand, Cli, Command, PrCommand, RepoCommand};
 use clap::Parser;
 
 #[test]
@@ -270,6 +270,36 @@ fn parses_pr_comment_with_inline_flags() {
             assert_eq!(line, Some(10));
         }
         other => panic!("expected Pr Comment, got {other:?}"),
+    }
+}
+
+#[test]
+fn parses_branch_list_without_page() {
+    let cli = Cli::try_parse_from(["bitbucket", "branch", "list", "lucabrognaracode/my-repo"]).expect("should parse");
+
+    match cli.command {
+        Command::Branch {
+            command: BranchCommand::List { repository, page },
+        } => {
+            assert_eq!(repository, "lucabrognaracode/my-repo");
+            assert_eq!(page, None);
+        }
+        other => panic!("expected Branch List, got {other:?}"),
+    }
+}
+
+#[test]
+fn parses_branch_list_with_page() {
+    let cli = Cli::try_parse_from(["bitbucket", "branch", "list", "lucabrognaracode/my-repo", "--page", "2"]).expect("should parse");
+
+    match cli.command {
+        Command::Branch {
+            command: BranchCommand::List { repository, page },
+        } => {
+            assert_eq!(repository, "lucabrognaracode/my-repo");
+            assert_eq!(page, Some(2));
+        }
+        other => panic!("expected Branch List, got {other:?}"),
     }
 }
 

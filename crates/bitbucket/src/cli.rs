@@ -49,6 +49,11 @@ pub enum Command {
         #[command(subcommand)]
         command: PrCommand,
     },
+    /// Inspect branches
+    Branch {
+        #[command(subcommand)]
+        command: BranchCommand,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -210,6 +215,19 @@ pub enum PrCommand {
         /// If omitted, Bitbucket returns pull requests in all states.
         #[arg(long)]
         state: Option<String>,
+        /// Page number to fetch (Bitbucket pagination starts at 1)
+        #[arg(long)]
+        page: Option<u32>,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum BranchCommand {
+    /// List branches in a repository, as JSON
+    #[command(after_help = "Examples:\n  bitbucket branch list lucabrognaracode/my-repo\n  bitbucket branch list lucabrognaracode/my-repo --page 2\n  bitbucket branch list lucabrognaracode/my-repo --select values.name")]
+    List {
+        /// Full repository identifier in the form `workspace/repo_slug`
+        repository: String,
         /// Page number to fetch (Bitbucket pagination starts at 1)
         #[arg(long)]
         page: Option<u32>,
