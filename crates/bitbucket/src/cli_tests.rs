@@ -181,6 +181,55 @@ fn parses_pr_list_with_all_flags() {
 }
 
 #[test]
+fn parses_pr_create_with_no_optional_flags() {
+    let cli = Cli::try_parse_from([
+        "bitbucket", "pr", "create", "lucabrognaracode/my-repo",
+        "--title", "My PR",
+        "--source", "feature-branch",
+    ]).expect("should parse");
+
+    match cli.command {
+        Command::Pr {
+            command: PrCommand::Create { repository, title, source, destination, description, close_source_branch },
+        } => {
+            assert_eq!(repository, "lucabrognaracode/my-repo");
+            assert_eq!(title, "My PR");
+            assert_eq!(source, "feature-branch");
+            assert_eq!(destination, None);
+            assert_eq!(description, None);
+            assert!(!close_source_branch);
+        }
+        other => panic!("expected Pr Create, got {other:?}"),
+    }
+}
+
+#[test]
+fn parses_pr_create_with_all_flags() {
+    let cli = Cli::try_parse_from([
+        "bitbucket", "pr", "create", "lucabrognaracode/my-repo",
+        "--title", "My PR",
+        "--source", "feature-branch",
+        "--destination", "main",
+        "--description", "does things",
+        "--close-source-branch",
+    ]).expect("should parse");
+
+    match cli.command {
+        Command::Pr {
+            command: PrCommand::Create { repository, title, source, destination, description, close_source_branch },
+        } => {
+            assert_eq!(repository, "lucabrognaracode/my-repo");
+            assert_eq!(title, "My PR");
+            assert_eq!(source, "feature-branch");
+            assert_eq!(destination, Some("main".to_string()));
+            assert_eq!(description, Some("does things".to_string()));
+            assert!(close_source_branch);
+        }
+        other => panic!("expected Pr Create, got {other:?}"),
+    }
+}
+
+#[test]
 fn parses_pr_get() {
     let cli = Cli::try_parse_from(["bitbucket", "pr", "get", "lucabrognaracode/my-repo", "42"]).expect("should parse");
 

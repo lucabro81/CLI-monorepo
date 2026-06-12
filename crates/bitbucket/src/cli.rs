@@ -112,6 +112,27 @@ pub enum PrCommand {
         /// Pull request ID
         id: u64,
     },
+    /// Create a new pull request, as JSON
+    #[command(after_help = "Examples:\n  bitbucket pr create lucabrognaracode/my-repo --title \"My PR\" --source feature-branch\n  bitbucket pr create lucabrognaracode/my-repo --title \"My PR\" --source feature-branch --destination main --description \"does things\"\n  bitbucket pr create lucabrognaracode/my-repo --title \"My PR\" --source feature-branch --close-source-branch")]
+    Create {
+        /// Full repository identifier in the form `workspace/repo_slug`
+        repository: String,
+        /// Pull request title
+        #[arg(long)]
+        title: String,
+        /// Source branch name (the branch containing the changes)
+        #[arg(long)]
+        source: String,
+        /// Destination branch name. If omitted, Bitbucket uses the repository's main branch.
+        #[arg(long)]
+        destination: Option<String>,
+        /// Pull request description
+        #[arg(long)]
+        description: Option<String>,
+        /// Close the source branch after the pull request is merged
+        #[arg(long)]
+        close_source_branch: bool,
+    },
     /// List pull requests in a repository, as JSON
     #[command(after_help = "Examples:\n  bitbucket pr list lucabrognaracode/my-repo\n  bitbucket pr list lucabrognaracode/my-repo --state MERGED\n  bitbucket pr list lucabrognaracode/my-repo --page 2\n  bitbucket pr list lucabrognaracode/my-repo --select values.title,values.state")]
     List {

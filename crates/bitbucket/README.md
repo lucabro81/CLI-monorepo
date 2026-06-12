@@ -4,7 +4,7 @@ CLI for Bitbucket Cloud, designed to be driven by an LLM agent (output is JSON, 
 
 ## Status
 
-`init`, `doctor`, `auth login`/`auth whoami`, `repo get`, `repo list`, `repo create`, `pr get`, `pr list` implemented. See [CLAUDE.md](CLAUDE.md) for architecture and the planned command list.
+`init`, `doctor`, `auth login`/`auth whoami`, `repo get`, `repo list`, `repo create`, `pr get`, `pr list`, `pr create` implemented. See [CLAUDE.md](CLAUDE.md) for architecture and the planned command list.
 
 ## Setup
 
@@ -145,6 +145,25 @@ cargo run -p bitbucket -- repo create lucabrognaracode/my-new-repo --project PRO
 - `--project <KEY>` — assign the repository to a project in the workspace
 
 Requires the `repository:write` scope. Note: some workspaces reject public repositories under a private project (`"Private projects cannot contain public repositories"`) — pass `--private` in that case.
+
+### `bitbucket pr create <workspace>/<repo_slug>`
+
+Creates a new pull request.
+
+```sh
+cargo run -p bitbucket -- pr create lucabrognaracode/my-repo --title "My PR" --source feature-branch
+cargo run -p bitbucket -- pr create lucabrognaracode/my-repo --title "My PR" --source feature-branch --destination main --description "does things"
+cargo run -p bitbucket -- pr create lucabrognaracode/my-repo --title "My PR" --source feature-branch --close-source-branch
+```
+
+**Flags:**
+- `--title <TEXT>` — pull request title (required)
+- `--source <BRANCH>` — source branch name (required)
+- `--destination <BRANCH>` — destination branch name. If omitted, Bitbucket uses the repository's main branch.
+- `--description <TEXT>` — pull request description
+- `--close-source-branch` — close the source branch after the pull request is merged
+
+Requires the `pullrequest:write` scope. Reviewers are not yet supported (see CLAUDE.md backlog).
 
 ### `bitbucket pr get <workspace>/<repo_slug> <id>`
 

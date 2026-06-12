@@ -82,6 +82,17 @@ impl BitbucketClient {
         self.get_json(&endpoints::path_pull_requests(workspace, repo_slug, state, page))
     }
 
+    /// Creates a pull request in `workspace`/`repo_slug` with the given JSON body.
+    /// Returns the created pull request, as raw JSON.
+    pub fn create_pull_request(
+        &self,
+        workspace: &str,
+        repo_slug: &str,
+        body: &serde_json::Value,
+    ) -> Result<serde_json::Value, ClientError> {
+        self.post_json(&endpoints::path_pull_requests(workspace, repo_slug, None, None), body)
+    }
+
     /// Creates a repository at `workspace`/`repo_slug` with the given JSON body.
     /// Returns the created repository, as raw JSON.
     pub fn create_repository(

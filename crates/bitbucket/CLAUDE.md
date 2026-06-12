@@ -4,7 +4,7 @@ Architecture and design notes for the `bitbucket` crate. Global rules (TDD, erro
 
 ## Status
 
-`init`, `doctor`, `auth login`, `auth whoami`, `repo get`, `repo list`, `repo create`, `pr get`, `pr list` implemented. Other commands not started yet.
+`init`, `doctor`, `auth login`, `auth whoami`, `repo get`, `repo list`, `repo create`, `pr get`, `pr list`, `pr create` implemented. Other commands not started yet.
 
 ## Module map (mirrors crates/jira)
 
@@ -16,13 +16,13 @@ src/
     doctor.rs     — run_doctor(); also called by init as final verification [implemented]
     init.rs       — run_init(), write_app_config(); human onboarding flow [implemented]
     repo.rs       — run(RepoCommand); dispatches all repo subcommands   [get, list, create implemented]
-    pr.rs         — run(PrCommand); dispatches all pr subcommands       [get, list implemented]
+    pr.rs         — run(PrCommand); dispatches all pr subcommands       [get, list, create implemented]
   auth.rs         — OAuthConfig, Credentials, login_client_credentials(),
                     load_credentials()/save_credentials() [implemented]
   client.rs       — BitbucketClient (blocking reqwest); get_json/post_json helpers;
                     Bitbucket REST API v2.0 methods [get_current_user, get_repository,
                     list_repositories, create_repository, list_pull_requests,
-                    get_pull_request implemented]
+                    get_pull_request, create_pull_request implemented]
   cli.rs          — clap structs: Cli (--select global), Command, AuthCommand, RepoCommand,
                     PrCommand. No logic.
   context.rs      — config_dir(), authenticated_client(), print_json(value, select),
@@ -77,6 +77,7 @@ Config layout, mirroring jira (`$XDG_CONFIG_HOME/bitbucket-cli/`, falling back t
 | `repo create <workspace>/<repo_slug> [--description --private --project]` | `POST /2.0/repositories/{workspace}/{repo_slug}`, `scm` always `git`, supports `--select` |
 | `pr list <workspace>/<repo_slug> [--state --page]` | `GET /2.0/repositories/{workspace}/{repo_slug}/pullrequests`, paginated (`--page`), optional `--state` filter (OPEN/MERGED/DECLINED/SUPERSEDED), supports `--select` |
 | `pr get <workspace>/<repo_slug> <id>` | `GET /2.0/repositories/{workspace}/{repo_slug}/pullrequests/{id}`, supports `--select` |
+| `pr create <workspace>/<repo_slug> --title --source [--destination --description --close-source-branch]` | `POST /2.0/repositories/{workspace}/{repo_slug}/pullrequests`, supports `--select` |
 
 `doctor`/`init` are duplicated from jira's pattern (see "Future: shared Atlassian
 library" below). Unlike jira (which calls `/rest/api/3/mypermissions` and reports a
@@ -91,7 +92,6 @@ scopes a command needs is documented per-command, not enforced by `doctor`.
 
 | Command | Notes |
 |---------|-------|
-| `pr create` | source/dest branch, title, description, reviewers |
 | `pr comment` | add comment (general or inline) |
 | `pr approve` / `pr decline` | |
 | `pr merge` | merge strategy (merge/squash/fast-forward) |
