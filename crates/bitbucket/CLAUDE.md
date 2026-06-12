@@ -34,8 +34,28 @@ src/
   endpoints.rs    — URL/path constants for OAuth and REST API v2.0.
   error.rs        — CliError (top-level, thiserror-derived).
   fields.rs       — filter_fields(value, select): dot-notation projection (copied from jira).
+  e2e_tests.rs    — ignored e2e tests against a real workspace (see "Testing" below).
   main.rs         — pure dispatch: parse --select, match Command, call commands::*.
 ```
+
+## Testing
+
+```sh
+# Unit tests (no credentials needed)
+cargo test -p bitbucket
+
+# E2e tests (requires `bitbucket auth login`, git on PATH, writable workspace)
+cargo test -p bitbucket -- --ignored --test-threads=1
+
+# Recovery: delete orphaned cli-bitbucket-e2e-* repos
+cargo test -p bitbucket e2e_cleanup -- --ignored
+```
+
+`e2e_pr_lifecycle` creates a throwaway repo (`cli-bitbucket-e2e-pr-<timestamp>`),
+pushes branches via `git` over HTTPS (`x-token-auth` + OAuth access token), and
+exercises the full pr lifecycle (create/get/list/comment/approve/unapprove/merge/decline)
+plus `branch list`. `RepoGuard` deletes the repo on drop. Override the target
+workspace with `BITBUCKET_E2E_WORKSPACE` (defaults to `lucabrognaracode`).
 
 ## Auth design (implemented)
 

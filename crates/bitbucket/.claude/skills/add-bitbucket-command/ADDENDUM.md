@@ -25,5 +25,18 @@ workspace/repo slug is needed.
 
 ## Step 6 — e2e tests
 
-None. This crate has no automated e2e suite — step 5's manual live
-verification against the real workspace is the only check beyond unit tests.
+`src/e2e_tests.rs`, wired into `main.rs` behind `#[cfg(test)]`. One ignored
+lifecycle test (`e2e_pr_lifecycle`) creates a throwaway repo
+(`cli-bitbucket-e2e-pr-<timestamp>`), pushes branches via `git` over HTTPS
+using the OAuth access token (`x-token-auth`), and exercises pr
+create/get/list/comment/approve/unapprove/merge/decline + branch list.
+`RepoGuard` deletes the repo on drop. `e2e_cleanup` is the recovery test —
+deletes any orphaned `cli-bitbucket-e2e-*` repos.
+
+```sh
+cargo test -p bitbucket -- --ignored --test-threads=1
+```
+
+When adding a new command, extend `e2e_pr_lifecycle` (or add a new ignored
+test following the same `RepoGuard` pattern) if it fits the PR lifecycle;
+otherwise step 5's manual live verification remains the primary check.

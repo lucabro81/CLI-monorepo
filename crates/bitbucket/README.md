@@ -308,7 +308,15 @@ cargo test -p bitbucket
 
 ### End-to-end / live testing
 
-There is no automated e2e suite yet (see `crates/bitbucket/CLAUDE.md`). New commands are smoke-tested manually against a real workspace during development:
+An automated e2e suite exercises the full pr lifecycle against a real workspace
+(see `crates/bitbucket/CLAUDE.md` for details). Requires `bitbucket auth login`
+and `git` on `PATH`:
+
+```sh
+cargo test -p bitbucket -- --ignored --test-threads=1
+```
+
+New commands are also smoke-tested manually against a real workspace during development:
 
 ```sh
 cargo run -p bitbucket -- <command> --help     # accurate, complete help text?

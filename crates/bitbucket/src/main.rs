@@ -17,6 +17,10 @@ mod endpoints;
 mod error;
 mod fields;
 
+#[cfg(test)]
+#[path = "e2e_tests.rs"]
+mod e2e_tests;
+
 use std::process::ExitCode;
 
 use clap::Parser;
