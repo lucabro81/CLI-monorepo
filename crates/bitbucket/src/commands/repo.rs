@@ -36,6 +36,18 @@ pub fn run(command: RepoCommand, select: &[&str]) -> Result<(), CliError> {
                 })?;
             print_json(&value, select)
         }
+        RepoCommand::Delete { repository, confirm } => {
+            if !confirm {
+                return Err(CliError::RepoDeleteNotConfirmed { repository });
+            }
+            let (workspace, repo_slug) = split_repository(&repository)?;
+            authenticated_client()?
+                .delete_repository(workspace, repo_slug)
+                .map_err(|e| CliError::ApiRequestFailed {
+                    reason: e.to_string(),
+                })?;
+            print_json(&json!({"deleted": true, "repository": repository}), select)
+        }
     }
 }
 

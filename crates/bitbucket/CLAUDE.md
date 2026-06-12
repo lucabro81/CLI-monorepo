@@ -4,7 +4,7 @@ Architecture and design notes for the `bitbucket` crate. Global rules (TDD, erro
 
 ## Status
 
-`init`, `doctor`, `auth login`, `auth whoami`, `repo get`, `repo list`, `repo create`, `pr get`, `pr list`, `pr create`, `pr comment`, `pr approve`, `pr unapprove`, `pr decline`, `pr merge`, `branch list` implemented. Other commands not started yet.
+`init`, `doctor`, `auth login`, `auth whoami`, `repo get`, `repo list`, `repo create`, `repo delete`, `pr get`, `pr list`, `pr create`, `pr comment`, `pr approve`, `pr unapprove`, `pr decline`, `pr merge`, `branch list` implemented. Other commands not started yet.
 
 ## Module map (mirrors crates/jira)
 
@@ -15,7 +15,7 @@ src/
     auth.rs       — run_login(), run_whoami()      [implemented]
     doctor.rs     — run_doctor(); also called by init as final verification [implemented]
     init.rs       — run_init(), write_app_config(); human onboarding flow [implemented]
-    repo.rs       — run(RepoCommand); dispatches all repo subcommands   [get, list, create implemented]
+    repo.rs       — run(RepoCommand); dispatches all repo subcommands   [get, list, create, delete implemented]
     pr.rs         — run(PrCommand); dispatches all pr subcommands       [get, list, create, comment,
                     approve, unapprove, decline, merge implemented]
     branch.rs     — run(BranchCommand); dispatches all branch subcommands [list implemented]
@@ -23,7 +23,7 @@ src/
                     load_credentials()/save_credentials() [implemented]
   client.rs       — BitbucketClient (blocking reqwest); get_json/post_json/delete helpers;
                     Bitbucket REST API v2.0 methods [get_current_user, get_repository,
-                    list_repositories, create_repository, list_pull_requests,
+                    list_repositories, create_repository, delete_repository, list_pull_requests,
                     get_pull_request, create_pull_request, create_pull_request_comment,
                     approve_pull_request, unapprove_pull_request, decline_pull_request,
                     merge_pull_request, list_branches implemented]
@@ -79,6 +79,7 @@ Config layout, mirroring jira (`$XDG_CONFIG_HOME/bitbucket-cli/`, falling back t
 | `repo get <workspace>/<repo_slug>` | `GET /2.0/repositories/{workspace}/{repo_slug}`, supports `--select` |
 | `repo list <workspace> [--page]` | `GET /2.0/repositories/{workspace}`, paginated (`--page`), supports `--select` |
 | `repo create <workspace>/<repo_slug> [--description --private --project]` | `POST /2.0/repositories/{workspace}/{repo_slug}`, `scm` always `git`, supports `--select` |
+| `repo delete <workspace>/<repo_slug> --confirm` | `DELETE /2.0/repositories/{workspace}/{repo_slug}`, destructive, requires `--confirm`, synthesizes `{"deleted": true, "repository": ...}`, supports `--select` |
 | `pr list <workspace>/<repo_slug> [--state --page]` | `GET /2.0/repositories/{workspace}/{repo_slug}/pullrequests`, paginated (`--page`), optional `--state` filter (OPEN/MERGED/DECLINED/SUPERSEDED), supports `--select` |
 | `pr get <workspace>/<repo_slug> <id>` | `GET /2.0/repositories/{workspace}/{repo_slug}/pullrequests/{id}`, supports `--select` |
 | `pr create <workspace>/<repo_slug> --title --source [--destination --description --close-source-branch]` | `POST /2.0/repositories/{workspace}/{repo_slug}/pullrequests`, supports `--select` |

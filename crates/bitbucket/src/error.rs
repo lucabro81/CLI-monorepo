@@ -83,4 +83,10 @@ pub enum CliError {
         Pass --confirm to execute: bitbucket pr merge {repository} {id} --confirm"
     )]
     MergeNotConfirmed { repository: String, id: u64 },
+
+    #[error(
+        "deleting repository {repository} is permanent and cannot be undone. \
+        Pass --confirm to execute: bitbucket repo delete {repository} --confirm"
+    )]
+    RepoDeleteNotConfirmed { repository: String },
 }

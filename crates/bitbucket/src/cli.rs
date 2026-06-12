@@ -105,6 +105,17 @@ pub enum RepoCommand {
         #[arg(long)]
         project: Option<String>,
     },
+    /// Delete a repository, as JSON
+    ///
+    /// This permanently deletes the repository and cannot be undone.
+    #[command(after_help = "Example:\n  bitbucket repo delete lucabrognaracode/my-repo --confirm")]
+    Delete {
+        /// Full repository identifier in the form `workspace/repo_slug`
+        repository: String,
+        /// Confirm the deletion (required — this is permanent)
+        #[arg(long)]
+        confirm: bool,
+    },
 }
 
 #[derive(Debug, Subcommand)]

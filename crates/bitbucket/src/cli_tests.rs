@@ -423,3 +423,33 @@ fn parses_pr_get() {
         other => panic!("expected Pr Get, got {other:?}"),
     }
 }
+
+#[test]
+fn parses_repo_delete_without_confirm() {
+    let cli = Cli::try_parse_from(["bitbucket", "repo", "delete", "lucabrognaracode/my-repo"]).expect("should parse");
+
+    match cli.command {
+        Command::Repo {
+            command: RepoCommand::Delete { repository, confirm },
+        } => {
+            assert_eq!(repository, "lucabrognaracode/my-repo");
+            assert!(!confirm);
+        }
+        other => panic!("expected Repo Delete, got {other:?}"),
+    }
+}
+
+#[test]
+fn parses_repo_delete_with_confirm() {
+    let cli = Cli::try_parse_from(["bitbucket", "repo", "delete", "lucabrognaracode/my-repo", "--confirm"]).expect("should parse");
+
+    match cli.command {
+        Command::Repo {
+            command: RepoCommand::Delete { repository, confirm },
+        } => {
+            assert_eq!(repository, "lucabrognaracode/my-repo");
+            assert!(confirm);
+        }
+        other => panic!("expected Repo Delete, got {other:?}"),
+    }
+}

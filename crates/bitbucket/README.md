@@ -4,7 +4,7 @@ CLI for Bitbucket Cloud, designed to be driven by an LLM agent (output is JSON, 
 
 ## Status
 
-`init`, `doctor`, `auth login`/`auth whoami`, `repo get`, `repo list`, `repo create`, `pr get`, `pr list`, `pr create`, `pr comment`, `pr approve`, `pr unapprove`, `pr decline`, `pr merge`, `branch list` implemented. See [CLAUDE.md](CLAUDE.md) for architecture and the planned command list.
+`init`, `doctor`, `auth login`/`auth whoami`, `repo get`, `repo list`, `repo create`, `repo delete`, `pr get`, `pr list`, `pr create`, `pr comment`, `pr approve`, `pr unapprove`, `pr decline`, `pr merge`, `branch list` implemented. See [CLAUDE.md](CLAUDE.md) for architecture and the planned command list.
 
 ## Setup
 
@@ -145,6 +145,16 @@ cargo run -p bitbucket -- repo create lucabrognaracode/my-new-repo --project PRO
 - `--project <KEY>` — assign the repository to a project in the workspace
 
 Requires the `repository:write` scope. Note: some workspaces reject public repositories under a private project (`"Private projects cannot contain public repositories"`) — pass `--private` in that case.
+
+### `bitbucket repo delete <workspace>/<repo_slug>`
+
+Deletes a repository. **Destructive**: permanent and cannot be undone — requires `--confirm`.
+
+```sh
+cargo run -p bitbucket -- repo delete lucabrognaracode/my-repo --confirm
+```
+
+Returns `{"deleted": true, "repository": "<workspace>/<repo_slug>"}`. Requires the `repository:admin` scope.
 
 ### `bitbucket pr create <workspace>/<repo_slug>`
 
