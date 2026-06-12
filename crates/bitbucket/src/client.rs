@@ -123,6 +123,19 @@ impl BitbucketClient {
         self.post_json(&endpoints::path_pull_request_decline(workspace, repo_slug, id), &serde_json::json!({}))
     }
 
+    /// Merges the pull request identified by `id` in `workspace`/`repo_slug` with the
+    /// given JSON body (`message`, `merge_strategy`, `close_source_branch`).
+    /// Returns the merged pull request, as raw JSON.
+    pub fn merge_pull_request(
+        &self,
+        workspace: &str,
+        repo_slug: &str,
+        id: u64,
+        body: &serde_json::Value,
+    ) -> Result<serde_json::Value, ClientError> {
+        self.post_json(&endpoints::path_pull_request_merge(workspace, repo_slug, id), body)
+    }
+
     /// Creates a repository at `workspace`/`repo_slug` with the given JSON body.
     /// Returns the created repository, as raw JSON.
     pub fn create_repository(

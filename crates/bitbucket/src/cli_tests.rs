@@ -336,6 +336,50 @@ fn parses_pr_decline_with_confirm() {
 }
 
 #[test]
+fn parses_pr_merge_with_no_optional_flags() {
+    let cli = Cli::try_parse_from(["bitbucket", "pr", "merge", "lucabrognaracode/my-repo", "42"]).expect("should parse");
+
+    match cli.command {
+        Command::Pr {
+            command: PrCommand::Merge { repository, id, message, merge_strategy, close_source_branch, confirm },
+        } => {
+            assert_eq!(repository, "lucabrognaracode/my-repo");
+            assert_eq!(id, 42);
+            assert_eq!(message, None);
+            assert_eq!(merge_strategy, None);
+            assert!(!close_source_branch);
+            assert!(!confirm);
+        }
+        other => panic!("expected Pr Merge, got {other:?}"),
+    }
+}
+
+#[test]
+fn parses_pr_merge_with_all_flags() {
+    let cli = Cli::try_parse_from([
+        "bitbucket", "pr", "merge", "lucabrognaracode/my-repo", "42",
+        "--message", "Merging feature",
+        "--merge-strategy", "squash",
+        "--close-source-branch",
+        "--confirm",
+    ]).expect("should parse");
+
+    match cli.command {
+        Command::Pr {
+            command: PrCommand::Merge { repository, id, message, merge_strategy, close_source_branch, confirm },
+        } => {
+            assert_eq!(repository, "lucabrognaracode/my-repo");
+            assert_eq!(id, 42);
+            assert_eq!(message, Some("Merging feature".to_string()));
+            assert_eq!(merge_strategy, Some("squash".to_string()));
+            assert!(close_source_branch);
+            assert!(confirm);
+        }
+        other => panic!("expected Pr Merge, got {other:?}"),
+    }
+}
+
+#[test]
 fn parses_pr_get() {
     let cli = Cli::try_parse_from(["bitbucket", "pr", "get", "lucabrognaracode/my-repo", "42"]).expect("should parse");
 

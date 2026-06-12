@@ -48,6 +48,11 @@ pub fn path_pull_request_decline(workspace: &str, repo_slug: &str, id: u64) -> S
     format!("/repositories/{workspace}/{repo_slug}/pullrequests/{id}/decline")
 }
 
+/// Merges a pull request. `POST` only.
+pub fn path_pull_request_merge(workspace: &str, repo_slug: &str, id: u64) -> String {
+    format!("/repositories/{workspace}/{repo_slug}/pullrequests/{id}/merge")
+}
+
 /// Pull requests for a repository, optionally filtered by `state`
 /// (`OPEN`, `MERGED`, `DECLINED`, `SUPERSEDED`) and paginated.
 pub fn path_pull_requests(workspace: &str, repo_slug: &str, state: Option<&str>, page: Option<u32>) -> String {

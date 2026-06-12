@@ -4,7 +4,7 @@ CLI for Bitbucket Cloud, designed to be driven by an LLM agent (output is JSON, 
 
 ## Status
 
-`init`, `doctor`, `auth login`/`auth whoami`, `repo get`, `repo list`, `repo create`, `pr get`, `pr list`, `pr create`, `pr comment`, `pr approve`, `pr unapprove`, `pr decline` implemented. See [CLAUDE.md](CLAUDE.md) for architecture and the planned command list.
+`init`, `doctor`, `auth login`/`auth whoami`, `repo get`, `repo list`, `repo create`, `pr get`, `pr list`, `pr create`, `pr comment`, `pr approve`, `pr unapprove`, `pr decline`, `pr merge` implemented. See [CLAUDE.md](CLAUDE.md) for architecture and the planned command list.
 
 ## Setup
 
@@ -192,6 +192,22 @@ Declines a pull request. **Destructive**: changes the pull request's state and c
 ```sh
 cargo run -p bitbucket -- pr decline lucabrognaracode/my-repo 42 --confirm
 ```
+
+Requires the `pullrequest:write` scope.
+
+### `bitbucket pr merge <workspace>/<repo_slug> <id>`
+
+Merges a pull request. **Destructive**: permanent and cannot be undone — requires `--confirm`.
+
+```sh
+cargo run -p bitbucket -- pr merge lucabrognaracode/my-repo 42 --confirm
+cargo run -p bitbucket -- pr merge lucabrognaracode/my-repo 42 --merge-strategy squash --close-source-branch --confirm
+```
+
+**Flags:**
+- `--message <TEXT>` — custom merge commit message. If omitted, Bitbucket generates a default.
+- `--merge-strategy <STRATEGY>` — `merge_commit`, `squash`, or `fast_forward`. If omitted, Bitbucket uses the repository's default.
+- `--close-source-branch` — close the source branch after merging
 
 Requires the `pullrequest:write` scope.
 

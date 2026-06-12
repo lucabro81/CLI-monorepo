@@ -4,7 +4,7 @@ Architecture and design notes for the `bitbucket` crate. Global rules (TDD, erro
 
 ## Status
 
-`init`, `doctor`, `auth login`, `auth whoami`, `repo get`, `repo list`, `repo create`, `pr get`, `pr list`, `pr create`, `pr comment`, `pr approve`, `pr unapprove`, `pr decline` implemented. Other commands not started yet.
+`init`, `doctor`, `auth login`, `auth whoami`, `repo get`, `repo list`, `repo create`, `pr get`, `pr list`, `pr create`, `pr comment`, `pr approve`, `pr unapprove`, `pr decline`, `pr merge` implemented. Other commands not started yet.
 
 ## Module map (mirrors crates/jira)
 
@@ -17,15 +17,15 @@ src/
     init.rs       — run_init(), write_app_config(); human onboarding flow [implemented]
     repo.rs       — run(RepoCommand); dispatches all repo subcommands   [get, list, create implemented]
     pr.rs         — run(PrCommand); dispatches all pr subcommands       [get, list, create, comment,
-                    approve, unapprove, decline implemented]
+                    approve, unapprove, decline, merge implemented]
   auth.rs         — OAuthConfig, Credentials, login_client_credentials(),
                     load_credentials()/save_credentials() [implemented]
   client.rs       — BitbucketClient (blocking reqwest); get_json/post_json/delete helpers;
                     Bitbucket REST API v2.0 methods [get_current_user, get_repository,
                     list_repositories, create_repository, list_pull_requests,
                     get_pull_request, create_pull_request, create_pull_request_comment,
-                    approve_pull_request, unapprove_pull_request, decline_pull_request
-                    implemented]
+                    approve_pull_request, unapprove_pull_request, decline_pull_request,
+                    merge_pull_request implemented]
   cli.rs          — clap structs: Cli (--select global), Command, AuthCommand, RepoCommand,
                     PrCommand. No logic.
   context.rs      — config_dir(), authenticated_client(), print_json(value, select),
@@ -85,6 +85,7 @@ Config layout, mirroring jira (`$XDG_CONFIG_HOME/bitbucket-cli/`, falling back t
 | `pr approve <workspace>/<repo_slug> <id>` | `POST /2.0/repositories/{workspace}/{repo_slug}/pullrequests/{id}/approve`, supports `--select` |
 | `pr unapprove <workspace>/<repo_slug> <id>` | `DELETE /2.0/repositories/{workspace}/{repo_slug}/pullrequests/{id}/approve`, synthesizes `{"unapproved": true, "id": ...}`, supports `--select` |
 | `pr decline <workspace>/<repo_slug> <id> --confirm` | `POST /2.0/repositories/{workspace}/{repo_slug}/pullrequests/{id}/decline`, destructive, requires `--confirm`, supports `--select` |
+| `pr merge <workspace>/<repo_slug> <id> --confirm [--message --merge-strategy --close-source-branch]` | `POST /2.0/repositories/{workspace}/{repo_slug}/pullrequests/{id}/merge`, destructive, requires `--confirm`, supports `--select` |
 
 `doctor`/`init` are duplicated from jira's pattern (see "Future: shared Atlassian
 library" below). Unlike jira (which calls `/rest/api/3/mypermissions` and reports a
@@ -99,7 +100,6 @@ scopes a command needs is documented per-command, not enforced by `doctor`.
 
 | Command | Notes |
 |---------|-------|
-| `pr merge` | merge strategy (merge/squash/fast-forward) |
 | `pr diff` | for LLM review |
 | `branch list` | check existing branches before `pr create` |
 | `pipeline list` / `pipeline get` | CI status, often blocking for merge |

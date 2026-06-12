@@ -162,6 +162,28 @@ pub enum PrCommand {
         #[arg(long)]
         confirm: bool,
     },
+    /// Merge a pull request, as JSON
+    ///
+    /// This is permanent and cannot be undone.
+    #[command(after_help = "Examples:\n  bitbucket pr merge lucabrognaracode/my-repo 42 --confirm\n  bitbucket pr merge lucabrognaracode/my-repo 42 --merge-strategy squash --close-source-branch --confirm")]
+    Merge {
+        /// Full repository identifier in the form `workspace/repo_slug`
+        repository: String,
+        /// Pull request ID
+        id: u64,
+        /// Custom merge commit message. If omitted, Bitbucket generates a default message.
+        #[arg(long)]
+        message: Option<String>,
+        /// Merge strategy: `merge_commit`, `squash`, or `fast_forward`. If omitted, Bitbucket uses the repository's default.
+        #[arg(long)]
+        merge_strategy: Option<String>,
+        /// Close the source branch after merging
+        #[arg(long)]
+        close_source_branch: bool,
+        /// Confirm the merge (required — this is permanent)
+        #[arg(long)]
+        confirm: bool,
+    },
     /// Add a comment to a pull request, as JSON
     #[command(after_help = "Examples:\n  bitbucket pr comment lucabrognaracode/my-repo 42 --content \"Looks good to me\"\n  bitbucket pr comment lucabrognaracode/my-repo 42 --content \"Fix this\" --path src/main.rs --line 10")]
     Comment {

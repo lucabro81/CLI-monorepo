@@ -1,6 +1,6 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use super::{build_comment_body, build_create_body, validate_inline_location};
+use super::{build_comment_body, build_create_body, build_merge_body, validate_inline_location};
 
 #[test]
 fn build_create_body_with_required_fields_only() {
@@ -83,6 +83,48 @@ fn validate_inline_location_errors_when_only_line_present() {
     let err = validate_inline_location(None, Some(10)).expect_err("should error");
 
     assert!(matches!(err, crate::error::CliError::InvalidInput { .. }));
+}
+
+#[test]
+fn build_merge_body_with_no_optional_fields() {
+    let body = build_merge_body(None, None, false);
+
+    assert_eq!(body, serde_json::json!({}));
+}
+
+#[test]
+fn build_merge_body_includes_message_when_set() {
+    let body = build_merge_body(Some("Merging feature".to_string()), None, false);
+
+    assert_eq!(body, serde_json::json!({"message": "Merging feature"}));
+}
+
+#[test]
+fn build_merge_body_includes_merge_strategy_when_set() {
+    let body = build_merge_body(None, Some("squash".to_string()), false);
+
+    assert_eq!(body, serde_json::json!({"merge_strategy": "squash"}));
+}
+
+#[test]
+fn build_merge_body_includes_close_source_branch_when_true() {
+    let body = build_merge_body(None, None, true);
+
+    assert_eq!(body, serde_json::json!({"close_source_branch": true}));
+}
+
+#[test]
+fn build_merge_body_combines_all_fields() {
+    let body = build_merge_body(Some("Merging feature".to_string()), Some("squash".to_string()), true);
+
+    assert_eq!(
+        body,
+        serde_json::json!({
+            "message": "Merging feature",
+            "merge_strategy": "squash",
+            "close_source_branch": true
+        })
+    );
 }
 
 #[test]

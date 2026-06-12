@@ -77,4 +77,10 @@ pub enum CliError {
         Pass --confirm to execute: bitbucket pr decline {repository} {id} --confirm"
     )]
     DeclineNotConfirmed { repository: String, id: u64 },
+
+    #[error(
+        "merging pull request {id} is permanent and cannot be undone. \
+        Pass --confirm to execute: bitbucket pr merge {repository} {id} --confirm"
+    )]
+    MergeNotConfirmed { repository: String, id: u64 },
 }
