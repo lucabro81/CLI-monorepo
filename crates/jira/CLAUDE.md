@@ -64,6 +64,15 @@ The `#![allow(clippy::unwrap_used, clippy::expect_used)]` attribute goes at
 the top of each test file — they're exempt from the workspace-wide deny on
 those lints.
 
+Two-level split:
+- `tests/cli_tests.rs` — clap parsing tests for every command/subcommand
+  (required/optional flags, defaults, rejections). Always present.
+- `tests/commands/<module>_tests.rs` — unit tests for non-HTTP logic inside a
+  command handler (body builders, validation, identifier splitting). Only
+  exists for modules that have such logic to isolate; thin passthrough
+  modules (e.g. `issue.rs`) have no dedicated file — their coverage lives
+  entirely in `cli_tests.rs`.
+
 ## OAuth / auth design
 
 Two grant types, both using `client_id`/`client_secret` from `app.json`:

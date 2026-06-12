@@ -56,6 +56,15 @@ mod tests;
 `#![allow(clippy::unwrap_used, clippy::expect_used)]` goes at the top of each
 test file — they're exempt from the workspace-wide deny on those lints.
 
+Two-level split:
+- `tests/cli_tests.rs` — clap parsing tests for every command/subcommand
+  (required/optional flags, defaults, rejections). Always present.
+- `tests/commands/<module>_tests.rs` — unit tests for non-HTTP logic inside a
+  command handler (body builders, validation, identifier splitting). Only
+  exists for modules that have such logic to isolate; thin passthrough
+  modules (e.g. `auth.rs`, `branch.rs`) have no dedicated file — their
+  coverage lives entirely in `cli_tests.rs`.
+
 ## Testing
 
 ```sh
