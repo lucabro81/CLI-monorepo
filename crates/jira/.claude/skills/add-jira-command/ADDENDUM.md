@@ -25,7 +25,7 @@ Docs: `https://developer.atlassian.com/cloud/jira/platform/rest/v3/`
 
 ## Step 6 — e2e tests
 
-`crates/jira/src/e2e_tests.rs`, each test `#[ignore = "e2e: requires credentials and JIRA_E2E_PROJECT"]`:
+`crates/jira/src/tests/e2e_tests.rs`, each test `#[ignore = "e2e: requires credentials and JIRA_E2E_PROJECT"]`:
 
 - **Isolation**: every issue created by a test gets the `[jira-cli-e2e]`
   summary prefix (`e2e_summary()` helper); `IssueGuard` deletes it on drop

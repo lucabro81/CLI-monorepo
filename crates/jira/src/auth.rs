@@ -457,5 +457,5 @@ pub fn credentials_path(config_dir: &Path) -> PathBuf {
 }
 
 #[cfg(test)]
-#[path = "auth_tests.rs"]
+#[path = "tests/auth_tests.rs"]
 mod tests;

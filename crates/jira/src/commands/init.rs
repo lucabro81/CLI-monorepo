@@ -129,5 +129,5 @@ pub fn run_init(client_id: Option<String>, client_secret: Option<String>) -> Res
 }
 
 #[cfg(test)]
-#[path = "init_tests.rs"]
+#[path = "../tests/commands/init_tests.rs"]
 mod tests;

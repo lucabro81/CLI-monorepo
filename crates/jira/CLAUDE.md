@@ -29,6 +29,8 @@ src/
                     for stdin prompts in init.
   fields.rs       — filter_fields(value, select): dot-notation projection,
                     array-aware, backed by FieldTree (recursive BTreeMap).
+  tests/          — all *_tests.rs files, mirroring the src/ layout (see "Test file
+                    convention" below). tests/e2e_tests.rs holds the ignored e2e tests.
   main.rs         — pure dispatch: parse --select, match Command, call commands::*.
 ```
 
@@ -47,13 +49,20 @@ JIRA_E2E_PROJECT=KAN cargo test -p jira e2e_cleanup -- --ignored
 
 ## Test file convention
 
-Tests live in a separate `<module>_tests.rs` file referenced with:
+Test files live under `src/tests/`, mirroring the module they test (e.g.
+`src/commands/issue.rs` -> `src/tests/commands/issue_tests.rs`, `src/cli.rs`
+-> `src/tests/cli_tests.rs`). Each tested module references its test file with:
+
 ```rust
 #[cfg(test)]
-#[path = "<module>_tests.rs"]
+#[path = "tests/<module>_tests.rs"]              // from src/<module>.rs
+#[path = "../tests/commands/<module>_tests.rs"]  // from src/commands/<module>.rs
 mod tests;
 ```
-Test files for commands go in `src/commands/` alongside their module. The `#![allow(clippy::unwrap_used, clippy::expect_used)]` attribute goes at the top of each test file.
+
+The `#![allow(clippy::unwrap_used, clippy::expect_used)]` attribute goes at
+the top of each test file — they're exempt from the workspace-wide deny on
+those lints.
 
 ## OAuth / auth design
 
