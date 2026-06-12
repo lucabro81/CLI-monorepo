@@ -64,6 +64,11 @@ impl BitbucketClient {
         self.get_json(&endpoints::path_repositories(workspace, page))
     }
 
+    /// Returns the pull request identified by `id` in `workspace`/`repo_slug`, as raw JSON.
+    pub fn get_pull_request(&self, workspace: &str, repo_slug: &str, id: u64) -> Result<serde_json::Value, ClientError> {
+        self.get_json(&endpoints::path_pull_request(workspace, repo_slug, id))
+    }
+
     /// Returns a page of pull requests for `workspace`/`repo_slug`, as raw JSON.
     /// `state` filters to `OPEN`, `MERGED`, `DECLINED`, or `SUPERSEDED`; `None` returns
     /// pull requests in any state.

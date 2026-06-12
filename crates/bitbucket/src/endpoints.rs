@@ -28,6 +28,11 @@ pub fn path_repositories(workspace: &str, page: Option<u32>) -> String {
     }
 }
 
+/// A single pull request, identified by its numeric ID.
+pub fn path_pull_request(workspace: &str, repo_slug: &str, id: u64) -> String {
+    format!("/repositories/{workspace}/{repo_slug}/pullrequests/{id}")
+}
+
 /// Pull requests for a repository, optionally filtered by `state`
 /// (`OPEN`, `MERGED`, `DECLINED`, `SUPERSEDED`) and paginated.
 pub fn path_pull_requests(workspace: &str, repo_slug: &str, state: Option<&str>, page: Option<u32>) -> String {

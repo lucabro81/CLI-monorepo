@@ -179,3 +179,18 @@ fn parses_pr_list_with_all_flags() {
         other => panic!("expected Pr List, got {other:?}"),
     }
 }
+
+#[test]
+fn parses_pr_get() {
+    let cli = Cli::try_parse_from(["bitbucket", "pr", "get", "lucabrognaracode/my-repo", "42"]).expect("should parse");
+
+    match cli.command {
+        Command::Pr {
+            command: PrCommand::Get { repository, id },
+        } => {
+            assert_eq!(repository, "lucabrognaracode/my-repo");
+            assert_eq!(id, 42);
+        }
+        other => panic!("expected Pr Get, got {other:?}"),
+    }
+}

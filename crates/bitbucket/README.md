@@ -4,7 +4,7 @@ CLI for Bitbucket Cloud, designed to be driven by an LLM agent (output is JSON, 
 
 ## Status
 
-`init`, `doctor`, `auth login`/`auth whoami`, `repo get`, `repo list`, `repo create`, `pr list` implemented. See [CLAUDE.md](CLAUDE.md) for architecture and the planned command list.
+`init`, `doctor`, `auth login`/`auth whoami`, `repo get`, `repo list`, `repo create`, `pr get`, `pr list` implemented. See [CLAUDE.md](CLAUDE.md) for architecture and the planned command list.
 
 ## Setup
 
@@ -145,6 +145,17 @@ cargo run -p bitbucket -- repo create lucabrognaracode/my-new-repo --project PRO
 - `--project <KEY>` — assign the repository to a project in the workspace
 
 Requires the `repository:write` scope. Note: some workspaces reject public repositories under a private project (`"Private projects cannot contain public repositories"`) — pass `--private` in that case.
+
+### `bitbucket pr get <workspace>/<repo_slug> <id>`
+
+Fetches a single pull request and prints the full Bitbucket API response as pretty-printed JSON.
+
+```sh
+cargo run -p bitbucket -- pr get lucabrognaracode/my-repo 42
+cargo run -p bitbucket -- pr get lucabrognaracode/my-repo 42 --select title,state,source.branch.name
+```
+
+Requires the `pullrequest` (read) scope.
 
 ### `bitbucket pr list <workspace>/<repo_slug>`
 
