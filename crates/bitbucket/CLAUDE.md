@@ -42,28 +42,11 @@ src/
 
 ## Test file convention
 
-Test files live under `src/tests/`, mirroring the module they test (e.g.
-`src/commands/pr.rs` -> `src/tests/commands/pr_tests.rs`, `src/cli.rs` ->
-`src/tests/cli_tests.rs`). Each tested module references its test file with:
-
-```rust
-#[cfg(test)]
-#[path = "tests/<module>_tests.rs"]      // from src/<module>.rs
-#[path = "../tests/commands/<module>_tests.rs"]  // from src/commands/<module>.rs
-mod tests;
-```
-
-`#![allow(clippy::unwrap_used, clippy::expect_used)]` goes at the top of each
-test file — they're exempt from the workspace-wide deny on those lints.
-
-Two-level split:
-- `tests/cli_tests.rs` — clap parsing tests for every command/subcommand
-  (required/optional flags, defaults, rejections). Always present.
-- `tests/commands/<module>_tests.rs` — unit tests for non-HTTP logic inside a
-  command handler (body builders, validation, identifier splitting). Only
-  exists for modules that have such logic to isolate; thin passthrough
-  modules (e.g. `auth.rs`, `branch.rs`) have no dedicated file — their
-  coverage lives entirely in `cli_tests.rs`.
+See root `CLAUDE.md` for the general `src/tests/` convention and the
+cli_tests/commands split. In this crate, `auth.rs` and `branch.rs` are the
+thin passthrough modules with no dedicated `tests/commands/` file — their
+coverage lives entirely in `cli_tests.rs`. `context.rs` also has a dedicated
+`tests/context_tests.rs`.
 
 ## Testing
 

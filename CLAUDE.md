@@ -29,16 +29,46 @@ src/
   commands/         ← one module per top-level command group (auth, issue, etc.)
     mod.rs
     <command>.rs
+  tests/            ← all *_tests.rs files, mirroring this layout (see "Test
+    commands/         file convention" below)
+      <command>_tests.rs
+    <module>_tests.rs
   auth.rs           ← OAuth / auth infrastructure (if applicable)
   client.rs         ← HTTP client for the service API
   cli.rs            ← clap structs only, no logic
   context.rs        ← shared setup helpers (config dir, authenticated client, print_json)
+  endpoints.rs      ← URL/path constants and path-builder functions, no logic
   error.rs          ← CliError (top-level, thiserror-derived)
   fields.rs         ← --select projection (if applicable)
   main.rs           ← pure dispatch, no logic
 ```
 
 Command handlers live in `commands/`; infrastructure (HTTP client, auth, error types) lives at the crate root. `main.rs` only parses `--select` and dispatches to `commands::*`.
+
+## Test file convention
+
+Test files live under `src/tests/`, mirroring the module they test (e.g.
+`src/commands/issue.rs` -> `src/tests/commands/issue_tests.rs`, `src/cli.rs`
+-> `src/tests/cli_tests.rs`). Each tested module references its test file with:
+
+```rust
+#[cfg(test)]
+#[path = "tests/<module>_tests.rs"]              // from src/<module>.rs
+#[path = "../tests/commands/<module>_tests.rs"]  // from src/commands/<module>.rs
+mod tests;
+```
+
+`#![allow(clippy::unwrap_used, clippy::expect_used)]` goes at the top of each
+test file — they're exempt from the workspace-wide deny on those lints.
+
+Two-level split:
+- `tests/cli_tests.rs` — clap parsing tests for every command/subcommand
+  (required/optional flags, defaults, rejections). Always present.
+- `tests/commands/<module>_tests.rs` — unit tests for non-HTTP logic inside a
+  command handler (body builders, validation, identifier splitting). Only
+  exists for modules that have such logic to isolate; thin passthrough
+  modules have no dedicated file — their coverage lives entirely in
+  `cli_tests.rs`.
 
 ## Error handling
 

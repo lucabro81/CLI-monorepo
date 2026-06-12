@@ -49,29 +49,10 @@ JIRA_E2E_PROJECT=KAN cargo test -p jira e2e_cleanup -- --ignored
 
 ## Test file convention
 
-Test files live under `src/tests/`, mirroring the module they test (e.g.
-`src/commands/issue.rs` -> `src/tests/commands/issue_tests.rs`, `src/cli.rs`
--> `src/tests/cli_tests.rs`). Each tested module references its test file with:
-
-```rust
-#[cfg(test)]
-#[path = "tests/<module>_tests.rs"]              // from src/<module>.rs
-#[path = "../tests/commands/<module>_tests.rs"]  // from src/commands/<module>.rs
-mod tests;
-```
-
-The `#![allow(clippy::unwrap_used, clippy::expect_used)]` attribute goes at
-the top of each test file — they're exempt from the workspace-wide deny on
-those lints.
-
-Two-level split:
-- `tests/cli_tests.rs` — clap parsing tests for every command/subcommand
-  (required/optional flags, defaults, rejections). Always present.
-- `tests/commands/<module>_tests.rs` — unit tests for non-HTTP logic inside a
-  command handler (body builders, validation, identifier splitting). Only
-  exists for modules that have such logic to isolate; thin passthrough
-  modules (e.g. `issue.rs`) have no dedicated file — their coverage lives
-  entirely in `cli_tests.rs`.
+See root `CLAUDE.md` for the general `src/tests/` convention and the
+cli_tests/commands split. In this crate, `issue.rs` is the thin passthrough
+module with no dedicated `tests/commands/` file — its coverage lives entirely
+in `cli_tests.rs`.
 
 ## OAuth / auth design
 
