@@ -29,7 +29,7 @@ workspace/repo slug is needed.
 
 ## Step 6 — e2e tests
 
-`crates/bitbucket/src/e2e_tests.rs`, wired into `main.rs` behind
+`crates/bitbucket/src/tests/e2e_tests.rs`, wired into `main.rs` behind
 `#[cfg(test)]`, each test `#[ignore = "e2e: requires credentials, git, and a writable Bitbucket workspace"]`:
 
 - **Isolation**: every repo created by a test gets the

@@ -177,5 +177,5 @@ fn skipped(reason: &str) -> Value {
 }
 
 #[cfg(test)]
-#[path = "doctor_tests.rs"]
+#[path = "../tests/commands/doctor_tests.rs"]
 mod tests;

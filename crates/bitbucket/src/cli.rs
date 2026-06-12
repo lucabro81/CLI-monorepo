@@ -246,5 +246,5 @@ pub enum BranchCommand {
 }
 
 #[cfg(test)]
-#[path = "cli_tests.rs"]
+#[path = "tests/cli_tests.rs"]
 mod tests;

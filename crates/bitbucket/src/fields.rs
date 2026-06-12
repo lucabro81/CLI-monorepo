@@ -84,5 +84,5 @@ fn apply_tree(value: &Value, tree: &FieldTree) -> Value {
 }
 
 #[cfg(test)]
-#[path = "fields_tests.rs"]
+#[path = "tests/fields_tests.rs"]
 mod tests;

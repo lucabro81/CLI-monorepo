@@ -180,5 +180,5 @@ pub fn save_credentials(path: &Path, credentials: &Credentials) -> Result<(), Lo
 }
 
 #[cfg(test)]
-#[path = "auth_tests.rs"]
+#[path = "tests/auth_tests.rs"]
 mod tests;

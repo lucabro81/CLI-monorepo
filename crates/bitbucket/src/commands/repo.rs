@@ -73,5 +73,5 @@ fn build_create_body(description: Option<String>, private: bool, project: Option
 }
 
 #[cfg(test)]
-#[path = "repo_tests.rs"]
+#[path = "../tests/commands/repo_tests.rs"]
 mod tests;

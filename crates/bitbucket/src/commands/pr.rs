@@ -171,5 +171,5 @@ fn build_comment_body(content: &str, inline: Option<(String, u64)>) -> Value {
 }
 
 #[cfg(test)]
-#[path = "pr_tests.rs"]
+#[path = "../tests/commands/pr_tests.rs"]
 mod tests;

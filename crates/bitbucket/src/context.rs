@@ -77,5 +77,5 @@ pub fn split_repository(repository: &str) -> Result<(&str, &str), CliError> {
 }
 
 #[cfg(test)]
-#[path = "context_tests.rs"]
+#[path = "tests/context_tests.rs"]
 mod tests;

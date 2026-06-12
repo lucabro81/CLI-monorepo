@@ -34,9 +34,27 @@ src/
   endpoints.rs    — URL/path constants for OAuth and REST API v2.0.
   error.rs        — CliError (top-level, thiserror-derived).
   fields.rs       — filter_fields(value, select): dot-notation projection (copied from jira).
-  e2e_tests.rs    — ignored e2e tests against a real workspace (see "Testing" below).
+  tests/          — all *_tests.rs files, mirroring the src/ layout (see "Test file
+                    convention" below). tests/e2e_tests.rs holds the ignored e2e tests
+                    against a real workspace (see "Testing" below).
   main.rs         — pure dispatch: parse --select, match Command, call commands::*.
 ```
+
+## Test file convention
+
+Test files live under `src/tests/`, mirroring the module they test (e.g.
+`src/commands/pr.rs` -> `src/tests/commands/pr_tests.rs`, `src/cli.rs` ->
+`src/tests/cli_tests.rs`). Each tested module references its test file with:
+
+```rust
+#[cfg(test)]
+#[path = "tests/<module>_tests.rs"]      // from src/<module>.rs
+#[path = "../tests/commands/<module>_tests.rs"]  // from src/commands/<module>.rs
+mod tests;
+```
+
+`#![allow(clippy::unwrap_used, clippy::expect_used)]` goes at the top of each
+test file — they're exempt from the workspace-wide deny on those lints.
 
 ## Testing
 
