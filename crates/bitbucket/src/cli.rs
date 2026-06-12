@@ -230,6 +230,24 @@ pub enum PrCommand {
         #[arg(long)]
         page: Option<u32>,
     },
+    /// Print the raw unified diff for a pull request
+    ///
+    /// Prints the diff as plain text (unified diff format), not JSON — `--select`
+    /// has no effect on this command.
+    #[command(after_help = "Examples:\n  bitbucket pr diff lucabrognaracode/my-repo 42\n  bitbucket pr diff lucabrognaracode/my-repo 42 --context 5\n  bitbucket pr diff lucabrognaracode/my-repo 42 --path src/main.rs")]
+    Diff {
+        /// Full repository identifier in the form `workspace/repo_slug`
+        repository: String,
+        /// Pull request ID
+        id: u64,
+        /// Number of unchanged context lines to show around each change.
+        /// If omitted, Bitbucket uses its default.
+        #[arg(long)]
+        context: Option<u32>,
+        /// Restrict the diff to a single file path
+        #[arg(long)]
+        path: Option<String>,
+    },
 }
 
 #[derive(Debug, Subcommand)]

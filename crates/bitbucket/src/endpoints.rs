@@ -61,6 +61,25 @@ pub fn path_branches(workspace: &str, repo_slug: &str, page: Option<u32>) -> Str
     }
 }
 
+/// The raw unified diff for a pull request, optionally with extra context lines
+/// around each change and/or restricted to a single file path.
+pub fn path_pull_request_diff(workspace: &str, repo_slug: &str, id: u64, context: Option<u32>, path: Option<&str>) -> String {
+    let mut params = Vec::new();
+    if let Some(context) = context {
+        params.push(format!("context={context}"));
+    }
+    if let Some(path) = path {
+        params.push(format!("path={path}"));
+    }
+
+    let base = format!("/repositories/{workspace}/{repo_slug}/pullrequests/{id}/diff");
+    if params.is_empty() {
+        base
+    } else {
+        format!("{base}?{}", params.join("&"))
+    }
+}
+
 /// Pull requests for a repository, optionally filtered by `state`
 /// (`OPEN`, `MERGED`, `DECLINED`, `SUPERSEDED`) and paginated.
 pub fn path_pull_requests(workspace: &str, repo_slug: &str, state: Option<&str>, page: Option<u32>) -> String {

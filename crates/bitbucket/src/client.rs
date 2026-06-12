@@ -74,6 +74,13 @@ impl BitbucketClient {
         self.get_json(&endpoints::path_pull_request(workspace, repo_slug, id))
     }
 
+    /// Returns the raw unified diff for the pull request identified by `id` in
+    /// `workspace`/`repo_slug`. `context` adds extra unchanged lines around each
+    /// change; `path` restricts the diff to a single file.
+    pub fn get_pull_request_diff(&self, workspace: &str, repo_slug: &str, id: u64, context: Option<u32>, path: Option<&str>) -> Result<String, ClientError> {
+        self.get_text(&endpoints::path_pull_request_diff(workspace, repo_slug, id, context, path))
+    }
+
     /// Returns a page of pull requests for `workspace`/`repo_slug`, as raw JSON.
     /// `state` filters to `OPEN`, `MERGED`, `DECLINED`, or `SUPERSEDED`; `None` returns
     /// pull requests in any state.
@@ -180,6 +187,29 @@ impl BitbucketClient {
         response
             .json()
             .map_err(|e| ClientError::Request(e.to_string()))
+    }
+
+    fn get_text(&self, path: &str) -> Result<String, ClientError> {
+        let url = format!("{}{path}", self.base_url);
+
+        let response = self
+            .http
+            .get(&url)
+            .bearer_auth(&self.access_token)
+            .header("Accept", "text/plain")
+            .send()
+            .map_err(|e| ClientError::Request(e.to_string()))?;
+
+        let status = response.status();
+        let body = response.text().map_err(|e| ClientError::Request(e.to_string()))?;
+        if !status.is_success() {
+            return Err(ClientError::Status {
+                status: status.as_u16(),
+                body,
+            });
+        }
+
+        Ok(body)
     }
 
     fn delete(&self, path: &str) -> Result<(), ClientError> {

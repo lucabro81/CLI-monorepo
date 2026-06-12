@@ -221,6 +221,22 @@ cargo run -p bitbucket -- pr merge lucabrognaracode/my-repo 42 --merge-strategy 
 
 Requires the `pullrequest:write` scope.
 
+### `bitbucket pr diff <workspace>/<repo_slug> <id>`
+
+Prints the raw unified diff for a pull request as plain text (not JSON — `--select` has no effect).
+
+```sh
+cargo run -p bitbucket -- pr diff lucabrognaracode/my-repo 42
+cargo run -p bitbucket -- pr diff lucabrognaracode/my-repo 42 --context 5
+cargo run -p bitbucket -- pr diff lucabrognaracode/my-repo 42 --path src/main.rs
+```
+
+**Flags:**
+- `--context <N>` — number of unchanged context lines around each change. If omitted, Bitbucket uses its default.
+- `--path <PATH>` — restrict the diff to a single file path.
+
+Requires the `pullrequest` (read) scope.
+
 ### `bitbucket pr comment <workspace>/<repo_slug> <id>`
 
 Adds a comment to a pull request — general or inline (attached to a file/line).

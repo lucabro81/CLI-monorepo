@@ -82,6 +82,16 @@ pub fn run(command: PrCommand, select: &[&str]) -> Result<(), CliError> {
                 })?;
             print_json(&value, select)
         }
+        PrCommand::Diff { repository, id, context, path } => {
+            let (workspace, repo_slug) = split_repository(&repository)?;
+            let diff = authenticated_client()?
+                .get_pull_request_diff(workspace, repo_slug, id, context, path.as_deref())
+                .map_err(|e| CliError::ApiRequestFailed {
+                    reason: e.to_string(),
+                })?;
+            print!("{diff}");
+            Ok(())
+        }
         PrCommand::List { repository, state, page } => {
             let (workspace, repo_slug) = split_repository(&repository)?;
             let value = authenticated_client()?

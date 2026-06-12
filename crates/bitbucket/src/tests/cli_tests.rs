@@ -453,3 +453,41 @@ fn parses_repo_delete_with_confirm() {
         other => panic!("expected Repo Delete, got {other:?}"),
     }
 }
+
+#[test]
+fn parses_pr_diff_with_no_optional_flags() {
+    let cli = Cli::try_parse_from(["bitbucket", "pr", "diff", "lucabrognaracode/my-repo", "42"]).expect("should parse");
+
+    match cli.command {
+        Command::Pr {
+            command: PrCommand::Diff { repository, id, context, path },
+        } => {
+            assert_eq!(repository, "lucabrognaracode/my-repo");
+            assert_eq!(id, 42);
+            assert_eq!(context, None);
+            assert_eq!(path, None);
+        }
+        other => panic!("expected Pr Diff, got {other:?}"),
+    }
+}
+
+#[test]
+fn parses_pr_diff_with_all_flags() {
+    let cli = Cli::try_parse_from([
+        "bitbucket", "pr", "diff", "lucabrognaracode/my-repo", "42",
+        "--context", "3",
+        "--path", "src/main.rs",
+    ]).expect("should parse");
+
+    match cli.command {
+        Command::Pr {
+            command: PrCommand::Diff { repository, id, context, path },
+        } => {
+            assert_eq!(repository, "lucabrognaracode/my-repo");
+            assert_eq!(id, 42);
+            assert_eq!(context, Some(3));
+            assert_eq!(path, Some("src/main.rs".to_string()));
+        }
+        other => panic!("expected Pr Diff, got {other:?}"),
+    }
+}
