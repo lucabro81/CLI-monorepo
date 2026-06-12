@@ -68,4 +68,7 @@ pub enum CliError {
 
     #[error("I/O error: {reason}")]
     IoError { reason: String },
+
+    #[error("invalid input: {reason}")]
+    InvalidInput { reason: String },
 }

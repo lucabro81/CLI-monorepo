@@ -93,6 +93,18 @@ impl BitbucketClient {
         self.post_json(&endpoints::path_pull_requests(workspace, repo_slug, None, None), body)
     }
 
+    /// Adds a comment to the pull request identified by `id` in `workspace`/`repo_slug`.
+    /// Returns the created comment, as raw JSON.
+    pub fn create_pull_request_comment(
+        &self,
+        workspace: &str,
+        repo_slug: &str,
+        id: u64,
+        body: &serde_json::Value,
+    ) -> Result<serde_json::Value, ClientError> {
+        self.post_json(&endpoints::path_pull_request_comments(workspace, repo_slug, id), body)
+    }
+
     /// Creates a repository at `workspace`/`repo_slug` with the given JSON body.
     /// Returns the created repository, as raw JSON.
     pub fn create_repository(

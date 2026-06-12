@@ -19,6 +19,17 @@ pub fn run(command: PrCommand, select: &[&str]) -> Result<(), CliError> {
                 })?;
             print_json(&value, select)
         }
+        PrCommand::Comment { repository, id, content, path, line } => {
+            let (workspace, repo_slug) = split_repository(&repository)?;
+            let inline = validate_inline_location(path, line)?;
+            let body = build_comment_body(&content, inline);
+            let value = authenticated_client()?
+                .create_pull_request_comment(workspace, repo_slug, id, &body)
+                .map_err(|e| CliError::ApiRequestFailed {
+                    reason: e.to_string(),
+                })?;
+            print_json(&value, select)
+        }
         PrCommand::Get { repository, id } => {
             let (workspace, repo_slug) = split_repository(&repository)?;
             let value = authenticated_client()?
@@ -59,6 +70,36 @@ fn build_create_body(title: &str, source: &str, destination: Option<String>, des
     }
     if close_source_branch {
         map.insert("close_source_branch".to_string(), Value::Bool(true));
+    }
+
+    body
+}
+
+/// Validates `--path`/`--line` for `pr comment`: both or neither must be set.
+/// Returns `Ok(Some((path, line)))` for an inline comment, `Ok(None)` for a general
+/// comment, or `Err(CliError::InvalidInput)` if only one of the two is set.
+fn validate_inline_location(path: Option<String>, line: Option<u64>) -> Result<Option<(String, u64)>, CliError> {
+    match (path, line) {
+        (Some(path), Some(line)) => Ok(Some((path, line))),
+        (None, None) => Ok(None),
+        _ => Err(CliError::InvalidInput {
+            reason: "--path and --line must both be set for an inline comment, or both omitted for a general comment".to_string(),
+        }),
+    }
+}
+
+/// Builds the `POST /2.0/repositories/{workspace}/{repo_slug}/pullrequests/{id}/comments`
+/// request body. `inline` adds an `inline` object with `path` and `to` (line number).
+fn build_comment_body(content: &str, inline: Option<(String, u64)>) -> Value {
+    let mut body = json!({
+        "content": {"raw": content},
+    });
+    let map = body.as_object_mut().unwrap_or_else(|| {
+        unreachable!("body is always constructed as a JSON object literal above")
+    });
+
+    if let Some((path, line)) = inline {
+        map.insert("inline".to_string(), json!({"path": path, "to": line}));
     }
 
     body

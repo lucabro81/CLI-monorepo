@@ -133,6 +133,23 @@ pub enum PrCommand {
         #[arg(long)]
         close_source_branch: bool,
     },
+    /// Add a comment to a pull request, as JSON
+    #[command(after_help = "Examples:\n  bitbucket pr comment lucabrognaracode/my-repo 42 --content \"Looks good to me\"\n  bitbucket pr comment lucabrognaracode/my-repo 42 --content \"Fix this\" --path src/main.rs --line 10")]
+    Comment {
+        /// Full repository identifier in the form `workspace/repo_slug`
+        repository: String,
+        /// Pull request ID
+        id: u64,
+        /// Comment text (Markdown)
+        #[arg(long)]
+        content: String,
+        /// File path to attach an inline comment to. Requires --line.
+        #[arg(long)]
+        path: Option<String>,
+        /// Line number in the new version of the file to attach an inline comment to. Requires --path.
+        #[arg(long)]
+        line: Option<u64>,
+    },
     /// List pull requests in a repository, as JSON
     #[command(after_help = "Examples:\n  bitbucket pr list lucabrognaracode/my-repo\n  bitbucket pr list lucabrognaracode/my-repo --state MERGED\n  bitbucket pr list lucabrognaracode/my-repo --page 2\n  bitbucket pr list lucabrognaracode/my-repo --select values.title,values.state")]
     List {

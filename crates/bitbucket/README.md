@@ -4,7 +4,7 @@ CLI for Bitbucket Cloud, designed to be driven by an LLM agent (output is JSON, 
 
 ## Status
 
-`init`, `doctor`, `auth login`/`auth whoami`, `repo get`, `repo list`, `repo create`, `pr get`, `pr list`, `pr create` implemented. See [CLAUDE.md](CLAUDE.md) for architecture and the planned command list.
+`init`, `doctor`, `auth login`/`auth whoami`, `repo get`, `repo list`, `repo create`, `pr get`, `pr list`, `pr create`, `pr comment` implemented. See [CLAUDE.md](CLAUDE.md) for architecture and the planned command list.
 
 ## Setup
 
@@ -164,6 +164,21 @@ cargo run -p bitbucket -- pr create lucabrognaracode/my-repo --title "My PR" --s
 - `--close-source-branch` — close the source branch after the pull request is merged
 
 Requires the `pullrequest:write` scope. Reviewers are not yet supported (see CLAUDE.md backlog).
+
+### `bitbucket pr comment <workspace>/<repo_slug> <id>`
+
+Adds a comment to a pull request — general or inline (attached to a file/line).
+
+```sh
+cargo run -p bitbucket -- pr comment lucabrognaracode/my-repo 42 --content "Looks good to me"
+cargo run -p bitbucket -- pr comment lucabrognaracode/my-repo 42 --content "Fix this" --path src/main.rs --line 10
+```
+
+**Flags:**
+- `--content <TEXT>` — comment text, Markdown (required)
+- `--path <PATH>` and `--line <N>` — attach the comment to a line in a file (the new version's line number). Both or neither must be set.
+
+Requires the `pullrequest:write` scope.
 
 ### `bitbucket pr get <workspace>/<repo_slug> <id>`
 

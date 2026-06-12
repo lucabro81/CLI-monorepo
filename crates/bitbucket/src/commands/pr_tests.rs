@@ -1,6 +1,6 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use super::build_create_body;
+use super::{build_comment_body, build_create_body, validate_inline_location};
 
 #[test]
 fn build_create_body_with_required_fields_only() {
@@ -53,6 +53,59 @@ fn build_create_body_includes_close_source_branch_when_true() {
             "title": "My PR",
             "source": {"branch": {"name": "feature-branch"}},
             "close_source_branch": true
+        })
+    );
+}
+
+#[test]
+fn validate_inline_location_returns_none_when_both_absent() {
+    let location = validate_inline_location(None, None).expect("should validate");
+
+    assert_eq!(location, None);
+}
+
+#[test]
+fn validate_inline_location_returns_some_when_both_present() {
+    let location = validate_inline_location(Some("src/main.rs".to_string()), Some(10)).expect("should validate");
+
+    assert_eq!(location, Some(("src/main.rs".to_string(), 10)));
+}
+
+#[test]
+fn validate_inline_location_errors_when_only_path_present() {
+    let err = validate_inline_location(Some("src/main.rs".to_string()), None).expect_err("should error");
+
+    assert!(matches!(err, crate::error::CliError::InvalidInput { .. }));
+}
+
+#[test]
+fn validate_inline_location_errors_when_only_line_present() {
+    let err = validate_inline_location(None, Some(10)).expect_err("should error");
+
+    assert!(matches!(err, crate::error::CliError::InvalidInput { .. }));
+}
+
+#[test]
+fn build_comment_body_general_comment() {
+    let body = build_comment_body("Looks good to me", None);
+
+    assert_eq!(
+        body,
+        serde_json::json!({
+            "content": {"raw": "Looks good to me"}
+        })
+    );
+}
+
+#[test]
+fn build_comment_body_inline_comment() {
+    let body = build_comment_body("Fix this", Some(("src/main.rs".to_string(), 10)));
+
+    assert_eq!(
+        body,
+        serde_json::json!({
+            "content": {"raw": "Fix this"},
+            "inline": {"path": "src/main.rs", "to": 10}
         })
     );
 }

@@ -230,6 +230,50 @@ fn parses_pr_create_with_all_flags() {
 }
 
 #[test]
+fn parses_pr_comment_with_no_optional_flags() {
+    let cli = Cli::try_parse_from([
+        "bitbucket", "pr", "comment", "lucabrognaracode/my-repo", "42",
+        "--content", "Looks good to me",
+    ]).expect("should parse");
+
+    match cli.command {
+        Command::Pr {
+            command: PrCommand::Comment { repository, id, content, path, line },
+        } => {
+            assert_eq!(repository, "lucabrognaracode/my-repo");
+            assert_eq!(id, 42);
+            assert_eq!(content, "Looks good to me");
+            assert_eq!(path, None);
+            assert_eq!(line, None);
+        }
+        other => panic!("expected Pr Comment, got {other:?}"),
+    }
+}
+
+#[test]
+fn parses_pr_comment_with_inline_flags() {
+    let cli = Cli::try_parse_from([
+        "bitbucket", "pr", "comment", "lucabrognaracode/my-repo", "42",
+        "--content", "Fix this",
+        "--path", "src/main.rs",
+        "--line", "10",
+    ]).expect("should parse");
+
+    match cli.command {
+        Command::Pr {
+            command: PrCommand::Comment { repository, id, content, path, line },
+        } => {
+            assert_eq!(repository, "lucabrognaracode/my-repo");
+            assert_eq!(id, 42);
+            assert_eq!(content, "Fix this");
+            assert_eq!(path, Some("src/main.rs".to_string()));
+            assert_eq!(line, Some(10));
+        }
+        other => panic!("expected Pr Comment, got {other:?}"),
+    }
+}
+
+#[test]
 fn parses_pr_get() {
     let cli = Cli::try_parse_from(["bitbucket", "pr", "get", "lucabrognaracode/my-repo", "42"]).expect("should parse");
 
