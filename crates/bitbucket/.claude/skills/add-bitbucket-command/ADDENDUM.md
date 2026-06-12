@@ -25,18 +25,29 @@ workspace/repo slug is needed.
 
 ## Step 6 — e2e tests
 
-`src/e2e_tests.rs`, wired into `main.rs` behind `#[cfg(test)]`. One ignored
-lifecycle test (`e2e_pr_lifecycle`) creates a throwaway repo
-(`cli-bitbucket-e2e-pr-<timestamp>`), pushes branches via `git` over HTTPS
-using the OAuth access token (`x-token-auth`), and exercises pr
-create/get/list/comment/approve/unapprove/merge/decline + branch list.
-`RepoGuard` deletes the repo on drop. `e2e_cleanup` is the recovery test —
-deletes any orphaned `cli-bitbucket-e2e-*` repos.
+`crates/bitbucket/src/e2e_tests.rs`, wired into `main.rs` behind
+`#[cfg(test)]`, each test `#[ignore = "e2e: requires credentials, git, and a writable Bitbucket workspace"]`:
 
-```sh
-cargo test -p bitbucket -- --ignored --test-threads=1
-```
-
-When adding a new command, extend `e2e_pr_lifecycle` (or add a new ignored
-test following the same `RepoGuard` pattern) if it fits the PR lifecycle;
-otherwise step 5's manual live verification remains the primary check.
+- **Isolation**: every repo created by a test gets the
+  `cli-bitbucket-e2e-<label>-<timestamp>` slug (`e2e_repo_slug()` helper);
+  `RepoGuard` deletes it on drop (even on panic).
+- **Self-contained**: `e2e_pr_lifecycle` creates its own repo, pushes its own
+  branches via `git` over HTTPS (`x-token-auth` + OAuth access token), and
+  opens its own pull requests — no reliance on pre-existing workspace state
+  (e.g. `repo-test`/`cli-test-repo`).
+- **Concurrency**: `--test-threads=1` — each test owns its own repo so
+  parallel runs aren't strictly unsafe, but keep sequential to avoid
+  hammering the API and to match other crates' convention.
+- **Sync with other checks**: n/a currently — `doctor`'s `permissions` check
+  reports raw `granted_scopes` with no fixed permission map to keep in sync
+  (see `DOCTOR-1`).
+- **Running**:
+  ```sh
+  cargo test -p bitbucket -- --ignored --test-threads=1
+  # recovery
+  cargo test -p bitbucket e2e_cleanup -- --ignored
+  ```
+- **Extending**: extend `e2e_pr_lifecycle` if the new command fits the pr
+  lifecycle, or add a new `#[ignore]` test following the `RepoGuard` pattern
+  otherwise. Step 5's manual live verification remains the primary check for
+  commands outside this lifecycle.
