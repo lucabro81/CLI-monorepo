@@ -2,6 +2,14 @@
 
 CLI for Jira Cloud, designed to be driven by an LLM agent (output is JSON, errors are actionable). This README documents it for humans setting it up and maintaining it; new commands get documented here as they're added.
 
+## Table of contents
+
+- [Setup](#setup)
+- [How the OAuth flow works](#how-the-oauth-flow-works)
+- [Usage](#usage)
+- [Testing](#testing)
+- [Error design](#error-design)
+
 ## Setup
 
 ### 1. Create an Atlassian OAuth 2.0 (3LO) app

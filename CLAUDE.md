@@ -19,6 +19,7 @@ Monorepo: single Cargo workspace holding many CLI tools, one per external servic
 - Each CLI lives as its own crate/binary in the workspace, named after the service it wraps, under `crates/<service>/`.
 - Update this CLAUDE.md, the crate's own CLAUDE.md, and project memory after every significant addition or change — keep them in sync with codebase state.
 - When adding a new crate, add a row for it to the table in the root [README.md](README.md).
+- To add a new CLI crate from scratch, use the `new-cli-crate` skill (`.claude/skills/new-cli-crate/`). To add a command/subcommand to an existing crate, use `add-cli-command` (`.claude/skills/add-cli-command/`).
 
 ## Structure convention for each crate
 

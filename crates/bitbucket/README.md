@@ -2,6 +2,15 @@
 
 CLI for Bitbucket Cloud, designed to be driven by an LLM agent (output is JSON, errors are actionable). This README documents it for humans setting it up and maintaining it; new commands get documented here as they're added.
 
+## Table of contents
+
+- [Status](#status)
+- [Setup](#setup)
+- [How the OAuth flow works](#how-the-oauth-flow-works)
+- [Usage](#usage)
+- [Testing](#testing)
+- [Error design](#error-design)
+
 ## Status
 
 `init`, `doctor`, `auth login`/`auth whoami`, `repo get`, `repo list`, `repo create`, `repo delete`, `pr get`, `pr list`, `pr create`, `pr comment`, `pr approve`, `pr unapprove`, `pr decline`, `pr merge`, `branch list` implemented. See [CLAUDE.md](CLAUDE.md) for architecture and the planned command list.
@@ -348,10 +357,3 @@ not authenticated. Run: bitbucket auth login
 ```
 
 Errors are typed with `thiserror` (`CliError` in `error.rs`). Internal module errors (`ClientError`, `OAuthConfigError`) are mapped to `CliError` at the top-level `run()` function and never surface directly to the user.
-
-## Development
-
-```sh
-cargo build -p bitbucket
-cargo run -p bitbucket -- --help
-```
