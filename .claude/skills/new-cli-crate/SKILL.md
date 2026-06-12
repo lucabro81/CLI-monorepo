@@ -17,7 +17,7 @@ convention, error handling, flag conventions).
 ## 0. Scaffold
 
 ```sh
-scripts/new-crate.sh <crate-name> "<short service description>"
+.claude/skills/new-cli-crate/scripts/new-crate.sh <crate-name> "<short service description>"
 ```
 
 This creates `crates/<crate-name>/` with `Cargo.toml`, the directory layout

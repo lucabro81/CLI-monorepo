@@ -20,7 +20,7 @@ fi
 
 CRATE="$1"
 DESCRIPTION="$2"
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)"
 CRATE_DIR="$ROOT/crates/$CRATE"
 
 if [ -e "$CRATE_DIR" ]; then
