@@ -453,6 +453,7 @@ fn e2e_cleanup() {
     // Paginate through all results and delete each one.
     let mut page_token: Option<String> = None;
     let mut deleted = 0usize;
+    let mut failures: Vec<(String, String)> = Vec::new();
 
     loop {
         let results = client
@@ -471,7 +472,10 @@ fn e2e_cleanup() {
                     deleted += 1;
                     println!("deleted {key}");
                 }
-                Err(e) => eprintln!("failed to delete {key}: {e}"),
+                Err(e) => {
+                    eprintln!("failed to delete {key}: {e}");
+                    failures.push((key.to_string(), e.to_string()));
+                }
             }
         }
 
@@ -482,4 +486,15 @@ fn e2e_cleanup() {
     }
 
     println!("e2e_cleanup: deleted {deleted} issue(s)");
+
+    // Fail loudly (even without --nocapture) if any deletion failed, so a
+    // systematic problem (e.g. missing DELETE_ISSUES permission) is visible
+    // instead of silently reporting "deleted 0 issue(s)" as a passing test.
+    assert!(
+        failures.is_empty(),
+        "{} issue(s) could not be deleted, e.g. {}: {}",
+        failures.len(),
+        failures[0].0,
+        failures[0].1
+    );
 }
