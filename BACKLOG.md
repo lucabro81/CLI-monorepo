@@ -85,12 +85,12 @@ the current behaviour, why it was deferred, and what a future fix would look lik
 
 ---
 
-#### DELETE-2 — Service account lacks `DELETE_ISSUES` on `JIRA_E2E_PROJECT`, breaking e2e cleanup
+#### DELETE-2 — RESOLVED: service account had no project role in `JIRA_E2E_PROJECT`, breaking e2e cleanup
 **Found:** 2026-06-12, while investigating leftover `[jira-cli-e2e]` issues in KAN  
-**Trigger:** the `client_credentials` service account used by e2e tests does not have `DELETE_ISSUES` granted on the project (`doctor`'s permissions check reports `DELETE_ISSUES: false`).  
-**Current behaviour:** `IssueGuard::drop`'s `delete_issue` call returns 403, which is silently swallowed (`let _ = ...`); `e2e_cleanup` also gets 403 for every issue, reports "failed to delete KAN-X: ... 403 ..." per issue and "deleted 0 issue(s)" overall. Result: e2e-created issues accumulate indefinitely (KAN-45..94 observed).  
-**Acceptable?** No — e2e tests silently fail to clean up after themselves, polluting the real project.  
-**Future fix:** grant `DELETE_ISSUES` to the service account's role on `JIRA_E2E_PROJECT` (Jira admin action, not a code change). Once granted, re-run `e2e_cleanup` to remove the existing orphans (KAN-45..94).
+**Trigger:** the `client_credentials` service account (`mercury`) used by e2e tests was not a member of any project role in KAN. `DELETE_ISSUES` in the permission scheme is granted to a project role (e.g. "Administrators"), not to individual accounts, so `mycount` had no path to that permission regardless of OAuth scopes.  
+**Symptom:** `IssueGuard::drop`'s `delete_issue` call returned 403 (silently swallowed); `e2e_cleanup` got 403 for every issue, reporting "deleted 0 issue(s)" — e2e-created issues accumulated indefinitely (KAN-44..93 observed, 50 issues).  
+**Resolved:** 2026-06-13 — added `mercury` to the project role with `DELETE_ISSUES` in KAN (Project settings → People). Jira's built-in **permission helper** ("why can't I...") was the fastest way to diagnose this — given user + issue + permission it states exactly which permission-scheme condition fails. `e2e_cleanup` then deleted all 50 orphans successfully; `e2e_cleanup` now also fails loudly (asserts) if any delete fails, so this won't silently regress again.  
+**See:** [crates/jira/docs/oauth-scopes-vs-permissions.md](crates/jira/docs/oauth-scopes-vs-permissions.md) for the scope-vs-permission-scheme distinction.
 
 ---
 
