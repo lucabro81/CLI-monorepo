@@ -75,13 +75,79 @@ impl JiraClient {
         self.get_json(endpoints::PATH_MYSELF)
     }
 
-    /// Returns the global permissions granted to the current user/token, restricted
-    /// to `permission_keys` (e.g. `["CREATE_ISSUES", "BROWSE_PROJECTS"]`). The result
-    /// is the raw Jira response: `{"permissions": {"<KEY>": {"havePermission": bool, ...}}}`.
-    pub fn get_my_permissions(&self, permission_keys: &[&str]) -> Result<serde_json::Value, ClientError> {
-        let query = serde_urlencoded::to_string([("permissions", permission_keys.join(","))])
+    /// Returns the permissions granted to the current user/token, restricted to
+    /// `permission_keys` (e.g. `["CREATE_ISSUES", "BROWSE_PROJECTS"]`). If
+    /// `project_key` is `Some`, the permissions are evaluated in that project's
+    /// context; if `None`, the result reflects global (instance-level) grants.
+    /// The result is the raw Jira response:
+    /// `{"permissions": {"<KEY>": {"havePermission": bool, ...}}}`.
+    pub fn get_my_permissions(
+        &self,
+        permission_keys: &[&str],
+        project_key: Option<&str>,
+    ) -> Result<serde_json::Value, ClientError> {
+        let mut pairs: Vec<(&str, String)> = vec![("permissions", permission_keys.join(","))];
+        if let Some(key) = project_key {
+            pairs.push(("projectKey", key.to_string()));
+        }
+        let query = serde_urlencoded::to_string(&pairs)
             .map_err(|e| ClientError::Request(format!("failed to encode query params: {e}")))?;
         self.get_json(&format!("{}?{query}", endpoints::PATH_MY_PERMISSIONS))
+    }
+
+    /// Returns the key of every project visible to the current user, paginating
+    /// through `/rest/api/3/project/search` until `isLast` is true.
+    pub fn list_projects(&self) -> Result<Vec<String>, ClientError> {
+        let mut keys = Vec::new();
+        let mut start_at = 0u32;
+
+        loop {
+            let page = self.get_json(&format!(
+                "{}?startAt={start_at}&maxResults=50",
+                endpoints::PATH_PROJECT_SEARCH
+            ))?;
+
+            let values = page["values"].as_array().cloned().unwrap_or_default();
+            for value in &values {
+                if let Some(key) = value["key"].as_str() {
+                    keys.push(key.to_string());
+                }
+            }
+
+            if page["isLast"].as_bool().unwrap_or(true) || values.is_empty() {
+                break;
+            }
+            start_at += u32::try_from(values.len()).unwrap_or(u32::MAX);
+        }
+
+        Ok(keys)
+    }
+
+    /// Returns the project roles defined for `project_key` as `(role name, role URL)`
+    /// pairs, via `/rest/api/3/project/<key>/role`.
+    pub fn get_project_roles(&self, project_key: &str) -> Result<Vec<(String, String)>, ClientError> {
+        let value = self.get_json(&endpoints::project_roles_path(project_key))?;
+        let roles = value
+            .as_object()
+            .map(|map| {
+                map.iter()
+                    .filter_map(|(name, url)| url.as_str().map(|url| (name.clone(), url.to_string())))
+                    .collect()
+            })
+            .unwrap_or_default();
+        Ok(roles)
+    }
+
+    /// Returns the account IDs of the user actors assigned to the project role at
+    /// `role_url` (an absolute URL, as returned by [`Self::get_project_roles`]).
+    /// Group actors are not resolved and are skipped.
+    pub fn get_role_actor_account_ids(&self, role_url: &str) -> Result<Vec<String>, ClientError> {
+        let value = self.get_json_absolute(role_url)?;
+        let actors = value["actors"].as_array().cloned().unwrap_or_default();
+        Ok(actors
+            .iter()
+            .filter_map(|actor| actor["actorUser"]["accountId"].as_str().map(str::to_string))
+            .collect())
     }
 
     /// Adds a plain-text comment to an issue and returns the created comment as JSON.
@@ -297,11 +363,16 @@ impl JiraClient {
     }
 
     fn get_json(&self, path: &str) -> Result<serde_json::Value, ClientError> {
-        let url = format!("{}{path}", self.base_url);
+        self.get_json_absolute(&format!("{}{path}", self.base_url))
+    }
 
+    /// Like [`Self::get_json`], but `url` is used as-is rather than appended to
+    /// `base_url`. Used for endpoints that return absolute URLs to follow, such
+    /// as project role actor lists.
+    fn get_json_absolute(&self, url: &str) -> Result<serde_json::Value, ClientError> {
         let response = self
             .http
-            .get(&url)
+            .get(url)
             .bearer_auth(&self.access_token)
             .header("Accept", "application/json")
             .send()

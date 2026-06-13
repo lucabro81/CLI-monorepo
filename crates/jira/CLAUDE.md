@@ -85,12 +85,36 @@ Kept separate so automatic token writes never clobber the app identity.
 - **ADF**: comment bodies and issue descriptions are wrapped in Atlassian Document Format by the client methods; callers pass plain text.
 - **Destructive commands**: no interactive prompts (an LLM cannot respond). `issue delete` requires explicit `--confirm`; error message includes the exact command to retry.
 
+## `doctor` permission checks
+
+Three independent layers, each surfaced as its own report key (see
+[oauth-scopes-vs-permissions.md](docs/oauth-scopes-vs-permissions.md) for the
+conceptual background):
+
+- **`oauth_scopes`** — OAuth scopes granted to the token, from the
+  accessible-resources endpoint (`auth::get_granted_scopes`). `error` if empty.
+- **`service_user`** — `GET /mypermissions` with no `projectKey`: lists which
+  of `PERMISSION_KEYS` are granted *globally*. For project-scoped permission
+  keys, Jira evaluates this as "true if true in at least one project" — it can
+  be `true` here while `false` for a specific project. `error` if none granted.
+- **`projects`** — for every project visible to the account
+  (`JiraClient::list_projects`, paginated `/project/search`), reports
+  `service_user_permissions` (per-project `GET /mypermissions?projectKey=...`,
+  can differ from `service_user`'s global list) and `service_user_roles` (which
+  project roles the account belongs to, via `/project/<key>/role` +
+  per-role actor lists, matched against the account's `accountId`).
+  `status` is based only on `service_user_permissions` (`error` if empty);
+  `service_user_roles` is `null` with `service_user_roles_note` explaining why
+  if listing roles 401s — that endpoint requires "Administer Projects", which
+  the account may not have everywhere. Zero visible projects is itself an
+  `error` — an account that can't see any project can't do anything useful.
+
 ## Implemented commands
 
 | Command | Notes |
 |---------|-------|
 | `init [--client-id --client-secret]` | Human onboarding; only command with narrative output |
-| `doctor` | Cascading JSON health check (app_config, credentials, api, permissions); exit non-zero on any failure |
+| `doctor` | Cascading JSON health check (app_config, credentials, api, oauth_scopes, service_user, projects); exit non-zero on any failure |
 | `auth login [--user]` | Default: `client_credentials` (service account, no browser). `--user`: interactive 3LO + PKCE |
 | `auth whoami` | GET /myself |
 | `issue get <KEY>` | Fetch single issue |

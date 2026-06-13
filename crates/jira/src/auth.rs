@@ -124,6 +124,8 @@ struct TokenResponse {
 #[derive(Debug, Deserialize)]
 struct AccessibleResource {
     id: String,
+    #[serde(default)]
+    scopes: Vec<String>,
 }
 
 /// Runs the full interactive OAuth 2.0 (3LO) + PKCE login flow:
@@ -285,20 +287,33 @@ fn request_token(body: &serde_json::Value) -> Result<TokenResponse, LoginError> 
         .map_err(|e| LoginError::TokenExchange(e.to_string()))
 }
 
-fn fetch_cloud_id(access_token: &str) -> Result<String, LoginError> {
-    let resources: Vec<AccessibleResource> = reqwest::blocking::Client::new()
+fn fetch_accessible_resources(access_token: &str) -> Result<Vec<AccessibleResource>, LoginError> {
+    reqwest::blocking::Client::new()
         .get(endpoints::ATLASSIAN_ACCESSIBLE_RESOURCES_URL)
         .bearer_auth(access_token)
         .header("Accept", "application/json")
         .send()
         .map_err(|e| LoginError::TokenExchange(e.to_string()))?
         .json()
-        .map_err(|e| LoginError::TokenExchange(e.to_string()))?;
+        .map_err(|e| LoginError::TokenExchange(e.to_string()))
+}
 
-    resources
+fn fetch_cloud_id(access_token: &str) -> Result<String, LoginError> {
+    fetch_accessible_resources(access_token)?
         .into_iter()
         .next()
         .map(|r| r.id)
+        .ok_or(LoginError::NoAccessibleResources)
+}
+
+/// Fetches the OAuth scopes granted to `access_token` for the resource matching
+/// `cloud_id`, via the accessible-resources endpoint. Used by `doctor`'s
+/// `oauth_scopes` check, distinct from the Jira-side permission checks.
+pub fn get_granted_scopes(access_token: &str, cloud_id: &str) -> Result<Vec<String>, LoginError> {
+    fetch_accessible_resources(access_token)?
+        .into_iter()
+        .find(|r| r.id == cloud_id)
+        .map(|r| r.scopes)
         .ok_or(LoginError::NoAccessibleResources)
 }
 

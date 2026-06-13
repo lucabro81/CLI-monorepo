@@ -27,6 +27,12 @@ pub const PATH_MYSELF: &str = "/rest/api/3/myself";
 pub const PATH_MY_PERMISSIONS: &str = "/rest/api/3/mypermissions";
 pub const PATH_SEARCH_JQL: &str = "/rest/api/3/search/jql";
 pub const PATH_ISSUE: &str = "/rest/api/3/issue";
+pub const PATH_PROJECT_SEARCH: &str = "/rest/api/3/project/search";
+
+/// `/rest/api/3/project/<key>/role`
+pub fn project_roles_path(key: &str) -> String {
+    format!("/rest/api/3/project/{key}/role")
+}
 
 /// `/rest/api/3/issue/<key>`
 pub fn issue_path(key: &str) -> String {
