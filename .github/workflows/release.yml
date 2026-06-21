@@ -1,0 +1,54 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "*-v*"
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-and-release:
+    name: Build release binary and attach to GitHub Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@1.89.0
+
+      - name: Cache cargo registry and target dir
+        uses: Swatinem/rust-cache@v2
+
+      - name: Extract crate name from tag
+        id: crate
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          name="${tag%-v*}"
+          echo "name=${name}" >> "$GITHUB_OUTPUT"
+
+      - name: Build release binary
+        run: cargo build --release -p "${{ steps.crate.outputs.name }}"
+
+      - name: Package binary
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          src="target/release/${{ steps.crate.outputs.name }}"
+          if [ ! -f "$src" ]; then
+            echo "Expected binary not found: $src" >&2
+            exit 1
+          fi
+          dest="dist/${{ steps.crate.outputs.name }}-linux-x86_64"
+          cp "$src" "$dest"
+          chmod +x "$dest"
+
+      - name: Attach binary to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*

@@ -101,3 +101,10 @@ Clippy is configured at workspace level (`[workspace.lints.clippy]` in root `Car
 - Lint: `cargo clippy -p <crate>` — must pass with zero warnings before merging
 - Run a CLI: `cargo run -p <crate> -- <args>`, e.g. `cargo run -p jira -- issue get PROJ-123`
 - Help: `cargo run -p <crate> -- --help`
+
+## CI/CD
+
+- `.github/workflows/ci.yml` — runs on every push/PR to `main`: `cargo build/test/clippy --workspace` as a single quality gate, no per-crate matrix.
+- `.github/workflows/release-plz.yml` + `release-plz.toml` — versioning and changelogs are handled by [release-plz](https://github.com/MarcoIeni/release-plz), not manually. Each crate is versioned **independently**: merging conventional commits to `main` makes release-plz open/update a "chore: release" PR with the version bump and changelog for the crates that changed; merging that PR creates the git tag (`<crate>-v<version>`) and GitHub Release. No `cargo publish` to crates.io (these are internal CLIs, not libraries — `publish = false` in `release-plz.toml`).
+- `.github/workflows/release.yml` — triggered by the `<crate>-v<version>` tags release-plz creates; builds the release binary for that one crate and attaches it to the Release release-plz already created.
+- **Commit scope is load-bearing for releases**: commit messages must use the affected crate as the conventional-commit scope (`feat(jira): ...`, `fix(bitbucket): ...`). This is how release-plz attributes a commit to a crate and computes that crate's version bump — an unscoped commit, a wrong scope, or a commit spanning multiple crates without being split produces unreliable changelogs/bumps. If a change truly touches multiple crates, split it into multiple scoped commits.
