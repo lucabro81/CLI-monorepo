@@ -190,6 +190,17 @@ correct it, and re-run the full loop — don't patch around it locally.
   client+endpoints+cli+handler+unit tests+docs if it's genuinely one logical
   unit, separate commits for unrelated refactors or backlog notes). Each
   commit message ends with `Co-Authored-By: Claude Sonnet 4.6`.
+- **Every commit message must use `<crate>` as the conventional-commit scope**
+  (`feat(<crate>): ...`, `fix(<crate>): ...`, `docs(<crate>): ...`) — this is
+  not just style. `release-plz` (root CLAUDE.md "CI/CD" section) reads the
+  scope to attribute the commit to this crate and compute its version bump
+  independently from other crates. An unscoped commit, a wrong scope, or one
+  commit spanning multiple crates breaks that — split into separate scoped
+  commits if a change genuinely touches more than one crate.
+- Push the branch and **open a PR against `main`** — don't push commits
+  directly to `main`. The PR's CI run (`.github/workflows/ci.yml`) is the
+  build/test/clippy gate; merging it is what eventually triggers
+  `release-plz` to draft a release PR for this crate (see root CLAUDE.md).
 
 ## 9. Final report
 

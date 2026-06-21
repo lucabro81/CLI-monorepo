@@ -213,7 +213,7 @@ fn e2e_issue_select_projection() {
     assert!(projected["fields"]["status"]["name"].is_string());
 
     // Unrequested fields absent
-    assert!(projected["fields"]["assignee"].is_null() || !projected["fields"].get("assignee").is_some(),
+    assert!(projected["fields"]["assignee"].is_null() || projected["fields"].get("assignee").is_none(),
         "assignee should not appear in projected output");
     assert!(projected["fields"].get("description").is_none()
         || projected["fields"]["description"].is_null());

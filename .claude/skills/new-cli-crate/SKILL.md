@@ -99,7 +99,11 @@ With auth design (step 1) and command pool (step 2) agreed:
   `CLAUDE.md`'s Development approach).
 
 Commit this as its own small commit ("docs: scaffold <crate> crate docs and
-ADDENDUM") — it's a coherent unit separate from the code that follows.
+ADDENDUM") — it's a coherent unit separate from the code that follows. This
+commit has no crate-specific feature, so it's fine without a `(<crate>)`
+scope; every commit from step 4 onward (real code) must use `<crate>` as the
+conventional-commit scope, per `add-cli-command`'s commit-and-PR step — this
+is what lets `release-plz` start versioning the new crate independently.
 
 ## 4. Bootstrap — init, doctor, auth
 
@@ -125,3 +129,10 @@ any `BACKLOG.md` entries added (e.g. if `LIB-1` was acted on or deferred
 again), and a "needs human review" section — most importantly **any
 human-side setup required** (creating an OAuth app/consumer, granting
 scopes/permissions) before `doctor`/`init` can pass for real.
+
+Do all of the above on a branch and open a PR against `main` (per
+`add-cli-command`'s commit-and-PR step) rather than pushing straight to
+`main` — include the PR link in the final report. Once merged, `release-plz`
+picks up the new crate automatically and starts versioning it independently
+from its first scoped commit (root CLAUDE.md "CI/CD" section); no workflow
+edit is needed for a new crate.
