@@ -13,8 +13,17 @@ env:
 
 jobs:
   build-and-release:
-    name: Build release binary and attach to GitHub Release
-    runs-on: ubuntu-latest
+    name: Build release binary (${{ matrix.artifact_suffix }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact_suffix: linux-x86_64
+          - os: ubuntu-24.04-arm
+            artifact_suffix: linux-arm64
+          - os: macos-latest
+            artifact_suffix: macos-arm64
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -24,6 +33,8 @@ jobs:
 
       - name: Cache cargo registry and target dir
         uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.artifact_suffix }}
 
       - name: Extract crate name from tag
         id: crate
@@ -44,7 +55,7 @@ jobs:
             echo "Expected binary not found: $src" >&2
             exit 1
           fi
-          dest="dist/${{ steps.crate.outputs.name }}-linux-x86_64"
+          dest="dist/${{ steps.crate.outputs.name }}-${{ matrix.artifact_suffix }}"
           cp "$src" "$dest"
           chmod +x "$dest"
 
