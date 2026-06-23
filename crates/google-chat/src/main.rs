@@ -33,9 +33,17 @@ fn run() -> Result<(), CliError> {
     } else {
         select_string.split(',').map(str::trim).collect()
     };
-    let _select = select.as_slice();
+    let select = select.as_slice();
 
     match cli.command {
+        Command::Doctor => {
+            let (report, all_ok) = commands::doctor::run_doctor()?;
+            context::print_json(&report, select)?;
+            if !all_ok {
+                return Err(CliError::DoctorCheckFailed);
+            }
+            Ok(())
+        }
         Command::Auth {
             command: AuthCommand::Login { user },
         } => commands::auth::run_login(user),

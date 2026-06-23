@@ -43,4 +43,22 @@ pub enum CliError {
         Check that the directory exists and is writable."
     )]
     SaveCredentialsFailed { path: String, reason: String },
+
+    #[error(
+        "not authenticated. \
+        Run: google-chat auth login"
+    )]
+    NotAuthenticated,
+
+    #[error(
+        "failed to refresh authentication token: {reason}. \
+        The session may have been revoked. Run: google-chat auth login"
+    )]
+    TokenRefreshFailed { reason: String },
+
+    #[error("failed to serialize response to JSON: {reason}")]
+    JsonSerialize { reason: String },
+
+    #[error("one or more doctor checks failed. See JSON output above for details.")]
+    DoctorCheckFailed,
 }

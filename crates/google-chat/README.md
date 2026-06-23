@@ -177,7 +177,17 @@ cargo run -p google-chat -- init --client-id <ID> --client-secret <SECRET>
 
 ### `google-chat doctor`
 
-TODO — filled in as `doctor` is implemented.
+Runs three checks and prints a structured JSON report: `app_config` (app.json
+exists and is valid), `credentials` (tokens exist and are not expired,
+renewing transparently if they are), `api` (live call to `spaces.list` with
+`pageSize=1`). Exits non-zero if any check fails. Unlike jira, there is no
+separate OAuth-scopes/permissions layer — Google Chat authorizes purely by
+scope, with no per-site permission system to probe independently.
+
+```sh
+cargo run -p google-chat -- doctor
+cargo run -p google-chat -- doctor --select app_config.status,credentials.status,api.status
+```
 
 ### `google-chat auth login`
 

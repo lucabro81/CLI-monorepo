@@ -20,3 +20,5 @@ pub const JWT_BEARER_GRANT_TYPE: &str = "urn:ietf:params:oauth:grant-type:jwt-be
 
 /// Base URL for Google Chat API v1 calls.
 pub const CHAT_API_BASE_URL: &str = "https://chat.googleapis.com/v1";
+
+pub const PATH_SPACES: &str = "/spaces";

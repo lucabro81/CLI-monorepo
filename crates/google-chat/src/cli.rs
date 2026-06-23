@@ -26,6 +26,13 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
+    /// Check that the CLI is correctly configured and can reach the Google Chat API
+    ///
+    /// Runs three checks in order: app credentials file, stored OAuth tokens,
+    /// and a live API call (spaces.list). Prints a JSON object with a status
+    /// field per check. Exits non-zero if any check fails or is skipped.
+    #[command(after_help = "Examples:\n  google-chat doctor\n  google-chat doctor --select app_config.status,credentials.status,api.status\n\nEach check has a status field: \"ok\", \"error\", or \"skipped\".\nLater checks are skipped if an earlier one fails.")]
+    Doctor,
     /// Manage authentication with Google Chat
     Auth {
         #[command(subcommand)]

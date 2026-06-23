@@ -29,6 +29,29 @@ fn parses_auth_login_with_user_flag() {
 }
 
 #[test]
+fn parses_doctor() {
+    let cli = Cli::parse_from(["google-chat", "doctor"]);
+
+    assert!(matches!(cli.command, Command::Doctor));
+}
+
+#[test]
+fn doctor_with_select_flag() {
+    let cli = Cli::parse_from([
+        "google-chat",
+        "doctor",
+        "--select",
+        "app_config.status,credentials.status",
+    ]);
+
+    assert!(matches!(cli.command, Command::Doctor));
+    assert_eq!(
+        cli.select,
+        Some("app_config.status,credentials.status".to_string())
+    );
+}
+
+#[test]
 fn parses_global_select_flag_before_subcommand() {
     let cli = Cli::parse_from(["google-chat", "--select", "foo,bar", "auth", "login"]);
 
