@@ -48,28 +48,85 @@ the CLI never modifies it. It's kept separate from `credentials.json` (the
 dynamic token store, see below) so automatic token writes never overwrite
 your app identity.
 
-### 5. Log in
+### 5. (Optional, for agent-driven usage) Set up the service account
+
+`google-chat auth login` (no flags) is the non-interactive, agent-friendly
+mode: it impersonates a dedicated Workspace "service user" account via
+domain-wide delegation, with no browser involved. This requires a one-time
+setup by a Workspace **super-admin**:
+
+1. In Google Cloud Console, create a service account (IAM & Admin → Service
+   Accounts) and download its JSON key.
+2. On that service account, check **Enable Google Workspace Domain-wide
+   Delegation** and note its numeric OAuth Client ID.
+3. In the Google Admin Console (admin.google.com → Security → Access and
+   data control → API controls → Domain-wide delegation), add that Client
+   ID authorized for exactly these scopes (comma-separated):
+   `https://www.googleapis.com/auth/chat.spaces.readonly,https://www.googleapis.com/auth/chat.messages.readonly,https://www.googleapis.com/auth/chat.messages.create`
+4. Add a `service_account` block to `app.json`, using `client_email` and
+   `private_key` from the downloaded key, and `impersonate_user` set to the
+   service user's email:
+   ```json
+   {
+     "client_id": "your-client-id",
+     "client_secret": "your-client-secret",
+     "service_account": {
+       "client_email": "bot@your-project.iam.gserviceaccount.com",
+       "private_key": "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n",
+       "impersonate_user": "service-user@your-workspace.example.com"
+     }
+   }
+   ```
+
+If you skip this, use `auth login --user` instead (step 6) every time — no
+admin setup needed, but a human must complete the browser consent flow.
+
+### 6. Log in
 
 ```sh
 cargo run -p google-chat -- init
 ```
 
-(or `cargo run -p google-chat -- auth login` if `app.json` is already set up)
+(or `cargo run -p google-chat -- auth login` / `auth login --user` if
+`app.json` is already set up)
 
-This opens Google's consent screen in your browser, listing the requested
-scopes (`chat.spaces.readonly`, `chat.messages.readonly`,
-`chat.messages.create`). `google-chat init` does steps 4 and 5 together: it
-prints setup instructions, prompts for Client ID and Client Secret, writes
-`app.json`, runs the OAuth flow, and finally runs `google-chat doctor` as a
-confirmation.
+`auth login` (no flags) uses the service account from step 5, silently. `auth
+login --user` opens Google's consent screen in your browser, listing the
+requested scopes (`chat.spaces.readonly`, `chat.messages.readonly`,
+`chat.messages.create`). `google-chat init` does step 4 plus the `--user`
+login together: it prints setup instructions, prompts for Client ID and
+Client Secret, writes `app.json`, runs the interactive OAuth flow, and
+finally runs `google-chat doctor` as a confirmation.
 
 ## How the OAuth flow works
 
-The CLI supports a single OAuth 2.0 grant type — Authorization Code + PKCE,
-the standard flow for installed apps that can't keep a client secret fully
-safe. There is no `client_credentials`/service-account grant: Google Chat's
-non-interactive bot/app identity grant is for chat apps, not for reading or
-sending messages as a human user, which is this CLI's purpose.
+The CLI supports two OAuth 2.0 grant types, both ultimately authorizing the
+same Chat API scopes.
+
+### Service account login (default): domain-wide delegation
+
+`google-chat auth login` (no flags) impersonates the configured Workspace
+service user, non-interactively:
+
+1. **JWT assertion** — the CLI builds a JWT (RFC 7523) with `iss` set to the
+   service account's `client_email`, `sub` set to `impersonate_user`,
+   `scope` set to the Chat API scopes, and `aud` set to the token endpoint;
+   it signs this with the service account's RS256 private key.
+2. **Token exchange** — the CLI POSTs
+   `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=<jwt>`
+   (form-urlencoded) to `https://oauth2.googleapis.com/token`, receiving an
+   `access_token` and expiry. No `refresh_token` is issued.
+3. **Persisting credentials** — `access_token` and `expires_at` are written
+   to `credentials.json`; `refresh_token` is omitted/`null`.
+
+This is the expected mode for agent-driven usage: fast, no browser, no human
+interaction. Requires the one-time domain-wide-delegation setup (step 5
+above) to have been completed by a Workspace super-admin.
+
+### Human login: OAuth 2.0 Authorization Code + PKCE — `auth login --user`
+
+The standard flow for installed apps that can't keep a client secret fully
+safe.
 
 1. **Authorization request** — the CLI generates a PKCE `code_verifier`
    (random string) and its `code_challenge` (SHA-256 + base64url), plus a
@@ -82,21 +139,27 @@ sending messages as a human user, which is this CLI's purpose.
    Google redirects to `http://localhost:8080/callback?code=...&state=...`.
    The CLI parses this, checks `state` matches (aborting on mismatch), and
    replies with a small HTML confirmation page.
-3. **Token exchange** — the CLI POSTs the authorization `code`, the PKCE
-   `code_verifier`, and the app's `client_id`/`client_secret` to
-   `https://oauth2.googleapis.com/token`, receiving an `access_token`,
-   `refresh_token`, and expiry.
+3. **Token exchange** — the CLI POSTs (form-urlencoded) the authorization
+   `code`, the PKCE `code_verifier`, and the app's
+   `client_id`/`client_secret` to `https://oauth2.googleapis.com/token`,
+   receiving an `access_token`, `refresh_token`, and expiry.
 4. **Persisting credentials** — `access_token`, `refresh_token`, and
    `expires_at` (unix timestamp) are written to `credentials.json`.
 
 ### Automatic renewal
 
 Before each API call, the CLI checks whether the access token is expired (or
-about to expire within 60s), and if so exchanges the stored `refresh_token`
-for a new access token via the same token endpoint, overwriting
-`credentials.json` with the new value. For an Internal-consent-screen app,
-Google does not rotate or expire the refresh token itself on a fixed
-schedule.
+about to expire within 60s). How it renews depends on whether the stored
+credentials have a `refresh_token`:
+
+- **3LO credentials** (`refresh_token` present) — exchanges it for a new
+  access token via the `refresh_token` grant and overwrites
+  `credentials.json` with the new value. For an Internal-consent-screen app,
+  Google does not rotate or expire the refresh token itself on a fixed
+  schedule.
+- **Service-account credentials** (`refresh_token` absent) — re-signs a
+  fresh JWT assertion and re-runs the domain-wide-delegation exchange to get
+  a new access token.
 
 ## Usage
 
@@ -118,11 +181,20 @@ TODO — filled in as `doctor` is implemented.
 
 ### `google-chat auth login`
 
-TODO — filled in as `auth login` is implemented.
+Stores credentials locally. By default runs the non-interactive
+domain-wide-delegation flow (service account impersonating the configured
+Workspace user) — no browser, no human interaction. Pass `--user` for the
+interactive OAuth 2.0 Authorization Code + PKCE flow for a human Google
+account.
 
-### `google-chat auth whoami`
+```sh
+cargo run -p google-chat -- auth login              # service account (domain-wide delegation)
+cargo run -p google-chat -- auth login --user       # human account (OAuth 2.0 + PKCE)
+```
 
-TODO — filled in as `auth whoami` is implemented.
+Run this once per machine, or again if `credentials.json` is lost or
+revoked. The default flow requires `app.json`'s `service_account` block to
+be set up (see Setup step 5); without it, use `--user`.
 
 ### `google-chat spaces list`
 
