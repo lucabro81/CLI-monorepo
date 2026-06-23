@@ -203,3 +203,20 @@ the current behaviour, why it was deferred, and what a future fix would look lik
 **Add when:** `repo update`/`repo edit` is actually implemented — decide then whether typed flags (consistent but verbose) or a raw JSON body (flexible, less discoverable via `--help`) fits better; could also revisit `repo create` for consistency at that point.
 
 ---
+
+## `crates/google-chat`
+
+### GCHAT-1 — Service-account/domain-wide-delegation login not yet activated
+**Found:** 2026-06-23, during `auth login` implementation
+**Context:** `auth login` (default, no flags) implements the full service-account + domain-wide-delegation (DWD) flow — JWT-bearer assertion impersonating a Workspace "service user" — and is unit-tested, but it cannot be exercised live yet. It requires a Workspace super-admin to (1) enable "Google Workspace Domain-wide Delegation" on the service account and (2) authorize its Client ID + scopes in Admin Console. The current operator doesn't have super-admin access and can't request it right now (on leave; would also have to explain/justify the agent's access, which could lead to the request being delayed or redirected through the company).
+**Current behaviour:** `auth login --user` (interactive OAuth 2.0 + PKCE, logging in as a human Google account) is the working day-to-day path and is what the crate actually runs on for now. The default (no-flags) service-account path is dormant — present and tested, but unused.
+**This is not abandoned** — it's the intended path once admin access is available, just not now. Activating it later needs no code changes: just complete the two admin steps above and add the `service_account` block to `app.json` (see `crates/google-chat/README.md` Setup step 5). `write_app_config` already preserves a hand-added `service_account` block across `init` reruns for exactly this reason.
+**Add when:** super-admin access becomes available — complete the DWD admin setup, verify `auth login` (no flags) live, and update `crates/google-chat/CLAUDE.md`/`README.md` "Implemented commands" to note it's been verified end-to-end.
+
+---
+
+### GCHAT-2 — `messages send` deliberately has no automated e2e test
+**Found:** 2026-06-23, while adding read-only e2e tests for `spaces list`/`messages list`
+**Context:** `crates/google-chat/src/tests/e2e_tests.rs` covers `spaces.list` and `messages.list` (read-only, no side effects). `messages send` is excluded on purpose: it creates a real, visible message in a real space shared with a real person — currently the manual live test target is `spaces/ud85UsAAAAE`, a DM with a colleague who's aware test messages might appear there occasionally, but who has **not** been told this could become an automated/repeated test.
+**Current behaviour:** `messages send` is verified only via manual `cargo run` smoke tests during development, not by any test that runs as part of `cargo test`.
+**Add when:** the user confirms the colleague has been informed that automated tests may send messages to that space (or a different dedicated test space is set up instead) — then add an `#[ignore]` e2e test for `messages send` following jira's `IssueGuard`-style pattern if cleanup/deletion becomes possible, or simply documenting that the test message is expected and harmless if not.
