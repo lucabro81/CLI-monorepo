@@ -291,9 +291,23 @@ cargo test -p google-chat
 
 ### End-to-end tests
 
-TODO — decide e2e approach once core commands land (likely manual testing
-against the user's real Workspace, given Google Chat has no equivalent of a
-disposable "test project" the way Jira does).
+E2e tests call the real Google Chat API. They are all marked `#[ignore]` and
+never run as part of the normal test suite. Unlike jira, coverage is
+deliberately **read-only**: `spaces list` and `messages list` only.
+`messages send` creates real, visible messages in spaces shared with real
+people, so it's covered only by manual `cargo run` testing during
+development, not by an automated test (see `BACKLOG.md` GCHAT-2).
+
+**Prerequisites:** `google-chat auth login --user` (or `init`) must have been
+completed on this machine.
+
+**Running:**
+
+```sh
+cargo test -p google-chat -- --ignored
+```
+
+No isolation/cleanup step is needed — these tests create nothing.
 
 ## Error design
 

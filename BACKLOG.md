@@ -214,3 +214,9 @@ the current behaviour, why it was deferred, and what a future fix would look lik
 **Add when:** super-admin access becomes available — complete the DWD admin setup, verify `auth login` (no flags) live, and update `crates/google-chat/CLAUDE.md`/`README.md` "Implemented commands" to note it's been verified end-to-end.
 
 ---
+
+### GCHAT-2 — `messages send` deliberately has no automated e2e test
+**Found:** 2026-06-23, while adding read-only e2e tests for `spaces list`/`messages list`
+**Context:** `crates/google-chat/src/tests/e2e_tests.rs` covers `spaces.list` and `messages.list` (read-only, no side effects). `messages send` is excluded on purpose: it creates a real, visible message in a real space shared with a real person — currently the manual live test target is `spaces/ud85UsAAAAE`, a DM with a colleague who's aware test messages might appear there occasionally, but who has **not** been told this could become an automated/repeated test.
+**Current behaviour:** `messages send` is verified only via manual `cargo run` smoke tests during development, not by any test that runs as part of `cargo test`.
+**Add when:** the user confirms the colleague has been informed that automated tests may send messages to that space (or a different dedicated test space is set up instead) — then add an `#[ignore]` e2e test for `messages send` following jira's `IssueGuard`-style pattern if cleanup/deletion becomes possible, or simply documenting that the test message is expected and harmless if not.

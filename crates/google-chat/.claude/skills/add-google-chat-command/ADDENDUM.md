@@ -27,13 +27,27 @@ Docs: `https://developers.google.com/workspace/chat/api/reference/rest`
 
 ## Step 6 — e2e tests
 
-No e2e tests yet. Google Chat has no equivalent of a disposable test
-project/site the way Jira does — testing against a real Workspace risks
-polluting real spaces with test messages. Until an e2e strategy is agreed
-with the user (e.g. a dedicated test space, cleaned up via a guard pattern
-like jira's `IssueGuard`), rely on unit tests for parsing/CLI logic and
-manual verification (`cargo run -p google-chat -- ...` against the real
-Workspace) before merging.
+`crates/google-chat/src/tests/e2e_tests.rs`, each test `#[ignore = "e2e: requires credentials"]`:
+
+- **Read-only only**: Google Chat has no equivalent of a disposable test
+  project/site the way Jira does, and `spaces list`/`messages list` are the
+  only commands e2e-covered so far — they touch nothing. `messages send`
+  creates real, visible messages in spaces shared with real colleagues, and
+  is deliberately **not** e2e-covered automatically — see `BACKLOG.md`
+  GCHAT-2. Don't add an automated/repeated e2e test that sends messages to a
+  real space without explicit user sign-off (and only after the people in
+  that space have been told what's being tested).
+- **No isolation/cleanup needed**: unlike jira's `IssueGuard`, these tests
+  create nothing, so there's no teardown pattern to follow.
+- **Running**:
+  ```sh
+  cargo test -p google-chat -- --ignored
+  ```
+- **Extending**: for a new read-only command, add a test following
+  `e2e_messages_list_on_first_space_succeeds`'s pattern — call `spaces.list`
+  to discover a real target rather than hardcoding a space id, and assert
+  the response is well-formed (right top-level keys/types) rather than
+  asserting specific content, since real account data will vary over time.
 
 ## BACKLOG prefix
 
