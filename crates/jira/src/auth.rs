@@ -184,7 +184,7 @@ fn wait_for_callback(expected_state: &str) -> Result<CallbackParams, LoginError>
     let mut stream = stream;
     let body = "<html><body>Login complete — you can close this window and return to the terminal.</body></html>";
     let response = format!(
-        "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
         body.len()
     );
     let _ = stream.write_all(response.as_bytes());
