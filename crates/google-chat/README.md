@@ -253,7 +253,24 @@ cargo run -p google-chat -- messages list --space AAQA-_d58OQ --select messages.
 
 ### `google-chat messages send --space <id> --text <text>`
 
-TODO — filled in as `messages send` is implemented.
+Sends a plain-text message to a space and prints the created Message
+resource as JSON, including its `name` field (needed to identify the message
+in future calls). Requires the `chat.messages.create` scope (already
+requested by `auth login`).
+
+**This creates real, visible state** — the message appears immediately to
+everyone in the target space. Not gated by `--confirm`: unlike deleting data,
+sending a message isn't irreversible destruction, just ordinary chat
+activity.
+
+```sh
+cargo run -p google-chat -- messages send --space spaces/AAQA-_d58OQ --text "Status update: deploy complete"
+cargo run -p google-chat -- messages send --space AAQA-_d58OQ --text "Same thing, bare space id"
+```
+
+**Flags:**
+- `--space <ID>` (required) — bare space id or full `spaces/{id}` resource name
+- `--text <TEXT>` (required) — plain-text message body
 
 ### `--select <PATHS>` (global flag)
 

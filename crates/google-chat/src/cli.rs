@@ -109,6 +109,20 @@ pub enum MessagesCommand {
         #[arg(long)]
         order_by: Option<String>,
     },
+    /// Send a plain-text message to a space and print the created Message as JSON
+    ///
+    /// Creates real, visible state in the target space — the message appears
+    /// to everyone in it immediately. Prints the created Message resource,
+    /// including its "name" field (needed to identify it in future calls).
+    #[command(after_help = "Example:\n  google-chat messages send --space spaces/AAQA-_d58OQ --text \"Status update: deploy complete\"\n\n--space accepts either the bare id or the full \"spaces/...\" resource name\n(as printed in the \"name\" field of `spaces list` output).")]
+    Send {
+        /// Space to send the message to — bare id or full "spaces/{id}" resource name
+        #[arg(long)]
+        space: String,
+        /// Plain-text message body
+        #[arg(long)]
+        text: String,
+    },
 }
 
 #[derive(Debug, Subcommand)]

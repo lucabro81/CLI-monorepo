@@ -1,4 +1,4 @@
-//! Handler for the `messages` command group (`messages list`).
+//! Handler for the `messages` command group (`messages list`, `messages send`).
 //!
 //! Delegates to `client::GoogleChatClient`. Maps any `ClientError` to
 //! `CliError`, then prints the result as JSON (optionally filtered via
@@ -22,6 +22,10 @@ pub fn run(command: MessagesCommand, select: &[&str]) -> Result<(), CliError> {
             let value = client
                 .list_messages(&space, page_size, page_token.as_deref(), order_by.as_deref())
                 .map_err(client_error_to_cli)?;
+            print_json(&value, select)
+        }
+        MessagesCommand::Send { space, text } => {
+            let value = client.create_message(&space, &text).map_err(client_error_to_cli)?;
             print_json(&value, select)
         }
     }

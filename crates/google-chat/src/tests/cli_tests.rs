@@ -190,6 +190,49 @@ fn rejects_unknown_messages_subcommand() {
 }
 
 #[test]
+fn parses_messages_send_with_space_and_text() {
+    let cli = Cli::parse_from([
+        "google-chat",
+        "messages",
+        "send",
+        "--space",
+        "spaces/AAQA-_d58OQ",
+        "--text",
+        "hello from the agent",
+    ]);
+
+    assert!(matches!(
+        cli.command,
+        Command::Messages {
+            command: MessagesCommand::Send {
+                ref space,
+                ref text,
+            }
+        } if space == "spaces/AAQA-_d58OQ" && text == "hello from the agent"
+    ));
+}
+
+#[test]
+fn rejects_messages_send_without_text_flag() {
+    let result = Cli::try_parse_from([
+        "google-chat",
+        "messages",
+        "send",
+        "--space",
+        "spaces/AAQA-_d58OQ",
+    ]);
+
+    assert!(result.is_err());
+}
+
+#[test]
+fn rejects_messages_send_without_space_flag() {
+    let result = Cli::try_parse_from(["google-chat", "messages", "send", "--text", "hi"]);
+
+    assert!(result.is_err());
+}
+
+#[test]
 fn parses_global_select_flag_before_subcommand() {
     let cli = Cli::parse_from(["google-chat", "--select", "foo,bar", "auth", "login"]);
 

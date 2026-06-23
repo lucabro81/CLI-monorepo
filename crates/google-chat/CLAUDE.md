@@ -151,6 +151,16 @@ Both files live under `$XDG_CONFIG_HOME/google-chat-cli/` (falling back to
   auth-sanity-check instead of a dedicated whoami command.
 - **`--select`** (global flag): client-side dot-notation projection via
   `fields::filter_fields`. Applied by `context::print_json` before printing.
+- **Space identifier normalization**: `--space` flags accept either the bare
+  space id or the full `spaces/{id}` resource name (`client::normalize_space_name`),
+  so a caller can paste either form straight from `spaces list`'s `name` field.
+  Used by both `messages list` and `messages send`.
+- **`messages send` is not `--confirm`-gated**: unlike jira's `issue delete`,
+  sending a message isn't irreversible data destruction — it's visible,
+  ordinary chat activity. No confirmation flag.
+- **`post_json`**: `client.rs` gained a `post_json` helper (mirroring jira's)
+  for `create_message` — the crate's first write call. Same
+  bearer-auth/status-check/JSON-decode shape as `get_json`.
 
 ## Implemented commands
 
@@ -161,12 +171,11 @@ Both files live under `$XDG_CONFIG_HOME/google-chat-cli/` (falling back to
 | `init [--client-id --client-secret]` | Human onboarding; only command with narrative output. `write_app_config` preserves an existing `service_account` block across reruns. |
 | `spaces list [--page-size --page-token]` | Lists spaces (`spaces.list`) the authenticated identity belongs to. Verified live — real spaces returned, types (`SPACE`/`GROUP_CHAT`/`DIRECT_MESSAGE`) confirmed. |
 | `messages list --space <id> [--page-size --page-token --order-by]` | Lists messages in a space (`spaces.messages.list`). Chronological by default (`createTime ASC`, the Chat API's own default) — the context-recovery path for an agent resuming after a gap or summarization. `--order-by "createTime DESC"` gets the most recent first. `--space` accepts bare id or full `spaces/{id}`. Verified live against real conversation history both orderings, both id forms. |
+| `messages send --space <id> --text <text>` | Creates a message (`spaces.messages.create`) in a space; prints the created Message (including its `name`). Not gated by `--confirm` — visible but not data-destructive. Verified live: real message delivered and visible to the other party, both `--space` id forms confirmed. |
 
 ## Planned commands
 
-| Command | Notes |
-|---------|-------|
-| `messages send --space <id> --text <text>` | Creates a message (`spaces.messages.create`) in a space. |
+(none — `init`/`doctor`/`auth`/`spaces`/`messages` core command pool is complete; new commands land as concrete needs arise, per root CLAUDE.md's incremental approach)
 
 ## Known edge cases (see BACKLOG.md)
 

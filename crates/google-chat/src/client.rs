@@ -94,8 +94,48 @@ impl GoogleChatClient {
         self.get_json(&format!("/{parent}/messages?{params}"))
     }
 
+    /// Sends a plain-text message to a space and returns the created Message
+    /// resource as raw JSON (includes its `name` field, needed to identify it
+    /// later). `space` accepts either the bare space id or the full
+    /// `spaces/{id}` resource name.
+    pub fn create_message(&self, space: &str, text: &str) -> Result<serde_json::Value, ClientError> {
+        let parent = normalize_space_name(space);
+        let body = serde_json::json!({ "text": text });
+        self.post_json(&format!("/{parent}/messages"), &body)
+    }
+
     fn get_json(&self, path: &str) -> Result<serde_json::Value, ClientError> {
         self.get_json_absolute(&format!("{}{path}", endpoints::CHAT_API_BASE_URL))
+    }
+
+    fn post_json(
+        &self,
+        path: &str,
+        body: &serde_json::Value,
+    ) -> Result<serde_json::Value, ClientError> {
+        let url = format!("{}{path}", endpoints::CHAT_API_BASE_URL);
+
+        let response = self
+            .http
+            .post(&url)
+            .bearer_auth(&self.access_token)
+            .header("Accept", "application/json")
+            .json(body)
+            .send()
+            .map_err(|e| ClientError::Request(e.to_string()))?;
+
+        let status = response.status();
+        if !status.is_success() {
+            let body = response.text().unwrap_or_default();
+            return Err(ClientError::Status {
+                status: status.as_u16(),
+                body,
+            });
+        }
+
+        response
+            .json::<serde_json::Value>()
+            .map_err(|e| ClientError::Request(e.to_string()))
     }
 
     fn get_json_absolute(&self, url: &str) -> Result<serde_json::Value, ClientError> {
