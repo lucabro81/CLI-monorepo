@@ -26,6 +26,23 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
+    /// Interactive onboarding: create app.json, run the OAuth user login, verify with doctor
+    ///
+    /// Guides a human through setting up the Google OAuth 2.0 Desktop app client,
+    /// writes app.json, runs the interactive (--user) login flow, then prints a
+    /// doctor JSON report as confirmation. Pass --client-id and --client-secret
+    /// to skip interactive prompts. Does not set up the non-interactive
+    /// domain-wide-delegation flow — see README.md for that (requires a
+    /// Workspace super-admin).
+    #[command(after_help = "Example (interactive):\n  google-chat init\n\nExample (non-interactive):\n  google-chat init --client-id <ID> --client-secret <SECRET>")]
+    Init {
+        /// Google OAuth Desktop app client ID (skips interactive prompt if provided)
+        #[arg(long)]
+        client_id: Option<String>,
+        /// Google OAuth Desktop app client secret (skips interactive prompt if provided)
+        #[arg(long)]
+        client_secret: Option<String>,
+    },
     /// Check that the CLI is correctly configured and can reach the Google Chat API
     ///
     /// Runs three checks in order: app credentials file, stored OAuth tokens,

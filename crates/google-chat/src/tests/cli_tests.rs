@@ -29,6 +29,39 @@ fn parses_auth_login_with_user_flag() {
 }
 
 #[test]
+fn parses_init_with_no_flags() {
+    let cli = Cli::parse_from(["google-chat", "init"]);
+
+    assert!(matches!(
+        cli.command,
+        Command::Init {
+            client_id: None,
+            client_secret: None,
+        }
+    ));
+}
+
+#[test]
+fn parses_init_with_client_id_and_secret() {
+    let cli = Cli::parse_from([
+        "google-chat",
+        "init",
+        "--client-id",
+        "my-id",
+        "--client-secret",
+        "my-secret",
+    ]);
+
+    assert!(matches!(
+        cli.command,
+        Command::Init {
+            client_id: Some(ref id),
+            client_secret: Some(ref secret),
+        } if id == "my-id" && secret == "my-secret"
+    ));
+}
+
+#[test]
 fn parses_doctor() {
     let cli = Cli::parse_from(["google-chat", "doctor"]);
 
