@@ -10,6 +10,11 @@
 # the crate README, and the add-<crate>-command skill/ADDENDUM — is left for
 # the new-cli-crate skill to write after the auth-design and command-pool
 # discussion. The placeholder files below intentionally do not compile yet.
+#
+# src/tests/e2e_tests.rs is deliberately NOT created here either — there's
+# nothing to test end-to-end before the first real command exists. The
+# add-cli-command skill creates it (step 6) the first time a command needs
+# e2e coverage.
 
 set -euo pipefail
 

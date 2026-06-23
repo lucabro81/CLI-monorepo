@@ -159,6 +159,26 @@ step 5's manual live verification only. If this crate has e2e tests, add one
 following the addendum's conventions (cleanup helpers, naming prefixes,
 self-contained scoping, thread-safety constraints).
 
+If this is the **first** e2e test for the crate, the `src/tests/e2e_tests.rs`
+file itself doesn't exist yet and isn't created by the scaffold script
+(`new-cli-crate`'s `new-crate.sh` deliberately skips it — see its header
+comment). Create it now, mirroring an existing crate's e2e_tests.rs (e.g.
+`crates/jira/src/tests/e2e_tests.rs`): a module doc-comment stating
+prerequisites (credentials, any required env var) and the run command
+(`cargo test -p <crate> -- --ignored`), every test annotated
+`#[ignore = "e2e: requires ..."]`, and a `setup()` helper that loads
+credentials and builds the authenticated client. Wire it into `main.rs`:
+
+```rust
+#[cfg(test)]
+#[path = "tests/e2e_tests.rs"]
+mod e2e_tests;
+```
+
+Not every command needs e2e coverage — see the addendum for this crate's
+scope (e.g. read-only-only, or some commands excluded because they create
+real visible/destructive state and aren't safe to run unattended).
+
 ## 7. Verification loop — run until it actually works
 
 Repeat until everything below is green, fixing root causes (not loosening
