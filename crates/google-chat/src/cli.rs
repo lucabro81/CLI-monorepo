@@ -60,6 +60,11 @@ pub enum Command {
         #[command(subcommand)]
         command: SpacesCommand,
     },
+    /// Work with messages in a Google Chat space
+    Messages {
+        #[command(subcommand)]
+        command: MessagesCommand,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -76,6 +81,33 @@ pub enum SpacesCommand {
         /// Cursor token for the next page, from the nextPageToken field of a previous response
         #[arg(long)]
         page_token: Option<String>,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum MessagesCommand {
+    /// List messages in a space, as JSON
+    ///
+    /// Returns {"messages": [...], "nextPageToken": "..."}. Defaults to
+    /// chronological order (createTime ASC, the Chat API's own default) — this
+    /// is what makes it usable to recover conversation context after a gap or
+    /// aggressive history summarization: page forward through --page-token to
+    /// walk the full history. Pass --order-by "createTime DESC" instead to get
+    /// the most recent messages first.
+    #[command(after_help = "Examples:\n  google-chat messages list --space spaces/AAQA-_d58OQ\n  google-chat messages list --space AAQA-_d58OQ --page-size 20\n  google-chat messages list --space AAQA-_d58OQ --order-by \"createTime DESC\"\n  google-chat messages list --space AAQA-_d58OQ --select messages.text,messages.sender.displayName,messages.createTime\n\n--space accepts either the bare id or the full \"spaces/...\" resource name\n(as printed in the \"name\" field of `spaces list` output).")]
+    List {
+        /// Space to list messages from — bare id or full "spaces/{id}" resource name
+        #[arg(long)]
+        space: String,
+        /// Maximum number of messages to return (default: 100; the server may return fewer)
+        #[arg(long, default_value = "100")]
+        page_size: u32,
+        /// Cursor token for the next page, from the nextPageToken field of a previous response
+        #[arg(long)]
+        page_token: Option<String>,
+        /// Ordering of returned messages, e.g. "createTime ASC" (default) or "createTime DESC"
+        #[arg(long)]
+        order_by: Option<String>,
     },
 }
 

@@ -68,6 +68,32 @@ impl GoogleChatClient {
         self.get_json(&format!("{}?{params}", endpoints::PATH_SPACES))
     }
 
+    /// Lists messages in a space, as raw JSON (`{"messages": [...], "nextPageToken": "..."}`).
+    /// `space` accepts either the bare space id or the full `spaces/{id}` resource name.
+    /// Defaults to chronological order (the Chat API's own default, `createTime ASC`),
+    /// which is what makes this usable as a context-recovery tool — pass
+    /// `order_by: Some("createTime DESC")` to fetch the most recent messages first instead.
+    pub fn list_messages(
+        &self,
+        space: &str,
+        page_size: u32,
+        page_token: Option<&str>,
+        order_by: Option<&str>,
+    ) -> Result<serde_json::Value, ClientError> {
+        let parent = normalize_space_name(space);
+        let mut pairs: Vec<(&str, String)> = vec![("pageSize", page_size.to_string())];
+        if let Some(token) = page_token {
+            pairs.push(("pageToken", token.to_string()));
+        }
+        if let Some(order) = order_by {
+            pairs.push(("orderBy", order.to_string()));
+        }
+        let params = serde_urlencoded::to_string(&pairs)
+            .map_err(|e| ClientError::Request(format!("failed to encode query params: {e}")))?;
+
+        self.get_json(&format!("/{parent}/messages?{params}"))
+    }
+
     fn get_json(&self, path: &str) -> Result<serde_json::Value, ClientError> {
         self.get_json_absolute(&format!("{}{path}", endpoints::CHAT_API_BASE_URL))
     }
@@ -95,3 +121,18 @@ impl GoogleChatClient {
             .map_err(|e| ClientError::Request(e.to_string()))
     }
 }
+
+/// Normalizes a space identifier to the full `spaces/{id}` resource name
+/// expected by the Chat API, accepting either form so a caller can paste the
+/// bare id or the full `name` field straight from `spaces list` output.
+fn normalize_space_name(space: &str) -> String {
+    if space.starts_with("spaces/") {
+        space.to_string()
+    } else {
+        format!("spaces/{space}")
+    }
+}
+
+#[cfg(test)]
+#[path = "tests/client_tests.rs"]
+mod tests;

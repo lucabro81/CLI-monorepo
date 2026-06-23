@@ -229,7 +229,27 @@ Each space has a `spaceType` of `SPACE` (named space), `GROUP_CHAT`, or
 
 ### `google-chat messages list --space <id>`
 
-TODO — filled in as `messages list` is implemented.
+Lists messages in a space. Returns `{"messages": [...], "nextPageToken": "..."}`.
+Requires the `chat.messages.readonly` scope (already requested by `auth login`).
+
+Defaults to chronological order (`createTime ASC`, the Chat API's own
+default) — this is what makes it useful as a context-recovery tool: page
+forward through `--page-token` to walk a space's full history after a gap or
+aggressive conversation summarization, rather than only seeing a fixed-size
+tail.
+
+```sh
+cargo run -p google-chat -- messages list --space spaces/AAQA-_d58OQ
+cargo run -p google-chat -- messages list --space AAQA-_d58OQ --page-size 20
+cargo run -p google-chat -- messages list --space AAQA-_d58OQ --order-by "createTime DESC"
+cargo run -p google-chat -- messages list --space AAQA-_d58OQ --select messages.text,messages.createTime
+```
+
+**Flags:**
+- `--space <ID>` (required) — bare space id or full `spaces/{id}` resource name, as printed in `spaces list`'s `name` field
+- `--page-size <N>` — maximum number of messages to return (default 100; the server may return fewer)
+- `--page-token <TOKEN>` — cursor for the next page, taken from `nextPageToken` in a previous response
+- `--order-by <ORDER>` — `"createTime ASC"` (default) or `"createTime DESC"` to get the most recent messages first
 
 ### `google-chat messages send --space <id> --text <text>`
 

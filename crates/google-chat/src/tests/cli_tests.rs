@@ -2,7 +2,7 @@
 
 use clap::Parser;
 
-use super::{AuthCommand, Cli, Command, SpacesCommand};
+use super::{AuthCommand, Cli, Command, MessagesCommand, SpacesCommand};
 
 #[test]
 fn parses_auth_login_with_no_flags() {
@@ -125,6 +125,66 @@ fn parses_spaces_list_with_page_size_and_token() {
 #[test]
 fn rejects_unknown_spaces_subcommand() {
     let result = Cli::try_parse_from(["google-chat", "spaces", "bogus"]);
+
+    assert!(result.is_err());
+}
+
+#[test]
+fn parses_messages_list_with_only_required_space_flag() {
+    let cli = Cli::parse_from(["google-chat", "messages", "list", "--space", "AAQA-_d58OQ"]);
+
+    assert!(matches!(
+        cli.command,
+        Command::Messages {
+            command: MessagesCommand::List {
+                ref space,
+                page_size: 100,
+                page_token: None,
+                order_by: None,
+            }
+        } if space == "AAQA-_d58OQ"
+    ));
+}
+
+#[test]
+fn parses_messages_list_with_all_flags() {
+    let cli = Cli::parse_from([
+        "google-chat",
+        "messages",
+        "list",
+        "--space",
+        "spaces/AAQA-_d58OQ",
+        "--page-size",
+        "20",
+        "--page-token",
+        "abc123",
+        "--order-by",
+        "createTime DESC",
+    ]);
+
+    assert!(matches!(
+        cli.command,
+        Command::Messages {
+            command: MessagesCommand::List {
+                ref space,
+                page_size: 20,
+                page_token: Some(ref token),
+                order_by: Some(ref order),
+            }
+        } if space == "spaces/AAQA-_d58OQ" && token == "abc123" && order == "createTime DESC"
+    ));
+}
+
+#[test]
+fn rejects_messages_list_without_space_flag() {
+    let result = Cli::try_parse_from(["google-chat", "messages", "list"]);
+
+    assert!(result.is_err());
+}
+
+#[test]
+fn rejects_unknown_messages_subcommand() {
+    let result = Cli::try_parse_from(["google-chat", "messages", "bogus"]);
 
     assert!(result.is_err());
 }

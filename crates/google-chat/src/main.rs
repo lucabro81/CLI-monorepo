@@ -51,6 +51,7 @@ fn run() -> Result<(), CliError> {
             command: AuthCommand::Login { user },
         } => commands::auth::run_login(user),
         Command::Spaces { command } => commands::spaces::run(command, select),
+        Command::Messages { command } => commands::messages::run(command, select),
     }
 }
 
