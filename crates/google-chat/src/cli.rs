@@ -55,6 +55,28 @@ pub enum Command {
         #[command(subcommand)]
         command: AuthCommand,
     },
+    /// Work with Google Chat spaces (group chats, DMs, named spaces)
+    Spaces {
+        #[command(subcommand)]
+        command: SpacesCommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum SpacesCommand {
+    /// List spaces the authenticated identity belongs to, as JSON
+    ///
+    /// Returns {"spaces": [...], "nextPageToken": "..."}. Pass --page-token
+    /// (taken from a previous response's nextPageToken) to fetch the next page.
+    #[command(after_help = "Examples:\n  google-chat spaces list\n  google-chat spaces list --page-size 20\n  google-chat spaces list --page-token <TOKEN>\n  google-chat spaces list --select spaces.name,spaces.displayName,spaces.spaceType")]
+    List {
+        /// Maximum number of spaces to return (default: 100; the server may return fewer)
+        #[arg(long, default_value = "100")]
+        page_size: u32,
+        /// Cursor token for the next page, from the nextPageToken field of a previous response
+        #[arg(long)]
+        page_token: Option<String>,
+    },
 }
 
 #[derive(Debug, Subcommand)]

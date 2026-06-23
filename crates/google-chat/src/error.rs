@@ -59,6 +59,12 @@ pub enum CliError {
     #[error("failed to serialize response to JSON: {reason}")]
     JsonSerialize { reason: String },
 
+    #[error("Google Chat API request failed: {reason}")]
+    ApiRequestFailed { reason: String },
+
+    #[error("Google Chat API returned status {status}: {body}")]
+    ApiError { status: u16, body: String },
+
     #[error("one or more doctor checks failed. See JSON output above for details.")]
     DoctorCheckFailed,
 

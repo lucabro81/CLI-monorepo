@@ -2,7 +2,7 @@
 
 use clap::Parser;
 
-use super::{AuthCommand, Cli, Command};
+use super::{AuthCommand, Cli, Command, SpacesCommand};
 
 #[test]
 fn parses_auth_login_with_no_flags() {
@@ -82,6 +82,51 @@ fn doctor_with_select_flag() {
         cli.select,
         Some("app_config.status,credentials.status".to_string())
     );
+}
+
+#[test]
+fn parses_spaces_list_with_no_optional_flags() {
+    let cli = Cli::parse_from(["google-chat", "spaces", "list"]);
+
+    assert!(matches!(
+        cli.command,
+        Command::Spaces {
+            command: SpacesCommand::List {
+                page_size: 100,
+                page_token: None,
+            }
+        }
+    ));
+}
+
+#[test]
+fn parses_spaces_list_with_page_size_and_token() {
+    let cli = Cli::parse_from([
+        "google-chat",
+        "spaces",
+        "list",
+        "--page-size",
+        "20",
+        "--page-token",
+        "abc123",
+    ]);
+
+    assert!(matches!(
+        cli.command,
+        Command::Spaces {
+            command: SpacesCommand::List {
+                page_size: 20,
+                page_token: Some(ref token),
+            }
+        } if token == "abc123"
+    ));
+}
+
+#[test]
+fn rejects_unknown_spaces_subcommand() {
+    let result = Cli::try_parse_from(["google-chat", "spaces", "bogus"]);
+
+    assert!(result.is_err());
 }
 
 #[test]

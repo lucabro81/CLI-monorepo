@@ -159,12 +159,12 @@ Both files live under `$XDG_CONFIG_HOME/google-chat-cli/` (falling back to
 | `auth login [--user]` | Default: domain-wide-delegation (service account, no browser) — implemented, not yet verified live (GCHAT-1). `--user`: interactive OAuth 2.0 + PKCE — verified live, current day-to-day path |
 | `doctor` | Cascading JSON health check (app_config, credentials, api); exit non-zero on any failure. Verified live against a real Workspace via the `--user` flow. |
 | `init [--client-id --client-secret]` | Human onboarding; only command with narrative output. `write_app_config` preserves an existing `service_account` block across reruns. |
+| `spaces list [--page-size --page-token]` | Lists spaces (`spaces.list`) the authenticated identity belongs to. Verified live — real spaces returned, types (`SPACE`/`GROUP_CHAT`/`DIRECT_MESSAGE`) confirmed. |
 
 ## Planned commands
 
 | Command | Notes |
 |---------|-------|
-| `spaces list` | Lists spaces (`spaces.list`) the authenticated user belongs to — id, displayName, type. Paginated. |
 | `messages list --space <id>` | Lists messages in a space (`spaces.messages.list`), paginated, chronological. Doubles as the context-recovery path for an agent resuming after a gap or summarization. |
 | `messages send --space <id> --text <text>` | Creates a message (`spaces.messages.create`) in a space. |
 

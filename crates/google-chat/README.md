@@ -208,7 +208,24 @@ be set up (see Setup step 5); without it, use `--user`.
 
 ### `google-chat spaces list`
 
-TODO — filled in as `spaces list` is implemented.
+Lists spaces (group chats, DMs, named spaces) the authenticated identity
+belongs to. Returns `{"spaces": [...], "nextPageToken": "..."}`. Requires the
+`chat.spaces.readonly` scope (already requested by `auth login`).
+
+```sh
+cargo run -p google-chat -- spaces list
+cargo run -p google-chat -- spaces list --page-size 20
+cargo run -p google-chat -- spaces list --page-token <TOKEN>
+cargo run -p google-chat -- spaces list --select spaces.name,spaces.displayName,spaces.spaceType
+```
+
+**Flags:**
+- `--page-size <N>` — maximum number of spaces to return (default 100; the server may return fewer)
+- `--page-token <TOKEN>` — cursor for the next page, taken from `nextPageToken` in a previous response
+
+Each space has a `spaceType` of `SPACE` (named space), `GROUP_CHAT`, or
+`DIRECT_MESSAGE`. Direct messages and most group chats have no
+`displayName`.
 
 ### `google-chat messages list --space <id>`
 
