@@ -70,6 +70,13 @@ resource name (`spaces/{space}`) under whichever identity is authenticated
    `client_email`/`private_key` from the downloaded key and
    `impersonate_user` set to the service user's email.
 
+**Status: not yet activated** (see `BACKLOG.md` GCHAT-1). The code above is
+implemented and unit-tested, but step 2-3 need a Workspace super-admin, not
+available right now. This is planned, not abandoned — it'll be turned on as
+soon as that access is available, with no code changes needed. Until then,
+day-to-day usage runs on `auth login --user` (3LO, below), logged in as the
+operator's own Google account.
+
 **3LO flow**: the human-login path requires no extra Google Cloud setup
 beyond the OAuth client (`client_id`/`client_secret`) already in `app.json`
 for this purpose; just run `auth login --user` and approve the consent
@@ -149,7 +156,7 @@ Both files live under `$XDG_CONFIG_HOME/google-chat-cli/` (falling back to
 
 | Command | Notes |
 |---------|-------|
-| `auth login [--user]` | Default: domain-wide-delegation (service account, no browser). `--user`: interactive OAuth 2.0 + PKCE |
+| `auth login [--user]` | Default: domain-wide-delegation (service account, no browser) — implemented, not yet verified live (GCHAT-1). `--user`: interactive OAuth 2.0 + PKCE — verified live, current day-to-day path |
 | `doctor` | Cascading JSON health check (app_config, credentials, api); exit non-zero on any failure. Verified live against a real Workspace via the `--user` flow. |
 
 ## Planned commands

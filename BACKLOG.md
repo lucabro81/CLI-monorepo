@@ -203,3 +203,14 @@ the current behaviour, why it was deferred, and what a future fix would look lik
 **Add when:** `repo update`/`repo edit` is actually implemented — decide then whether typed flags (consistent but verbose) or a raw JSON body (flexible, less discoverable via `--help`) fits better; could also revisit `repo create` for consistency at that point.
 
 ---
+
+## `crates/google-chat`
+
+### GCHAT-1 — Service-account/domain-wide-delegation login not yet activated
+**Found:** 2026-06-23, during `auth login` implementation
+**Context:** `auth login` (default, no flags) implements the full service-account + domain-wide-delegation (DWD) flow — JWT-bearer assertion impersonating a Workspace "service user" — and is unit-tested, but it cannot be exercised live yet. It requires a Workspace super-admin to (1) enable "Google Workspace Domain-wide Delegation" on the service account and (2) authorize its Client ID + scopes in Admin Console. The current operator doesn't have super-admin access and can't request it right now (on leave; would also have to explain/justify the agent's access, which could lead to the request being delayed or redirected through the company).
+**Current behaviour:** `auth login --user` (interactive OAuth 2.0 + PKCE, logging in as a human Google account) is the working day-to-day path and is what the crate actually runs on for now. The default (no-flags) service-account path is dormant — present and tested, but unused.
+**This is not abandoned** — it's the intended path once admin access is available, just not now. Activating it later needs no code changes: just complete the two admin steps above and add the `service_account` block to `app.json` (see `crates/google-chat/README.md` Setup step 5). `write_app_config` already preserves a hand-added `service_account` block across `init` reruns for exactly this reason.
+**Add when:** super-admin access becomes available — complete the DWD admin setup, verify `auth login` (no flags) live, and update `crates/google-chat/CLAUDE.md`/`README.md` "Implemented commands" to note it's been verified end-to-end.
+
+---
