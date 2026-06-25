@@ -40,19 +40,27 @@ pub fn load_oauth_config() -> Result<OAuthConfig, CliError> {
     })
 }
 
-/// Loads and auto-renews OAuth credentials, then builds an authenticated Chat client.
-/// Returns a clear error if the user is not logged in or the session has expired.
-pub fn authenticated_client() -> Result<GoogleChatClient, CliError> {
+/// Loads and auto-renews OAuth credentials. Returns a clear error if the
+/// user is not logged in or the session has expired. Shared by
+/// `authenticated_client` and any caller that needs the raw access token
+/// (e.g. `events_client::EventsClient`, `commands::listen`) rather than a
+/// `GoogleChatClient`.
+pub fn authenticated_credentials() -> Result<auth::Credentials, CliError> {
     let oauth_config = load_oauth_config()?;
     let path = auth::credentials_path(&config_dir()?);
-    let credentials = auth::load_credentials(&oauth_config, &path).map_err(|e| {
+    auth::load_credentials(&oauth_config, &path).map_err(|e| {
         use crate::auth::LoginError;
         match e {
             LoginError::TokenExchange(reason) => CliError::TokenRefreshFailed { reason },
             _ => CliError::NotAuthenticated,
         }
-    })?;
-    Ok(GoogleChatClient::new(&credentials))
+    })
+}
+
+/// Loads and auto-renews OAuth credentials, then builds an authenticated Chat client.
+/// Returns a clear error if the user is not logged in or the session has expired.
+pub fn authenticated_client() -> Result<GoogleChatClient, CliError> {
+    Ok(GoogleChatClient::new(&authenticated_credentials()?))
 }
 
 /// Prints `value` as pretty-printed JSON to stdout.

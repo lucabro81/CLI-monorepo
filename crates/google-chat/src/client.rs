@@ -165,7 +165,7 @@ impl GoogleChatClient {
 /// Normalizes a space identifier to the full `spaces/{id}` resource name
 /// expected by the Chat API, accepting either form so a caller can paste the
 /// bare id or the full `name` field straight from `spaces list` output.
-fn normalize_space_name(space: &str) -> String {
+pub(crate) fn normalize_space_name(space: &str) -> String {
     if space.starts_with("spaces/") {
         space.to_string()
     } else {

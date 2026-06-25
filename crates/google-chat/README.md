@@ -62,7 +62,7 @@ setup by a Workspace **super-admin**:
 3. In the Google Admin Console (admin.google.com → Security → Access and
    data control → API controls → Domain-wide delegation), add that Client
    ID authorized for exactly these scopes (comma-separated):
-   `https://www.googleapis.com/auth/chat.spaces.readonly,https://www.googleapis.com/auth/chat.messages.readonly,https://www.googleapis.com/auth/chat.messages.create`
+   `https://www.googleapis.com/auth/chat.spaces.readonly,https://www.googleapis.com/auth/chat.messages.readonly,https://www.googleapis.com/auth/chat.messages.create,https://www.googleapis.com/auth/chat.memberships.readonly,https://www.googleapis.com/auth/pubsub`
 4. Add a `service_account` block to `app.json`, using `client_email` and
    `private_key` from the downloaded key, and `impersonate_user` set to the
    service user's email:
@@ -93,7 +93,8 @@ cargo run -p google-chat -- init
 `auth login` (no flags) uses the service account from step 5, silently. `auth
 login --user` opens Google's consent screen in your browser, listing the
 requested scopes (`chat.spaces.readonly`, `chat.messages.readonly`,
-`chat.messages.create`). `google-chat init` does step 4 plus the `--user`
+`chat.messages.create`, `chat.memberships.readonly`, `pubsub`).
+`google-chat init` does step 4 plus the `--user`
 login together: it prints setup instructions, prompts for Client ID and
 Client Secret, writes `app.json`, runs the interactive OAuth flow, and
 finally runs `google-chat doctor` as a confirmation.
@@ -272,6 +273,91 @@ cargo run -p google-chat -- messages send --space AAQA-_d58OQ --text "Same thing
 - `--space <ID>` (required) — bare space id or full `spaces/{id}` resource name
 - `--text <TEXT>` (required) — plain-text message body
 
+### `google-chat subscription create`
+
+Registers a [Workspace Events API](https://developers.google.com/workspace/events)
+subscription that pushes Chat events for a space to a Pub/Sub topic, so
+`google-chat listen` (below) can stream them. Requires the
+`chat.spaces.readonly`, `chat.memberships.readonly`, and `pubsub` scopes —
+re-run `auth login --user` if you logged in before these were added.
+
+It also ensures a pull subscription exists on the given Pub/Sub topic,
+creating one if missing (a no-op if it already exists) — you don't need to
+check beforehand whether one was set up in a previous step.
+
+```sh
+cargo run -p google-chat -- subscription create --space spaces/AAQA-_d58OQ --topic projects/my-project/topics/my-topic --pubsub-subscription projects/my-project/subscriptions/my-sub
+```
+
+**Flags:**
+- `--space <ID>` (required) — bare space id or full `spaces/{id}` resource name
+- `--topic <TOPIC>` (required) — Pub/Sub topic that will receive events: `projects/{project}/topics/{topic}`
+- `--pubsub-subscription <SUBSCRIPTION>` (required) — pull subscription on that topic, created if missing: `projects/{project}/subscriptions/{subscription}`
+- `--event-type <TYPE>` (repeatable) — Chat event type to subscribe to; default `google.workspace.chat.message.v1.created`. Other valid values: `.updated`, `.deleted`
+
+The Pub/Sub topic itself, and the IAM grant of `roles/pubsub.publisher` on it
+to `chat-api-push@system.gserviceaccount.com` (required by the Workspace
+Events API to publish to it), are **not** created by this command — set
+those up once via the Cloud Console or `gcloud` before running it.
+
+**The created subscription expires after ~4 hours** (the Workspace Events
+API's own default TTL) — confirmed live, not configurable by this command
+yet. Pass its `name` field (printed in the output) to `google-chat listen
+--workspace-events-subscription` below, which renews it automatically so
+you don't have to re-run `subscription create` (see `BACKLOG.md` GCHAT-4).
+
+### `google-chat subscription delete --name <name>`
+
+Deletes a Workspace Events subscription so it stops delivering events
+immediately, rather than waiting for it to expire on its own (~4h, or never,
+if a `listen` process is still renewing it). Use this when an agent is done
+with a conversation, to tighten access back down to exactly the
+conversations actually in progress — important if subscriptions are created
+per-space (rather than the broader `--space spaces/-` wildcard, not
+recommended: it grants visibility into every space the identity belongs to,
+not just the ones the agent is actively engaged in).
+
+```sh
+cargo run -p google-chat -- subscription delete --name subscriptions/chat-spaces-abc123
+```
+
+**Flags:**
+- `--name <NAME>` (required) — the `name` field from `subscription create`'s output: `subscriptions/{id}`
+
+Deleting an already-deleted (or nonexistent) subscription returns a `403
+PERMISSION_DENIED` with `reason: SUBSCRIPTION_ACCESS_DENIED` — Workspace
+Events conflates "doesn't exist" with "no permission" in this error, so it's
+not distinguishable from this CLI's output alone.
+
+### `google-chat listen --pubsub-subscription <name> --workspace-events-subscription <name>`
+
+Opens a streaming pull on a Pub/Sub subscription (created via `subscription
+create` above) and prints each received message as one JSON line (NDJSON) to
+stdout, then acknowledges it. Pair the two commands to watch a space in real
+time instead of polling `messages list`.
+
+Runs until interrupted — Ctrl+C (SIGINT) in a foreground terminal, or
+`kill <pid>`/`pkill` (SIGTERM) for a background process, which is the
+expected way for an agent or script controlling the process to stop
+listening. The PID is printed to stderr at startup for this purpose.
+Refreshes its own access token in the background as needed (so it can run
+past the ~1h token lifetime), and renews the Workspace Events subscription's
+TTL every 30 minutes (so it can run past the ~4h subscription lifetime) —
+both without being restarted.
+
+```sh
+cargo run -p google-chat -- listen --pubsub-subscription projects/my-project/subscriptions/my-sub --workspace-events-subscription subscriptions/chat-spaces-abc123
+```
+
+**Flags:**
+- `--pubsub-subscription <SUBSCRIPTION>` (required) — full resource name: `projects/{project}/subscriptions/{subscription}`
+- `--workspace-events-subscription <NAME>` (required) — the `name` field from `subscription create`'s output (`subscriptions/{id}`), kept renewed automatically
+- `--max-messages <N>` — exit automatically after receiving N messages, instead of running until interrupted (useful for smoke tests)
+
+This is the one async corner of the crate — `google-cloud-pubsub` is
+tokio-async only, so `listen` builds and runs its own tokio runtime
+internally. Every other command stays on plain blocking `reqwest`.
+
 ### `--select <PATHS>` (global flag)
 
 All commands that return JSON support a `--select` flag for client-side
@@ -297,6 +383,9 @@ deliberately **read-only**: `spaces list` and `messages list` only.
 `messages send` creates real, visible messages in spaces shared with real
 people, so it's covered only by manual `cargo run` testing during
 development, not by an automated test (see `BACKLOG.md` GCHAT-2).
+`subscription create` (creates real GCP subscriptions) and `listen` (a
+long-running process) are likewise only covered by manual testing, not
+automated e2e tests (see `BACKLOG.md` GCHAT-3).
 
 **Prerequisites:** `google-chat auth login --user` (or `init`) must have been
 completed on this machine.

@@ -15,6 +15,7 @@ mod commands;
 mod context;
 mod endpoints;
 mod error;
+mod events_client;
 mod fields;
 
 #[cfg(test)]
@@ -56,6 +57,16 @@ fn run() -> Result<(), CliError> {
         } => commands::auth::run_login(user),
         Command::Spaces { command } => commands::spaces::run(command, select),
         Command::Messages { command } => commands::messages::run(command, select),
+        Command::Subscription { command } => commands::subscription::run(command, select),
+        Command::Listen {
+            pubsub_subscription,
+            workspace_events_subscription,
+            max_messages,
+        } => commands::listen::run_listen(
+            pubsub_subscription,
+            workspace_events_subscription,
+            max_messages,
+        ),
     }
 }
 
