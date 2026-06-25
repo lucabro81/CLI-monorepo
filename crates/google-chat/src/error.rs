@@ -70,4 +70,22 @@ pub enum CliError {
 
     #[error("I/O error: {reason}")]
     IoError { reason: String },
+
+    #[error("Workspace Events API request failed: {reason}")]
+    WorkspaceEventsRequestFailed { reason: String },
+
+    #[error("Workspace Events API returned status {status}: {body}")]
+    WorkspaceEventsApiError { status: u16, body: String },
+
+    #[error("Pub/Sub API request failed: {reason}")]
+    PubsubRequestFailed { reason: String },
+
+    #[error("Pub/Sub API returned status {status}: {body}")]
+    PubsubApiError { status: u16, body: String },
+
+    #[error(
+        "Pub/Sub subscriber failed: {reason}. \
+        Run: google-chat auth login --user, then retry google-chat listen"
+    )]
+    PubsubSubscribeFailed { reason: String },
 }

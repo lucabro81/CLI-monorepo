@@ -22,3 +22,12 @@ pub const JWT_BEARER_GRANT_TYPE: &str = "urn:ietf:params:oauth:grant-type:jwt-be
 pub const CHAT_API_BASE_URL: &str = "https://chat.googleapis.com/v1";
 
 pub const PATH_SPACES: &str = "/spaces";
+
+// ── Workspace Events API v1 and Pub/Sub API v1 (events_client.rs) ──────────
+
+/// Base URL for Google Workspace Events API v1 calls (subscription management).
+pub const WORKSPACE_EVENTS_API_BASE_URL: &str = "https://workspaceevents.googleapis.com/v1";
+
+/// Base URL for Google Cloud Pub/Sub API v1 calls (used to ensure the pull
+/// subscription that backs a Workspace Events subscription exists).
+pub const PUBSUB_API_BASE_URL: &str = "https://pubsub.googleapis.com/v1";

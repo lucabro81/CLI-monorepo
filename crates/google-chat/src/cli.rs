@@ -65,6 +65,35 @@ pub enum Command {
         #[command(subcommand)]
         command: MessagesCommand,
     },
+    /// Manage Workspace Events subscriptions that push Chat events to Pub/Sub
+    Subscription {
+        #[command(subcommand)]
+        command: SubscriptionCommand,
+    },
+    /// Stream messages from a Pub/Sub subscription as they arrive
+    ///
+    /// Opens a streaming pull on the given Pub/Sub subscription and prints
+    /// each received message as one JSON line (NDJSON) to stdout, then
+    /// acknowledges it. Runs until interrupted (Ctrl+C / SIGINT, or SIGTERM —
+    /// the signal sent by `kill <pid>`/`pkill`, the expected way for an
+    /// agent or script controlling the process to stop it). Refreshes its
+    /// own access token in the background as needed, and periodically
+    /// renews the Workspace Events subscription's TTL (it otherwise expires
+    /// after ~4h), so it can run indefinitely without being restarted.
+    /// Prints its PID to stderr at startup so the caller has a handle to
+    /// stop it later.
+    #[command(after_help = "Example:\n  google-chat listen --pubsub-subscription projects/my-project/subscriptions/my-sub --workspace-events-subscription subscriptions/chat-spaces-abc123\n\n--workspace-events-subscription is the \"name\" field from `subscription create`'s output.\nStop it with Ctrl+C (foreground) or `kill <pid>`/`pkill -f \"google-chat listen\"` (background).\nPass --max-messages to exit automatically after receiving N messages (useful for smoke tests).")]
+    Listen {
+        /// Full Pub/Sub subscription resource name: "projects/{project}/subscriptions/{subscription}"
+        #[arg(long)]
+        pubsub_subscription: String,
+        /// Workspace Events subscription to keep renewed, from the "name" field of `subscription create`'s output: "subscriptions/{id}"
+        #[arg(long)]
+        workspace_events_subscription: String,
+        /// Exit automatically after receiving this many messages, instead of running until interrupted
+        #[arg(long)]
+        max_messages: Option<u32>,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -122,6 +151,48 @@ pub enum MessagesCommand {
         /// Plain-text message body
         #[arg(long)]
         text: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum SubscriptionCommand {
+    /// Create a Workspace Events subscription that pushes Chat events for a space to a Pub/Sub topic
+    ///
+    /// Ensures a pull subscription exists on the given Pub/Sub topic (creates
+    /// one if missing; does nothing if it already exists — safe to call
+    /// without checking first), then registers a Workspace Events
+    /// subscription targeting the space, delivering matching events to that
+    /// topic. Prints the created Workspace Events subscription resource as
+    /// JSON. Pair with `google-chat listen --pubsub-subscription <name>` to
+    /// receive the events.
+    #[command(after_help = "Example:\n  google-chat subscription create --space spaces/AAQA-_d58OQ --topic projects/my-project/topics/my-topic --pubsub-subscription projects/my-project/subscriptions/my-sub\n\n--space accepts either the bare id or the full \"spaces/...\" resource name.\n--event-type can be repeated; defaults to google.workspace.chat.message.v1.created.\nValid event types: google.workspace.chat.message.v1.created, .updated, .deleted.")]
+    Create {
+        /// Space to subscribe to — bare id or full "spaces/{id}" resource name
+        #[arg(long)]
+        space: String,
+        /// Pub/Sub topic that will receive events: "projects/{project}/topics/{topic}"
+        #[arg(long)]
+        topic: String,
+        /// Pull subscription on that topic, created if it does not already exist: "projects/{project}/subscriptions/{subscription}"
+        #[arg(long)]
+        pubsub_subscription: String,
+        /// Chat event type to subscribe to (repeatable); default: google.workspace.chat.message.v1.created
+        #[arg(long, default_values_t = ["google.workspace.chat.message.v1.created".to_string()])]
+        event_type: Vec<String>,
+    },
+    /// Delete a Workspace Events subscription so it stops delivering events
+    ///
+    /// Call this when an agent is done with a conversation, to stop
+    /// receiving its events immediately rather than waiting for the
+    /// subscription to expire on its own (~4h, or never, if something is
+    /// still calling `listen` and renewing it). Tightens access to exactly
+    /// the conversations currently in progress instead of leaving stale
+    /// subscriptions live.
+    #[command(after_help = "Example:\n  google-chat subscription delete --name subscriptions/chat-spaces-abc123\n\n--name is the \"name\" field from `subscription create`'s output.")]
+    Delete {
+        /// Workspace Events subscription to delete: "subscriptions/{id}"
+        #[arg(long)]
+        name: String,
     },
 }
 

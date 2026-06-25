@@ -13,26 +13,76 @@ src/
     init.rs       — run_init(), write_app_config(); human onboarding flow
     spaces.rs     — run(SpacesCommand); dispatches space subcommands
     messages.rs   — run(MessagesCommand); dispatches message subcommands
+    subscription.rs — run(SubscriptionCommand); dispatches to EventsClient
+    listen.rs     — run_listen(); the crate's one async command (see below)
   auth.rs         — OAuth infrastructure: OAuthConfig, Credentials, login(),
                     refresh(), renew(), save_credentials(), load_credentials(),
                     path helpers
   client.rs       — GoogleChatClient (blocking reqwest); get_json/post_json
                     helpers; all Chat API methods: list_spaces, list_messages,
-                    create_message
+                    create_message; normalize_space_name (pub(crate), reused
+                    by events_client.rs)
+  events_client.rs — EventsClient (blocking reqwest) for the Workspace Events
+                    API and the Pub/Sub admin API: ensure_pubsub_subscription
+                    (idempotent — 409 ALREADY_EXISTS treated as success),
+                    create_workspace_events_subscription,
+                    renew_subscription (PATCH ttl=0s, resets TTL to max —
+                    used by listen.rs's background renewal task),
+                    delete_subscription (DELETE, stops delivery immediately).
+                    Same bearer token as GoogleChatClient, different base
+                    URLs/scopes. EventsClientError::into_pubsub_error /
+                    into_workspace_events_error map to CliError, shared by
+                    commands/subscription.rs and commands/listen.rs.
   cli.rs          — clap structs: Cli (--select global), Command, AuthCommand,
-                    SpacesCommand, MessagesCommand. No logic.
-  context.rs      — config_dir(), load_oauth_config(), authenticated_client(),
-                    print_json(value, select). Shared by all command handlers.
-  endpoints.rs     — URL/path constants for Google OAuth and the Chat API v1,
-                    used by auth.rs and client.rs. No logic.
+                    SpacesCommand, MessagesCommand, SubscriptionCommand. No logic.
+  context.rs      — config_dir(), load_oauth_config(), authenticated_credentials(),
+                    authenticated_client(), print_json(value, select). Shared
+                    by all command handlers; authenticated_credentials() is
+                    also used directly by events_client/listen callers that
+                    need the raw access token rather than a GoogleChatClient.
+  endpoints.rs     — URL/path constants for Google OAuth, the Chat API v1, the
+                    Workspace Events API v1, and the Pub/Sub API v1, used by
+                    auth.rs, client.rs, and events_client.rs. No logic.
   error.rs        — CliError (top-level, thiserror-derived). Includes IoError
-                    for stdin prompts in init.
+                    for stdin prompts in init, and WorkspaceEvents*/Pubsub*
+                    variants for the new commands.
   fields.rs       — filter_fields(value, select): dot-notation projection,
                     array-aware, backed by FieldTree (recursive BTreeMap).
   tests/          — all *_tests.rs files, mirroring the src/ layout (see root
                     CLAUDE.md's "Test file convention").
   main.rs         — pure dispatch: parse --select, match Command, call commands::*.
 ```
+
+## Async: `listen` only
+
+Every command except `listen` is synchronous (`reqwest::blocking`) — this
+crate deliberately avoids a project-wide async runtime. `listen` needs
+`google-cloud-pubsub`'s streaming pull, which is tokio-async only; rather
+than convert the whole crate, `commands::listen::run_listen` builds its own
+`tokio::runtime::Runtime` and tears it down when the command returns. No
+other module is aware of tokio.
+
+To let the Pub/Sub subscriber reuse this crate's own OAuth access token
+(instead of Application Default Credentials), `listen.rs` implements
+`google_cloud_auth::credentials::CredentialsProvider` on a small
+`SharedTokenCredentials` adapter wrapping `Arc<RwLock<String>>`. A background
+task polls `context::authenticated_credentials()` (which only actually
+renews when within 60s of expiry) every 5 minutes via `spawn_blocking` and
+writes the refreshed token into that shared state — this is what lets
+`listen` run past the ~1h access-token lifetime without being restarted.
+
+A second background task renews the Workspace Events subscription itself
+every 30 minutes (`EventsClient::renew_subscription`, also via
+`spawn_blocking`, reading the same shared token) — that subscription has its
+own ~4h TTL on Google's side, independent of the OAuth access token, and
+`listen` needs the subscription's `name` (`--workspace-events-subscription`)
+to keep it alive. Both background tasks and the pull loop race in the same
+`tokio::select!`.
+
+Shutdown is handled by racing the pull loop against both `SIGINT` (Ctrl+C)
+and `SIGTERM` (`kill`/`pkill` — the way an agent or script controlling the
+process as a background job would normally stop it); the PID is logged to
+stderr at startup so the caller has something to send the signal to.
 
 ## OAuth / auth design
 
@@ -92,7 +142,12 @@ on a fixed schedule — no rotate-on-every-use concern for the 3LO path.
 
 **Scopes** (both grants): `https://www.googleapis.com/auth/chat.spaces.readonly
 https://www.googleapis.com/auth/chat.messages.readonly
-https://www.googleapis.com/auth/chat.messages.create`.
+https://www.googleapis.com/auth/chat.messages.create
+https://www.googleapis.com/auth/chat.memberships.readonly
+https://www.googleapis.com/auth/pubsub`. The last two were added for
+`subscription create`/`listen` — verified live (`BACKLOG.md` GCHAT-3):
+`chat.spaces.readonly` + `chat.memberships.readonly` are sufficient for
+Workspace Events subscriptions, no extra scope needed.
 
 **Token endpoint requests must be `application/x-www-form-urlencoded`**, not
 JSON — Google's `jwt-bearer` grant rejects a JSON body with
@@ -161,6 +216,18 @@ Both files live under `$XDG_CONFIG_HOME/google-chat-cli/` (falling back to
 - **`post_json`**: `client.rs` gained a `post_json` helper (mirroring jira's)
   for `create_message` — the crate's first write call. Same
   bearer-auth/status-check/JSON-decode shape as `get_json`.
+- **`subscription create --space spaces/-` (the "all spaces" wildcard
+  `targetResource`) is intentionally not the recommended/documented usage**:
+  it grants visibility into every space the authenticated identity belongs
+  to, not just the ones an agent is actively engaged in — a much broader
+  blast radius than needed, and the wrong default for an agent that should
+  only see the conversation it's actually part of. The intended pattern is
+  one `subscription create --space <id>` per conversation the agent is
+  currently in, all sharing the same Pub/Sub topic/subscription/`listen`
+  process if convenient (the topic is just transport — it doesn't broaden
+  access; only an explicit Workspace Events subscription does), paired with
+  `subscription delete --name <name>` when the agent is done with that
+  conversation, rather than relying solely on the ~4h natural expiry.
 
 ## Implemented commands
 
@@ -172,12 +239,15 @@ Both files live under `$XDG_CONFIG_HOME/google-chat-cli/` (falling back to
 | `spaces list [--page-size --page-token]` | Lists spaces (`spaces.list`) the authenticated identity belongs to. Verified live — real spaces returned, types (`SPACE`/`GROUP_CHAT`/`DIRECT_MESSAGE`) confirmed. |
 | `messages list --space <id> [--page-size --page-token --order-by]` | Lists messages in a space (`spaces.messages.list`). Chronological by default (`createTime ASC`, the Chat API's own default) — the context-recovery path for an agent resuming after a gap or summarization. `--order-by "createTime DESC"` gets the most recent first. `--space` accepts bare id or full `spaces/{id}`. Verified live against real conversation history both orderings, both id forms. |
 | `messages send --space <id> --text <text>` | Creates a message (`spaces.messages.create`) in a space; prints the created Message (including its `name`). Not gated by `--confirm` — visible but not data-destructive. Verified live: real message delivered and visible to the other party, both `--space` id forms confirmed. |
+| `subscription create --space <id> --topic <topic> --pubsub-subscription <sub> [--event-type ...]` | Ensures the Pub/Sub pull subscription exists (idempotent), then creates a Workspace Events subscription delivering Chat events for the space to that topic. Verified live — real subscription created, `state: ACTIVE`. The subscription expires after ~4h (Workspace Events API's own default TTL); pass its `name` to `listen --workspace-events-subscription` to keep it renewed (BACKLOG.md GCHAT-4). |
+| `subscription delete --name <name>` | Deletes a Workspace Events subscription, stopping delivery immediately — call when an agent leaves a conversation, instead of relying on the ~4h expiry. Verified live: real subscription deleted (`done: true`); a second delete on the same name correctly returned `403 SUBSCRIPTION_ACCESS_DENIED` (Workspace Events conflates "gone" with "no permission" in this error). |
+| `listen --pubsub-subscription <sub> --workspace-events-subscription <name> [--max-messages N]` | Streams messages from a Pub/Sub subscription via `google-cloud-pubsub`, printing each as NDJSON and acking it. Refreshes its own token every 5 min and renews the Workspace Events subscription's TTL every 30 min, both in the background; stops cleanly on SIGINT/SIGTERM. Verified live — a real `messages send` was received and printed within ~2s, `kill -TERM <pid>` exited cleanly, and the renewal PATCH call was confirmed directly (pushed `expireTime` out another ~4h, same scopes, no extra scope needed). Neither background task's periodic *trigger* was observed firing during an actual `listen` run (would need a 5/30-minute-long session) — the calls they invoke were verified directly instead (BACKLOG.md GCHAT-3, GCHAT-4). |
 
 ## Planned commands
 
-(none — `init`/`doctor`/`auth`/`spaces`/`messages` core command pool is complete; new commands land as concrete needs arise, per root CLAUDE.md's incremental approach)
+(none — new commands land as concrete needs arise, per root CLAUDE.md's incremental approach)
 
 ## Known edge cases (see BACKLOG.md)
 
-None yet — this crate is newly scaffolded. Use prefix `GCHAT-` for entries
-added as commands are implemented.
+See `BACKLOG.md` GCHAT-1 through GCHAT-3. Use prefix `GCHAT-` for new entries
+as commands are implemented.
