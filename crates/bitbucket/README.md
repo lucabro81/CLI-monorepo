@@ -27,8 +27,6 @@ In your Bitbucket workspace, go to **Settings → Apps and features → OAuth cl
 
 After saving, note down the consumer's **Key** (`client_id`) and **Secret** (`client_secret`).
 
-> The token's identity is whichever account created the consumer. In production this should be a dedicated `bot@<domain>` account added as a workspace member, not a personal account.
-
 ### 2. Write the app credentials file
 
 Create `$XDG_CONFIG_HOME/bitbucket-cli/app.json` (typically `~/.config/bitbucket-cli/app.json`):
