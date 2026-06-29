@@ -17,9 +17,9 @@ CLI for Bitbucket Cloud, designed to be driven by an LLM agent (output is JSON, 
 
 ## Setup
 
-### 1. Create a Bitbucket OAuth consumer
+### 1. Create a Bitbucket OAuth client
 
-In your Bitbucket workspace, go to **Settings → OAuth consumers → Add consumer**:
+In your Bitbucket workspace, go to **Settings → Apps and features → OAuth clients → Create OAuth client**:
 
 - **Name**: anything descriptive, e.g. `bitbucket-cli`
 - **Callback URL**: leave empty — the `client_credentials` grant doesn't use it
