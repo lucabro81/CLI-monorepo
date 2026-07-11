@@ -30,6 +30,37 @@ fn parses_auth_whoami_with_select() {
 }
 
 #[test]
+fn select_flag_is_none_and_select_all_false_when_absent() {
+    let cli = Cli::try_parse_from(["bitbucket", "auth", "whoami"]).expect("should parse");
+
+    assert!(cli.select.is_none());
+    assert!(!cli.select_all);
+}
+
+#[test]
+fn select_all_flag_parses() {
+    let cli =
+        Cli::try_parse_from(["bitbucket", "--select-all", "auth", "whoami"]).expect("should parse");
+
+    assert!(cli.select_all);
+    assert!(cli.select.is_none());
+}
+
+#[test]
+fn select_and_select_all_together_are_rejected() {
+    let result = Cli::try_parse_from([
+        "bitbucket",
+        "--select",
+        "uuid",
+        "--select-all",
+        "auth",
+        "whoami",
+    ]);
+
+    assert!(result.is_err(), "--select and --select-all should conflict");
+}
+
+#[test]
 fn parses_init_with_flags() {
     let cli = Cli::try_parse_from(["bitbucket", "init", "--client-id", "abc", "--client-secret", "xyz"])
         .expect("should parse");

@@ -5,7 +5,7 @@ use crate::context::{authenticated_client, print_json, split_repository};
 use crate::error::CliError;
 
 /// Dispatches a `BranchCommand` variant to the appropriate Bitbucket API call.
-pub fn run(command: BranchCommand, select: &[&str]) -> Result<(), CliError> {
+pub fn run(command: BranchCommand, select: cli_fields::Select<'_>) -> Result<(), CliError> {
     match command {
         BranchCommand::List { repository, page } => {
             let (workspace, repo_slug) = split_repository(&repository)?;

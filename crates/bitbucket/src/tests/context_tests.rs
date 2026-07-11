@@ -1,7 +1,10 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use super::split_repository;
+use serde_json::json;
+
+use super::{print_json, split_repository};
 use crate::error::CliError;
+use cli_fields::{RenderError, Select};
 
 #[test]
 fn splits_workspace_and_repo_slug() {
@@ -28,4 +31,32 @@ fn rejects_repository_with_empty_workspace_or_slug() {
         split_repository("lucabrognaracode/"),
         Err(CliError::InvalidRepository { .. })
     ));
+}
+
+#[test]
+fn required_select_returns_select_error() {
+    let value = json!({"uuid": "x", "display_name": "y"});
+
+    let err = print_json(&value, Select::Required).expect_err("should require --select");
+    match err {
+        CliError::Select(RenderError::SelectRequired { size, available_fields }) => {
+            assert!(size > 0);
+            assert_eq!(available_fields, "top-level fields: display_name, uuid");
+        }
+        other => panic!("expected CliError::Select(SelectRequired), got {other:?}"),
+    }
+}
+
+#[test]
+fn select_all_still_succeeds() {
+    let value = json!({"uuid": "x"});
+
+    assert!(print_json(&value, Select::All).is_ok());
+}
+
+#[test]
+fn non_empty_fields_still_succeeds() {
+    let value = json!({"uuid": "x"});
+
+    assert!(print_json(&value, Select::Fields(&["uuid"])).is_ok());
 }

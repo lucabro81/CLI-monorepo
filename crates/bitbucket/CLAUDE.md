@@ -32,13 +32,16 @@ src/
   context.rs      — config_dir(), authenticated_client(), print_json(value, select),
                     split_repository(repository) (shared by repo and pr commands).
   endpoints.rs    — URL/path constants for OAuth and REST API v2.0.
-  error.rs        — CliError (top-level, thiserror-derived).
-  fields.rs       — filter_fields(value, select): dot-notation projection (copied from jira).
+  error.rs        — CliError (top-level, thiserror-derived), including a
+                    transparent Select variant wrapping cli_fields::RenderError.
   tests/          — all *_tests.rs files, mirroring the src/ layout (see "Test file
                     convention" below). tests/e2e_tests.rs holds the ignored e2e tests
                     against a real workspace (see "Testing" below).
-  main.rs         — pure dispatch: parse --select, match Command, call commands::*.
+  main.rs         — pure dispatch: resolve --select/--select-all into a
+                    cli_fields::Select once, match Command, call commands::*.
 ```
+
+`--select` dot-notation projection itself (`filter_fields`, `describe_top_level_shape`, the `Select` enum, `render_json`) lives in the shared `crates/cli-fields` workspace crate, not in this crate — see root `CLAUDE.md`'s "Shared library: crates/cli-fields".
 
 ## Test file convention
 
@@ -138,7 +141,25 @@ scopes a command needs is documented per-command, not enforced by `doctor`.
 
 ## API design notes
 
-- **`--select`** (global flag): client-side dot-notation projection via `fields::filter_fields`, same as jira.
+- **`--select`/`--select-all`** (global flags, see root `CLAUDE.md`): `--select` is mandatory by default; omitting both flags fails with the response's byte size and top-level fields instead of printing. `--select-all` is the explicit stateless opt-out. Exempt commands (always print in full via `select.or_all()` at their `print_json` call site) and why:
+  | Command | Exempt? | Why |
+  |---|---|---|
+  | `doctor` | yes | internally-generated report, fixed/small |
+  | `auth whoami` | yes | identity check, fixed/small |
+  | `repo get` | yes | single repository object, fixed shape |
+  | `repo list` | **no** | paginated collection |
+  | `repo create` | yes | single repository object, fixed shape |
+  | `repo delete` | yes | synthesized by us: `{"deleted": true, "repository": ...}` |
+  | `pr get` | yes | single pull request object, fixed shape |
+  | `pr list` | **no** | paginated collection |
+  | `pr create` | yes | single pull request object, fixed shape |
+  | `pr comment` | yes | single comment object, fixed shape |
+  | `pr approve` | yes | small approval object |
+  | `pr unapprove` | yes | synthesized by us: `{"unapproved": true, "id": ...}` |
+  | `pr decline` | yes | single pull request object, fixed shape |
+  | `pr merge` | yes | single pull request object, fixed shape |
+  | `pr diff` | N/A | raw diff text, not JSON, `--select` has no effect |
+  | `branch list` | **no** | paginated collection |
 - Bitbucket Cloud REST API v2.0 base: `https://api.bitbucket.org/2.0`.
 - **Destructive commands** (e.g. `pr merge`, `pr decline`): no interactive prompts; require explicit `--confirm`, error message includes the exact retry command.
 

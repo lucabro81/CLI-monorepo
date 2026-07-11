@@ -10,10 +10,20 @@ use clap::{Parser, Subcommand};
 #[command(name = "bitbucket", version, about)]
 pub struct Cli {
     /// Comma-separated dot-notation paths to project from the JSON output (client-side).
-    /// If omitted, the full response from Bitbucket is printed.
+    /// Required on most commands: if both this and --select-all are omitted, the
+    /// command fails with an error reporting the byte size of the full response and
+    /// its top-level field names, so you can retry with an informed --select. A few
+    /// commands whose output is always small and fixed-shape (doctor, auth whoami,
+    /// repo get/create/delete, pr get/create/approve/unapprove/decline/merge/comment)
+    /// are exempt and print in full regardless — see that command's own --help.
     /// Example: --select `uuid,display_name`
-    #[arg(long, global = true, value_name = "PATHS")]
+    #[arg(long, global = true, value_name = "PATHS", conflicts_with = "select_all")]
     pub select: Option<String>,
+
+    /// Explicitly print the full, unfiltered JSON response instead of specifying --select.
+    /// Use when you already know the response is small; otherwise prefer --select.
+    #[arg(long, global = true, conflicts_with = "select")]
+    pub select_all: bool,
 
     #[command(subcommand)]
     pub command: Command,
@@ -32,6 +42,9 @@ pub enum Command {
         client_secret: Option<String>,
     },
     /// Check that the CLI is correctly configured and can reach the Bitbucket API
+    ///
+    /// Always prints its full result regardless of --select — the report is
+    /// generated internally and is always small and fixed-shape.
     #[command(after_help = "Example:\n  bitbucket doctor")]
     Doctor,
     /// Manage authentication with Bitbucket
@@ -69,6 +82,9 @@ pub enum AuthCommand {
     #[command(after_help = "Example:\n  bitbucket auth login\n\nRequires app.json to exist at ~/.config/bitbucket-cli/app.json with the OAuth\nconsumer's Key/Secret: {\"client_id\": \"...\", \"client_secret\": \"...\"}")]
     Login,
     /// Print the currently authenticated account as JSON
+    ///
+    /// Always prints its full result regardless of --select — an identity check,
+    /// small and fixed-shape.
     #[command(after_help = "Examples:\n  bitbucket auth whoami\n  bitbucket auth whoami --select uuid,display_name")]
     Whoami,
 }
@@ -76,6 +92,9 @@ pub enum AuthCommand {
 #[derive(Debug, Subcommand)]
 pub enum RepoCommand {
     /// Print repository details as JSON
+    ///
+    /// Always prints its full result regardless of --select — a single repository
+    /// object, fixed-shape.
     #[command(after_help = "Examples:\n  bitbucket repo get lucabrognaracode/my-repo\n  bitbucket repo get lucabrognaracode/my-repo --select description,language")]
     Get {
         /// Full repository identifier in the form `workspace/repo_slug`
@@ -91,6 +110,9 @@ pub enum RepoCommand {
         page: Option<u32>,
     },
     /// Create a new repository, as JSON
+    ///
+    /// Always prints its full result regardless of --select — a single repository
+    /// object, fixed-shape.
     #[command(after_help = "Examples:\n  bitbucket repo create lucabrognaracode/my-new-repo\n  bitbucket repo create lucabrognaracode/my-new-repo --description \"My new repo\" --private\n  bitbucket repo create lucabrognaracode/my-new-repo --project PROJ")]
     Create {
         /// Full repository identifier in the form `workspace/repo_slug`
@@ -107,7 +129,9 @@ pub enum RepoCommand {
     },
     /// Delete a repository, as JSON
     ///
-    /// This permanently deletes the repository and cannot be undone.
+    /// This permanently deletes the repository and cannot be undone. Always prints
+    /// its full result regardless of --select — a small, synthesized confirmation
+    /// object.
     #[command(after_help = "Example:\n  bitbucket repo delete lucabrognaracode/my-repo --confirm")]
     Delete {
         /// Full repository identifier in the form `workspace/repo_slug`
@@ -121,6 +145,9 @@ pub enum RepoCommand {
 #[derive(Debug, Subcommand)]
 pub enum PrCommand {
     /// Print pull request details as JSON
+    ///
+    /// Always prints its full result regardless of --select — a single pull
+    /// request object, fixed-shape.
     #[command(after_help = "Examples:\n  bitbucket pr get lucabrognaracode/my-repo 42\n  bitbucket pr get lucabrognaracode/my-repo 42 --select title,state,source.branch.name")]
     Get {
         /// Full repository identifier in the form `workspace/repo_slug`
@@ -129,6 +156,9 @@ pub enum PrCommand {
         id: u64,
     },
     /// Create a new pull request, as JSON
+    ///
+    /// Always prints its full result regardless of --select — a single pull
+    /// request object, fixed-shape.
     #[command(after_help = "Examples:\n  bitbucket pr create lucabrognaracode/my-repo --title \"My PR\" --source feature-branch\n  bitbucket pr create lucabrognaracode/my-repo --title \"My PR\" --source feature-branch --destination main --description \"does things\"\n  bitbucket pr create lucabrognaracode/my-repo --title \"My PR\" --source feature-branch --close-source-branch")]
     Create {
         /// Full repository identifier in the form `workspace/repo_slug`
@@ -150,6 +180,9 @@ pub enum PrCommand {
         close_source_branch: bool,
     },
     /// Approve a pull request, as JSON
+    ///
+    /// Always prints its full result regardless of --select — a small approval
+    /// object.
     #[command(after_help = "Example:\n  bitbucket pr approve lucabrognaracode/my-repo 42")]
     Approve {
         /// Full repository identifier in the form `workspace/repo_slug`
@@ -158,6 +191,9 @@ pub enum PrCommand {
         id: u64,
     },
     /// Remove your approval from a pull request, as JSON
+    ///
+    /// Always prints its full result regardless of --select — a small, synthesized
+    /// confirmation object.
     #[command(after_help = "Example:\n  bitbucket pr unapprove lucabrognaracode/my-repo 42")]
     Unapprove {
         /// Full repository identifier in the form `workspace/repo_slug`
@@ -168,6 +204,8 @@ pub enum PrCommand {
     /// Decline a pull request, as JSON
     ///
     /// This changes the pull request's state and cannot be undone by this CLI.
+    /// Always prints its full result regardless of --select — a single pull
+    /// request object, fixed-shape.
     #[command(after_help = "Example:\n  bitbucket pr decline lucabrognaracode/my-repo 42 --confirm")]
     Decline {
         /// Full repository identifier in the form `workspace/repo_slug`
@@ -180,7 +218,8 @@ pub enum PrCommand {
     },
     /// Merge a pull request, as JSON
     ///
-    /// This is permanent and cannot be undone.
+    /// This is permanent and cannot be undone. Always prints its full result
+    /// regardless of --select — a single pull request object, fixed-shape.
     #[command(after_help = "Examples:\n  bitbucket pr merge lucabrognaracode/my-repo 42 --confirm\n  bitbucket pr merge lucabrognaracode/my-repo 42 --merge-strategy squash --close-source-branch --confirm")]
     Merge {
         /// Full repository identifier in the form `workspace/repo_slug`
@@ -201,6 +240,9 @@ pub enum PrCommand {
         confirm: bool,
     },
     /// Add a comment to a pull request, as JSON
+    ///
+    /// Always prints its full result regardless of --select — a single comment
+    /// object, fixed-shape.
     #[command(after_help = "Examples:\n  bitbucket pr comment lucabrognaracode/my-repo 42 --content \"Looks good to me\"\n  bitbucket pr comment lucabrognaracode/my-repo 42 --content \"Fix this\" --path src/main.rs --line 10")]
     Comment {
         /// Full repository identifier in the form `workspace/repo_slug`

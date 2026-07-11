@@ -27,11 +27,12 @@ pub fn run_login() -> Result<(), CliError> {
 }
 
 /// Prints the currently authenticated account as JSON.
-pub fn run_whoami(select: &[&str]) -> Result<(), CliError> {
+/// Exempt from the mandatory --select requirement: an identity check, small fixed shape.
+pub fn run_whoami(select: cli_fields::Select<'_>) -> Result<(), CliError> {
     let value = authenticated_client()?
         .get_current_user()
         .map_err(|e| CliError::ApiRequestFailed {
             reason: e.to_string(),
         })?;
-    print_json(&value, select)
+    print_json(&value, select.or_all())
 }

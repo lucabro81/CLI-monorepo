@@ -7,7 +7,7 @@ use crate::context::{authenticated_client, print_json, split_repository};
 use crate::error::CliError;
 
 /// Dispatches a `PrCommand` variant to the appropriate Bitbucket API call.
-pub fn run(command: PrCommand, select: &[&str]) -> Result<(), CliError> {
+pub fn run(command: PrCommand, select: cli_fields::Select<'_>) -> Result<(), CliError> {
     match command {
         PrCommand::Create { repository, title, source, destination, description, close_source_branch } => {
             let (workspace, repo_slug) = split_repository(&repository)?;
@@ -17,7 +17,8 @@ pub fn run(command: PrCommand, select: &[&str]) -> Result<(), CliError> {
                 .map_err(|e| CliError::ApiRequestFailed {
                     reason: e.to_string(),
                 })?;
-            print_json(&value, select)
+            // Exempt: a single pull request object, fixed shape.
+            print_json(&value, select.or_all())
         }
         PrCommand::Approve { repository, id } => {
             let (workspace, repo_slug) = split_repository(&repository)?;
@@ -26,7 +27,8 @@ pub fn run(command: PrCommand, select: &[&str]) -> Result<(), CliError> {
                 .map_err(|e| CliError::ApiRequestFailed {
                     reason: e.to_string(),
                 })?;
-            print_json(&value, select)
+            // Exempt: a small approval object.
+            print_json(&value, select.or_all())
         }
         PrCommand::Unapprove { repository, id } => {
             let (workspace, repo_slug) = split_repository(&repository)?;
@@ -35,7 +37,8 @@ pub fn run(command: PrCommand, select: &[&str]) -> Result<(), CliError> {
                 .map_err(|e| CliError::ApiRequestFailed {
                     reason: e.to_string(),
                 })?;
-            print_json(&json!({"unapproved": true, "id": id}), select)
+            // Exempt: synthesized by us, always small.
+            print_json(&json!({"unapproved": true, "id": id}), select.or_all())
         }
         PrCommand::Decline { repository, id, confirm } => {
             if !confirm {
@@ -47,7 +50,8 @@ pub fn run(command: PrCommand, select: &[&str]) -> Result<(), CliError> {
                 .map_err(|e| CliError::ApiRequestFailed {
                     reason: e.to_string(),
                 })?;
-            print_json(&value, select)
+            // Exempt: a single pull request object, fixed shape.
+            print_json(&value, select.or_all())
         }
         PrCommand::Merge { repository, id, message, merge_strategy, close_source_branch, confirm } => {
             if !confirm {
@@ -60,7 +64,8 @@ pub fn run(command: PrCommand, select: &[&str]) -> Result<(), CliError> {
                 .map_err(|e| CliError::ApiRequestFailed {
                     reason: e.to_string(),
                 })?;
-            print_json(&value, select)
+            // Exempt: a single pull request object, fixed shape.
+            print_json(&value, select.or_all())
         }
         PrCommand::Comment { repository, id, content, path, line } => {
             let (workspace, repo_slug) = split_repository(&repository)?;
@@ -71,7 +76,8 @@ pub fn run(command: PrCommand, select: &[&str]) -> Result<(), CliError> {
                 .map_err(|e| CliError::ApiRequestFailed {
                     reason: e.to_string(),
                 })?;
-            print_json(&value, select)
+            // Exempt: a single comment object, fixed shape.
+            print_json(&value, select.or_all())
         }
         PrCommand::Get { repository, id } => {
             let (workspace, repo_slug) = split_repository(&repository)?;
@@ -80,7 +86,8 @@ pub fn run(command: PrCommand, select: &[&str]) -> Result<(), CliError> {
                 .map_err(|e| CliError::ApiRequestFailed {
                     reason: e.to_string(),
                 })?;
-            print_json(&value, select)
+            // Exempt: a single pull request object, fixed shape.
+            print_json(&value, select.or_all())
         }
         PrCommand::Diff { repository, id, context, path } => {
             let (workspace, repo_slug) = split_repository(&repository)?;

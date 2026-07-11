@@ -7,7 +7,7 @@ use crate::context::{authenticated_client, print_json, split_repository};
 use crate::error::CliError;
 
 /// Dispatches a `RepoCommand` variant to the appropriate Bitbucket API call.
-pub fn run(command: RepoCommand, select: &[&str]) -> Result<(), CliError> {
+pub fn run(command: RepoCommand, select: cli_fields::Select<'_>) -> Result<(), CliError> {
     match command {
         RepoCommand::Get { repository } => {
             let (workspace, repo_slug) = split_repository(&repository)?;
@@ -16,7 +16,8 @@ pub fn run(command: RepoCommand, select: &[&str]) -> Result<(), CliError> {
                 .map_err(|e| CliError::ApiRequestFailed {
                     reason: e.to_string(),
                 })?;
-            print_json(&value, select)
+            // Exempt: a single repository object, fixed shape.
+            print_json(&value, select.or_all())
         }
         RepoCommand::List { workspace, page } => {
             let value = authenticated_client()?
@@ -34,7 +35,8 @@ pub fn run(command: RepoCommand, select: &[&str]) -> Result<(), CliError> {
                 .map_err(|e| CliError::ApiRequestFailed {
                     reason: e.to_string(),
                 })?;
-            print_json(&value, select)
+            // Exempt: a single repository object, fixed shape.
+            print_json(&value, select.or_all())
         }
         RepoCommand::Delete { repository, confirm } => {
             if !confirm {
@@ -46,7 +48,8 @@ pub fn run(command: RepoCommand, select: &[&str]) -> Result<(), CliError> {
                 .map_err(|e| CliError::ApiRequestFailed {
                     reason: e.to_string(),
                 })?;
-            print_json(&json!({"deleted": true, "repository": repository}), select)
+            // Exempt: synthesized by us, always small.
+            print_json(&json!({"deleted": true, "repository": repository}), select.or_all())
         }
     }
 }

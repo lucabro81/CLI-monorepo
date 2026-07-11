@@ -15,7 +15,6 @@ mod commands;
 mod context;
 mod endpoints;
 mod error;
-mod fields;
 
 #[cfg(test)]
 #[path = "tests/e2e_tests.rs"]
@@ -31,20 +30,30 @@ use error::CliError;
 fn run() -> Result<(), CliError> {
     let cli = Cli::parse();
 
-    // Parse --select once; empty slice means "no filtering, print raw".
+    // Resolve --select/--select-all once into a single Select value; clap's
+    // conflicts_with guarantees they are never both set.
     let select_string = cli.select.unwrap_or_default();
-    let select: Vec<&str> = if select_string.is_empty() {
+    let select_paths: Vec<&str> = if select_string.is_empty() {
         vec![]
     } else {
         select_string.split(',').map(str::trim).collect()
     };
-    let select = select.as_slice();
+    let select = if cli.select_all {
+        cli_fields::Select::All
+    } else if select_paths.is_empty() {
+        cli_fields::Select::Required
+    } else {
+        cli_fields::Select::Fields(&select_paths)
+    };
 
     match cli.command {
         Command::Init { client_id, client_secret } => commands::init::run_init(client_id, client_secret),
         Command::Doctor => {
             let (report, all_ok) = commands::doctor::run_doctor()?;
-            print_json(&report, select)?;
+            // Exempt from the mandatory --select requirement: the report is generated
+            // internally (fixed, small shape, not an arbitrary external blob). An
+            // explicit --select/--select-all is still honored if passed.
+            print_json(&report, select.or_all())?;
             if !all_ok {
                 return Err(CliError::DoctorCheckFailed);
             }

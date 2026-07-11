@@ -6,8 +6,8 @@
 //!   mapping `OAuthConfigError` to `CliError`.
 //! - `authenticated_client` — the standard sequence for commands that call the
 //!   Bitbucket API: load config -> load credentials -> renew if expired -> build client.
-//! - `print_json` — serialises a `serde_json::Value` to stdout, applying
-//!   `--select` field projection beforehand if any paths were requested.
+//! - `print_json` — renders a `serde_json::Value` via `cli_fields::render_json`
+//!   (see that crate for the `--select`/`--select-all` contract) and prints it.
 
 use crate::auth::{self, OAuthConfig, OAuthConfigError};
 use crate::client::BitbucketClient;
@@ -52,13 +52,11 @@ pub fn authenticated_client() -> Result<BitbucketClient, CliError> {
     Ok(BitbucketClient::new(&credentials))
 }
 
-/// Prints `value` as pretty-printed JSON to stdout.
-/// If `fields` is non-empty, only the specified dot-notation paths are included.
-pub fn print_json(value: &serde_json::Value, fields: &[&str]) -> Result<(), CliError> {
-    let filtered = crate::fields::filter_fields(value.clone(), fields);
-    let output = serde_json::to_string_pretty(&filtered).map_err(|e| CliError::JsonSerialize {
-        reason: e.to_string(),
-    })?;
+/// Prints `value` as pretty-printed JSON to stdout according to `select`.
+/// See `cli_fields::Select` — an omitted `--select`/`--select-all` results in
+/// `CliError::Select` instead of printing, unless the caller passed `Select::All`.
+pub fn print_json(value: &serde_json::Value, select: cli_fields::Select<'_>) -> Result<(), CliError> {
+    let output = cli_fields::render_json(value, select)?;
     println!("{output}");
     Ok(())
 }
