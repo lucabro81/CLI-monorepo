@@ -4,12 +4,18 @@
 # Usage: scripts/new-crate.sh <crate-name> "<Service description>"
 #
 # Creates only the parts that are identical across every crate in this
-# workspace (Cargo.toml, fields.rs + tests, directory layout, workspace
-# member, README registry row). Everything service-specific — auth.rs,
-# client.rs, cli.rs, error.rs, context.rs, endpoints.rs, main.rs, CLAUDE.md,
-# the crate README, and the add-<crate>-command skill/ADDENDUM — is left for
-# the new-cli-crate skill to write after the auth-design and command-pool
-# discussion. The placeholder files below intentionally do not compile yet.
+# workspace (Cargo.toml with the shared cli-fields dependency, directory
+# layout, workspace member, README registry row). Everything service-specific
+# — auth.rs, client.rs, cli.rs, error.rs, context.rs, endpoints.rs, main.rs,
+# CLAUDE.md, the crate README, and the add-<crate>-command skill/ADDENDUM —
+# is left for the new-cli-crate skill to write after the auth-design and
+# command-pool discussion. The placeholder files below intentionally do not
+# compile yet.
+#
+# `--select` field-projection support (filter_fields, Select, render_json) is
+# NOT copied per-crate — it lives once in the shared crates/cli-fields
+# workspace crate (see root CLAUDE.md's "Shared library: crates/cli-fields").
+# The generated Cargo.toml below already depends on it.
 #
 # src/tests/e2e_tests.rs is deliberately NOT created here either — there's
 # nothing to test end-to-end before the first real command exists. The
@@ -47,6 +53,7 @@ edition = "2024"
 workspace = true
 
 [dependencies]
+cli-fields = { path = "../cli-fields" }
 clap = { version = "4", features = ["derive"] }
 reqwest = { version = "0.12", features = ["blocking", "json"] }
 serde = { version = "1", features = ["derive"] }
@@ -57,10 +64,6 @@ thiserror = "1"
 [dev-dependencies]
 tempfile = "3"
 EOF
-
-# --- fields.rs (generic, copied verbatim from bitbucket) ----------------
-cp "$ROOT/crates/bitbucket/src/fields.rs" "$CRATE_DIR/src/fields.rs"
-cp "$ROOT/crates/bitbucket/src/tests/fields_tests.rs" "$CRATE_DIR/src/tests/fields_tests.rs"
 
 # --- Placeholder files, filled in by new-cli-crate skill -----------------
 for f in auth client cli context endpoints error main; do

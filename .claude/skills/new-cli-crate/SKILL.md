@@ -20,9 +20,10 @@ convention, error handling, flag conventions).
 .claude/skills/new-cli-crate/scripts/new-crate.sh <crate-name> "<short service description>"
 ```
 
-This creates `crates/<crate-name>/` with `Cargo.toml`, the directory layout
-from root `CLAUDE.md`, a working `fields.rs` (copied verbatim — it's
-service-agnostic), and placeholder `TODO` stubs for everything
+This creates `crates/<crate-name>/` with `Cargo.toml` (already depending on
+the shared `crates/cli-fields` crate for `--select` support — see root
+`CLAUDE.md`'s "Shared library: crates/cli-fields"), the directory layout from
+root `CLAUDE.md`, and placeholder `TODO` stubs for everything
 service-specific. It also adds the crate to the workspace `members` list.
 **It does not compile yet** — that's expected until step 4.
 

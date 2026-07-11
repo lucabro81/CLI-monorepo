@@ -16,7 +16,7 @@ Monorepo: single Cargo workspace holding many CLI tools, one per external servic
 ## Development approach
 
 - Build CLIs incrementally: start with the smallest useful command set, add new commands only when a concrete need arises. Don't pre-build a full surface area for a service.
-- Each CLI lives as its own crate/binary in the workspace, named after the service it wraps, under `crates/<service>/`.
+- Each CLI lives as its own crate/binary in the workspace, named after the service it wraps, under `crates/<service>/`. The one exception is `crates/cli-fields`, a shared library (not a binary, no service of its own) — see "Shared library: crates/cli-fields" below.
 - Update this CLAUDE.md, the crate's own CLAUDE.md, and project memory after every significant addition or change — keep them in sync with codebase state.
 - When adding a new crate, add a row for it to the table in the root [README.md](README.md).
 - To add a new CLI crate from scratch, use the `new-cli-crate` skill (`.claude/skills/new-cli-crate/`). To add a command/subcommand to an existing crate, use `add-cli-command` (`.claude/skills/add-cli-command/`).
@@ -40,11 +40,18 @@ src/
   context.rs        ← shared setup helpers (config dir, authenticated client, print_json)
   endpoints.rs      ← URL/path constants and path-builder functions, no logic
   error.rs          ← CliError (top-level, thiserror-derived)
-  fields.rs         ← --select projection (if applicable)
   main.rs           ← pure dispatch, no logic
 ```
 
-Command handlers live in `commands/`; infrastructure (HTTP client, auth, error types) lives at the crate root. `main.rs` only parses `--select` and dispatches to `commands::*`.
+Command handlers live in `commands/`; infrastructure (HTTP client, auth, error types) lives at the crate root. `main.rs` resolves `--select`/`--select-all` into a `cli_fields::Select` once and dispatches to `commands::*`. There is no per-crate `fields.rs` anymore — that logic is the shared `cli-fields` crate (see below).
+
+## Shared library: `crates/cli-fields`
+
+`--select` field-projection support used by every crate is implemented once, in `crates/cli-fields` (a workspace-local library, `path = "../cli-fields"` dependency, not published). It provides `Select<'a>` (`Required`/`All`/`Fields(&'a [&'a str])`), `render_json(value, select)`, `filter_fields`, and `describe_top_level_shape`. Each crate's `context::print_json` is a thin wrapper around `cli_fields::render_json`, and each crate's `CliError` has one `#[error(transparent)] Select(#[from] cli_fields::RenderError)` variant.
+
+**`--select` is mandatory by default**: if a command's output could be large or unbounded (search/list endpoints, or — for jira specifically — a single issue, since issues carry arbitrary per-project custom fields), omitting both `--select` and `--select-all` makes the command fail with an error reporting the response's byte size and top-level field names, instead of printing potentially huge JSON that could flood an LLM caller's context window. `--select-all` is the explicit, stateless opt-out (mirrors the `--confirm` pattern already used for destructive commands) — passing it is itself the caller's confirmation that printing the full response is fine.
+
+**Some commands are exempt** and always print their full result regardless of `--select`/`--select-all`, via `select.or_all()` at that specific `print_json` call site: commands whose output is either synthesized by the CLI itself (e.g. a delete confirmation) or a single, fixed-shape API response known to stay small (identity checks like `auth whoami`, `doctor`'s internally-generated report, and most single-resource creates/gets/mutations). This is decided **per command, not per crate** — when adding a new command via the `add-cli-command` skill, check whether its output is a list/search (mandatory) or a bounded single object (exempt) and wire `select` vs `select.or_all()` accordingly; see each crate's own CLAUDE.md for its exact classification table.
 
 ## Test file convention
 

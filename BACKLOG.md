@@ -7,7 +7,12 @@ the current behaviour, why it was deferred, and what a future fix would look lik
 
 ## `crates/jira`
 
-### fields.rs
+### fields.rs (now `crates/cli-fields` — extracted as a shared library, see root CLAUDE.md)
+
+The entries below were found while `fields.rs` still lived per-crate (identical
+in jira/bitbucket/google-chat); the code was since extracted to the shared
+`crates/cli-fields` crate, so these apply to all three crates via `filter_fields`
+there, not just jira.
 
 #### FIELDS-1 — Empty string field path silently returns empty object
 **Found:** review session 2026-06-09  
