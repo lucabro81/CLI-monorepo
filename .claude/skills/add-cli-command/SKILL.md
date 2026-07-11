@@ -212,15 +212,20 @@ correct it, and re-run the full loop — don't patch around it locally.
   commit message ends with `Co-Authored-By: Claude Sonnet 4.6`.
 - **Every commit message must use `<crate>` as the conventional-commit scope**
   (`feat(<crate>): ...`, `fix(<crate>): ...`, `docs(<crate>): ...`) — this is
-  not just style. `release-plz` (root CLAUDE.md "CI/CD" section) reads the
-  scope to attribute the commit to this crate and compute its version bump
-  independently from other crates. An unscoped commit, a wrong scope, or one
-  commit spanning multiple crates breaks that — split into separate scoped
-  commits if a change genuinely touches more than one crate.
+  not just style. `release-pr.yml` (root CLAUDE.md "CI/CD" section) filters
+  commits by scope+type (only `feat`/`fix`/`perf`/breaking-change count) and
+  by which files they touch (`crates/<crate>/**`) to attribute a commit to
+  this crate and compute its version bump independently from other crates.
+  An unscoped commit, a wrong scope, or one commit spanning multiple crates
+  breaks that — split into separate scoped commits if a change genuinely
+  touches more than one crate. Note this only applies to crates already
+  wired into the release pipeline's matrix (see `new-cli-crate`'s step 3) —
+  a brand-new crate isn't auto-discovered.
 - Push the branch and **open a PR against `main`** — don't push commits
   directly to `main`. The PR's CI run (`.github/workflows/ci.yml`) is the
   build/test/clippy gate; merging it is what eventually triggers
-  `release-plz` to draft a release PR for this crate (see root CLAUDE.md).
+  `release-pr.yml` to draft a release PR for this crate (see root
+  CLAUDE.md).
 
 ## 9. Final report
 

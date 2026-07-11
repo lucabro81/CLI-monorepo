@@ -104,7 +104,20 @@ ADDENDUM") — it's a coherent unit separate from the code that follows. This
 commit has no crate-specific feature, so it's fine without a `(<crate>)`
 scope; every commit from step 4 onward (real code) must use `<crate>` as the
 conventional-commit scope, per `add-cli-command`'s commit-and-PR step — this
-is what lets `release-plz` start versioning the new crate independently.
+is what lets the release pipeline (root CLAUDE.md "CI/CD" section) attribute
+commits to this crate and compute its version bumps.
+
+Unlike release-plz (which this pipeline replaced), the new git-cliff +
+cargo-release pipeline does **not** auto-discover workspace crates — the
+crate list is a hardcoded matrix in `.github/workflows/release-pr.yml` and
+`release-tag.yml`. Wiring a new crate into the release pipeline (do this
+once the crate has its first real command, not at scaffold time) requires:
+add `<crate>` to both workflows' `matrix.crate` list; add `publish = false`
+and a `[package.metadata.release]` `pre-release-hook` to its `Cargo.toml`
+(copy the block from `crates/jira/Cargo.toml`, only the crate name differs —
+it's parameterized via `$CRATE_NAME`); create an empty `crates/<crate>/CHANGELOG.md`
+with the standard Keep-a-Changelog header (copy from any existing crate) so
+git-cliff's `--prepend` has something to prepend to.
 
 ## 4. Bootstrap — init, doctor, auth
 
@@ -133,7 +146,8 @@ scopes/permissions) before `doctor`/`init` can pass for real.
 
 Do all of the above on a branch and open a PR against `main` (per
 `add-cli-command`'s commit-and-PR step) rather than pushing straight to
-`main` — include the PR link in the final report. Once merged, `release-plz`
-picks up the new crate automatically and starts versioning it independently
-from its first scoped commit (root CLAUDE.md "CI/CD" section); no workflow
-edit is needed for a new crate.
+`main` — include the PR link in the final report. Before merging, make sure
+the release-pipeline wiring from step 3 (matrix entries, `Cargo.toml`
+`publish = false` + `pre-release-hook`, initial `CHANGELOG.md`) is included,
+or the new crate's `feat`/`fix` commits will silently never trigger a
+release PR.
