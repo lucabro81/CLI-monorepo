@@ -60,3 +60,11 @@ commit_parsers = [
 [remote.github]
 owner = "lucabro81"
 repo = "CLI-monorepo"
+
+# Note: git-cliff itself (this version, 2.13.1) has no config key to exclude
+# non-feat/fix/perf commit types from triggering a version bump — its Bump
+# struct only exposes features_always_bump_minor/breaking_always_bump_major/
+# bump_type (confirmed via `git-cliff -vv`, which prints the parsed config).
+# So "only feat/fix/perf/breaking-change commits actually warrant a release"
+# is enforced by release-pr.yml's own releasable-commit check (grep on the
+# conventional-commit type) BEFORE git-cliff is ever invoked, not here.

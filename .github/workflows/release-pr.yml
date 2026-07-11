@@ -47,8 +47,15 @@ jobs:
           else
             range="HEAD"
           fi
-          changed=$(git log "$range" --oneline -- "crates/${CRATE}/" | wc -l | tr -d ' ')
-          if [ "$changed" -eq 0 ]; then
+          # Only feat/fix/perf/breaking-change commits actually warrant a
+          # release — chore/ci/docs/refactor/style/test alone should not
+          # (git-cliff itself has no config to exclude commit types from its
+          # own bump computation, so this repo enforces it here instead).
+          releasable=$(git log "$range" --pretty=format:"%s" -- "crates/${CRATE}/" \
+            | grep -cE "^(feat|fix|perf)(\([^)]*\))?!?:" || true)
+          breaking=$(git log "$range" --pretty=format:"%B" -- "crates/${CRATE}/" \
+            | grep -c "BREAKING CHANGE" || true)
+          if [ "$releasable" -eq 0 ] && [ "$breaking" -eq 0 ]; then
             echo "release=false" >> "$GITHUB_OUTPUT"
           else
             echo "release=true" >> "$GITHUB_OUTPUT"
@@ -69,6 +76,12 @@ jobs:
       - name: Create/reset local release branch
         if: steps.check.outputs.release == 'true'
         run: git checkout -B "release/${{ matrix.crate }}"
+
+      - name: Configure git identity for the release commit
+        if: steps.check.outputs.release == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
       - name: Bump version and update changelog via cargo-release
         if: steps.check.outputs.release == 'true'
