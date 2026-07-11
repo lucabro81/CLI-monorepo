@@ -44,14 +44,16 @@ src/
                     Workspace Events API v1, and the Pub/Sub API v1, used by
                     auth.rs, client.rs, and events_client.rs. No logic.
   error.rs        — CliError (top-level, thiserror-derived). Includes IoError
-                    for stdin prompts in init, and WorkspaceEvents*/Pubsub*
-                    variants for the new commands.
-  fields.rs       — filter_fields(value, select): dot-notation projection,
-                    array-aware, backed by FieldTree (recursive BTreeMap).
+                    for stdin prompts in init, WorkspaceEvents*/Pubsub*
+                    variants for the new commands, and a transparent Select
+                    variant wrapping cli_fields::RenderError.
   tests/          — all *_tests.rs files, mirroring the src/ layout (see root
                     CLAUDE.md's "Test file convention").
-  main.rs         — pure dispatch: parse --select, match Command, call commands::*.
+  main.rs         — pure dispatch: resolve --select/--select-all into a
+                    cli_fields::Select once, match Command, call commands::*.
 ```
+
+`--select` dot-notation projection itself (`filter_fields`, `describe_top_level_shape`, the `Select` enum, `render_json`) lives in the shared `crates/cli-fields` workspace crate, not in this crate — see root `CLAUDE.md`'s "Shared library: crates/cli-fields".
 
 ## Async: `listen` only
 
@@ -204,8 +206,16 @@ Both files live under `$XDG_CONFIG_HOME/google-chat-cli/` (falling back to
   `email` scopes (or the separate People API), which was explicitly ruled
   out. `doctor`'s `api` check (a live `spaces.list` call) is the
   auth-sanity-check instead of a dedicated whoami command.
-- **`--select`** (global flag): client-side dot-notation projection via
-  `fields::filter_fields`. Applied by `context::print_json` before printing.
+- **`--select`/`--select-all`** (global flags, see root `CLAUDE.md`): `--select` is mandatory by default; omitting both flags fails with the response's byte size and top-level fields instead of printing. `--select-all` is the explicit stateless opt-out. Exempt commands (always print in full via `select.or_all()` at their `print_json` call site) and why:
+  | Command | Exempt? | Why |
+  |---|---|---|
+  | `doctor` | yes | internally-generated report, fixed/small |
+  | `spaces list` | **no** | paginated collection |
+  | `messages list` | **no** | paginated collection, explicitly meant to page through a lot of history |
+  | `messages send` | yes | single message object, fixed shape |
+  | `subscription create` | yes | single subscription object, fixed shape |
+  | `subscription delete` | yes | small confirmation object, fixed shape |
+  | `listen` | N/A | streams NDJSON, doesn't call `print_json`, `--select` has no effect |
 - **Space identifier normalization**: `--space` flags accept either the bare
   space id or the full `spaces/{id}` resource name (`client::normalize_space_name`),
   so a caller can paste either form straight from `spaces list`'s `name` field.

@@ -15,10 +15,20 @@ use clap::{Parser, Subcommand};
 #[command(name = "google-chat", version, about)]
 pub struct Cli {
     /// Comma-separated dot-notation paths to project from the JSON output (client-side).
-    /// If omitted, the full response from the Chat API is printed.
+    /// Required on most commands: if both this and --select-all are omitted, the
+    /// command fails with an error reporting the byte size of the full response and
+    /// its top-level field names, so you can retry with an informed --select. A few
+    /// commands whose output is always small and fixed-shape (doctor, messages send,
+    /// subscription create/delete) are exempt and print in full regardless — see that
+    /// command's own --help.
     /// Example: --select spaces.name,spaces.displayName
-    #[arg(long, global = true, value_name = "PATHS")]
+    #[arg(long, global = true, value_name = "PATHS", conflicts_with = "select_all")]
     pub select: Option<String>,
+
+    /// Explicitly print the full, unfiltered JSON response instead of specifying --select.
+    /// Use when you already know the response is small; otherwise prefer --select.
+    #[arg(long, global = true, conflicts_with = "select")]
+    pub select_all: bool,
 
     #[command(subcommand)]
     pub command: Command,
@@ -47,7 +57,9 @@ pub enum Command {
     ///
     /// Runs three checks in order: app credentials file, stored OAuth tokens,
     /// and a live API call (spaces.list). Prints a JSON object with a status
-    /// field per check. Exits non-zero if any check fails or is skipped.
+    /// field per check. Exits non-zero if any check fails or is skipped. Always
+    /// prints its full result regardless of --select — the report is generated
+    /// internally and is always small and fixed-shape.
     #[command(after_help = "Examples:\n  google-chat doctor\n  google-chat doctor --select app_config.status,credentials.status,api.status\n\nEach check has a status field: \"ok\", \"error\", or \"skipped\".\nLater checks are skipped if an earlier one fails.")]
     Doctor,
     /// Manage authentication with Google Chat
@@ -143,6 +155,8 @@ pub enum MessagesCommand {
     /// Creates real, visible state in the target space — the message appears
     /// to everyone in it immediately. Prints the created Message resource,
     /// including its "name" field (needed to identify it in future calls).
+    /// Always prints its full result regardless of --select — a single message
+    /// object, fixed-shape.
     #[command(after_help = "Example:\n  google-chat messages send --space spaces/AAQA-_d58OQ --text \"Status update: deploy complete\"\n\n--space accepts either the bare id or the full \"spaces/...\" resource name\n(as printed in the \"name\" field of `spaces list` output).")]
     Send {
         /// Space to send the message to — bare id or full "spaces/{id}" resource name
@@ -164,7 +178,8 @@ pub enum SubscriptionCommand {
     /// subscription targeting the space, delivering matching events to that
     /// topic. Prints the created Workspace Events subscription resource as
     /// JSON. Pair with `google-chat listen --pubsub-subscription <name>` to
-    /// receive the events.
+    /// receive the events. Always prints its full result regardless of
+    /// --select — a single subscription object, fixed-shape.
     #[command(after_help = "Example:\n  google-chat subscription create --space spaces/AAQA-_d58OQ --topic projects/my-project/topics/my-topic --pubsub-subscription projects/my-project/subscriptions/my-sub\n\n--space accepts either the bare id or the full \"spaces/...\" resource name.\n--event-type can be repeated; defaults to google.workspace.chat.message.v1.created.\nValid event types: google.workspace.chat.message.v1.created, .updated, .deleted.")]
     Create {
         /// Space to subscribe to — bare id or full "spaces/{id}" resource name
@@ -187,7 +202,8 @@ pub enum SubscriptionCommand {
     /// subscription to expire on its own (~4h, or never, if something is
     /// still calling `listen` and renewing it). Tightens access to exactly
     /// the conversations currently in progress instead of leaving stale
-    /// subscriptions live.
+    /// subscriptions live. Always prints its full result regardless of
+    /// --select — a small confirmation object, fixed-shape.
     #[command(after_help = "Example:\n  google-chat subscription delete --name subscriptions/chat-spaces-abc123\n\n--name is the \"name\" field from `subscription create`'s output.")]
     Delete {
         /// Workspace Events subscription to delete: "subscriptions/{id}"

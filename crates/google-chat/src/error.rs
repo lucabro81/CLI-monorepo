@@ -59,6 +59,9 @@ pub enum CliError {
     #[error("failed to serialize response to JSON: {reason}")]
     JsonSerialize { reason: String },
 
+    #[error(transparent)]
+    Select(#[from] cli_fields::RenderError),
+
     #[error("Google Chat API request failed: {reason}")]
     ApiRequestFailed { reason: String },
 

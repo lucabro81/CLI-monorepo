@@ -12,7 +12,7 @@ use crate::error::CliError;
 use crate::events_client::{EventsClient, EventsClientError};
 
 /// Dispatches a `SubscriptionCommand` variant to the appropriate API calls.
-pub fn run(command: SubscriptionCommand, select: &[&str]) -> Result<(), CliError> {
+pub fn run(command: SubscriptionCommand, select: cli_fields::Select<'_>) -> Result<(), CliError> {
     match command {
         SubscriptionCommand::Create {
             space,
@@ -28,7 +28,8 @@ pub fn run(command: SubscriptionCommand, select: &[&str]) -> Result<(), CliError
             let value = client
                 .create_workspace_events_subscription(&space, &event_type, &topic)
                 .map_err(EventsClientError::into_workspace_events_error)?;
-            print_json(&value, select)
+            // Exempt: a single subscription object, fixed shape.
+            print_json(&value, select.or_all())
         }
         SubscriptionCommand::Delete { name } => {
             let credentials = authenticated_credentials()?;
@@ -36,7 +37,8 @@ pub fn run(command: SubscriptionCommand, select: &[&str]) -> Result<(), CliError
             let value = client
                 .delete_subscription(&name)
                 .map_err(EventsClientError::into_workspace_events_error)?;
-            print_json(&value, select)
+            // Exempt: a small confirmation object, fixed shape.
+            print_json(&value, select.or_all())
         }
     }
 }

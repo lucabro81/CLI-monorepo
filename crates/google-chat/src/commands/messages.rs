@@ -10,7 +10,7 @@ use crate::context::{authenticated_client, print_json};
 use crate::error::CliError;
 
 /// Dispatches a `MessagesCommand` variant to the appropriate Chat API call.
-pub fn run(command: MessagesCommand, select: &[&str]) -> Result<(), CliError> {
+pub fn run(command: MessagesCommand, select: cli_fields::Select<'_>) -> Result<(), CliError> {
     let client = authenticated_client()?;
     match command {
         MessagesCommand::List {
@@ -26,7 +26,8 @@ pub fn run(command: MessagesCommand, select: &[&str]) -> Result<(), CliError> {
         }
         MessagesCommand::Send { space, text } => {
             let value = client.create_message(&space, &text).map_err(client_error_to_cli)?;
-            print_json(&value, select)
+            // Exempt: a single message object, fixed shape.
+            print_json(&value, select.or_all())
         }
     }
 }

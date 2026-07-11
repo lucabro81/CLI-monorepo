@@ -247,6 +247,36 @@ fn parses_global_select_flag_after_subcommand() {
 }
 
 #[test]
+fn select_flag_is_none_and_select_all_false_when_absent() {
+    let cli = Cli::parse_from(["google-chat", "auth", "login"]);
+
+    assert!(cli.select.is_none());
+    assert!(!cli.select_all);
+}
+
+#[test]
+fn select_all_flag_parses() {
+    let cli = Cli::parse_from(["google-chat", "--select-all", "auth", "login"]);
+
+    assert!(cli.select_all);
+    assert!(cli.select.is_none());
+}
+
+#[test]
+fn select_and_select_all_together_are_rejected() {
+    let result = Cli::try_parse_from([
+        "google-chat",
+        "--select",
+        "foo",
+        "--select-all",
+        "auth",
+        "login",
+    ]);
+
+    assert!(result.is_err(), "--select and --select-all should conflict");
+}
+
+#[test]
 fn rejects_unknown_top_level_command() {
     let result = Cli::try_parse_from(["google-chat", "bogus"]);
 

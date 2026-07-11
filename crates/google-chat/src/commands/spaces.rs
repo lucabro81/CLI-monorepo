@@ -10,7 +10,7 @@ use crate::context::{authenticated_client, print_json};
 use crate::error::CliError;
 
 /// Dispatches a `SpacesCommand` variant to the appropriate Chat API call.
-pub fn run(command: SpacesCommand, select: &[&str]) -> Result<(), CliError> {
+pub fn run(command: SpacesCommand, select: cli_fields::Select<'_>) -> Result<(), CliError> {
     let client = authenticated_client()?;
     match command {
         SpacesCommand::List { page_size, page_token } => {
