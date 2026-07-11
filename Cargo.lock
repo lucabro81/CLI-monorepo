@@ -123,6 +123,7 @@ name = "bitbucket"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "cli-fields",
  "dirs",
  "reqwest 0.12.28",
  "serde",
@@ -265,6 +266,14 @@ name = "clap_lex"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
+
+[[package]]
+name = "cli-fields"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "thiserror 1.0.69",
+]
 
 [[package]]
 name = "cmake"
@@ -705,6 +714,7 @@ version = "0.2.0"
 dependencies = [
  "base64",
  "clap",
+ "cli-fields",
  "dirs",
  "google-cloud-auth",
  "google-cloud-pubsub",
@@ -1289,6 +1299,7 @@ version = "0.1.2"
 dependencies = [
  "base64",
  "clap",
+ "cli-fields",
  "dirs",
  "rand 0.8.6",
  "reqwest 0.12.28",
