@@ -1,0 +1,62 @@
+# git-cliff configuration shared by jira, bitbucket, and google-chat.
+#
+# Per-invocation scoping (--tag-pattern, --include-path, --tag) is passed as
+# CLI flags by cargo-release's pre-release-hook (see each crate's
+# [package.metadata.release] in its own Cargo.toml), not hardcoded here,
+# since this one file serves all three crates independently — tags are
+# shared across the whole repo (jira-v*, bitbucket-v*, google-chat-v*), so
+# each invocation must scope itself to its own crate's tag lineage.
+
+[changelog]
+header = """
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+"""
+body = """
+
+{%- if version %}\
+    {%- set clean_version = version | split(pat="-v") | last -%}\
+    {% if previous.version -%}
+## [{{ clean_version }}](https://github.com/lucabro81/CLI-monorepo/compare/{{ previous.version }}...{{ version }}) - {{ timestamp | date(format="%Y-%m-%d") }}
+    {%- else -%}
+## [{{ clean_version }}](https://github.com/lucabro81/CLI-monorepo/releases/tag/{{ version }}) - {{ timestamp | date(format="%Y-%m-%d") }}
+    {%- endif %}
+{%- else -%}
+## [Unreleased]
+{%- endif %}
+{% for group, commits in commits | group_by(attribute="group") %}
+### {{ group }}
+{% for commit in commits %}\
+- {% if commit.scope %}*({{ commit.scope }})* {% endif %}{{ commit.message }}{% if commit.remote.pr_number %} ([#{{ commit.remote.pr_number }}](https://github.com/lucabro81/CLI-monorepo/pull/{{ commit.remote.pr_number }})){% endif %}
+{% endfor %}\
+{% endfor %}\
+"""
+footer = ""
+trim = true
+
+[git]
+conventional_commits = true
+filter_unconventional = false   # non-conventional commits (e.g. "Update README.md") land in "Other", not dropped
+protect_breaking_commits = false
+filter_commits = false
+tag_pattern = ""                 # intentionally unset — passed per-invocation via --tag-pattern
+topo_order = false
+sort_commits = "oldest"
+commit_preprocessors = [
+  { pattern = "(?s)\r?\n.*", replace = "" },  # keep only the commit's first line (drops merge-commit bodies)
+]
+
+commit_parsers = [
+  { message = "^feat", group = "Added" },
+  { message = "^fix", group = "Fixed" },
+  { message = "^perf", group = "Fixed" },
+  { message = ".*", group = "Other" },
+]
+
+[remote.github]
+owner = "lucabro81"
+repo = "CLI-monorepo"

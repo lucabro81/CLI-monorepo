@@ -2,6 +2,14 @@
 resolver = "2"
 members = ["crates/jira", "crates/bitbucket", "crates/google-chat", "crates/cli-fields"]
 
+[workspace.metadata.release]
+# Version bumps are computed by git-cliff and applied by cargo-release, driven
+# entirely from git history — see cliff.toml and root CLAUDE.md's CI/CD section.
+publish = false
+push = false
+tag = false
+allow-branch = ["release/*"]
+
 [workspace.lints.clippy]
 # Enforce the no-unwrap/expect rule for all production code in the workspace.
 # Test modules must add #[allow(clippy::unwrap_used, clippy::expect_used)] explicitly.

@@ -2,6 +2,10 @@
 name = "jira"
 version = "0.2.0"
 edition = "2024"
+publish = false
+
+[package.metadata.release]
+pre-release-hook = ["bash", "-c", "git-cliff --config \"$WORKSPACE_ROOT/cliff.toml\" --repository \"$WORKSPACE_ROOT\" --tag-pattern \"^${CRATE_NAME}-v.*\" --include-path \"crates/${CRATE_NAME}/**\" --tag \"${CRATE_NAME}-v${NEW_VERSION}\" --unreleased --prepend \"$WORKSPACE_ROOT/crates/${CRATE_NAME}/CHANGELOG.md\""]
 
 [lints]
 workspace = true

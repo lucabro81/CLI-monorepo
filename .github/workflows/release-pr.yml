@@ -1,0 +1,99 @@
+name: Release PR
+
+permissions:
+  contents: write
+  pull-requests: write
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: release-pr-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release-pr:
+    name: Compute bump and open/update release PR (${{ matrix.crate }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        crate: [jira, bitbucket, google-chat]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_PLZ_TOKEN }}
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@1.89.0
+
+      - name: Install git-cliff and cargo-release
+        uses: taiki-e/install-action@v2
+        with:
+          tool: git-cliff,cargo-release
+
+      - name: Determine whether ${{ matrix.crate }} has releasable changes
+        id: check
+        env:
+          CRATE: ${{ matrix.crate }}
+        run: |
+          set -euo pipefail
+          latest_tag=$(git tag -l "${CRATE}-v*" | sort -V | tail -n1)
+          if [ -n "$latest_tag" ]; then
+            range="${latest_tag}..HEAD"
+          else
+            range="HEAD"
+          fi
+          changed=$(git log "$range" --oneline -- "crates/${CRATE}/" | wc -l | tr -d ' ')
+          if [ "$changed" -eq 0 ]; then
+            echo "release=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Compute next version
+        id: version
+        if: steps.check.outputs.release == 'true'
+        run: |
+          set -euo pipefail
+          next=$(git-cliff --config cliff.toml --tag-pattern "^${{ matrix.crate }}-v.*" --include-path "crates/${{ matrix.crate }}/**" --bumped-version)
+          echo "version=${next#${{ matrix.crate }}-v}" >> "$GITHUB_OUTPUT"
+
+      - name: Skip — nothing to release
+        if: steps.check.outputs.release != 'true'
+        run: echo "No releasable changes for ${{ matrix.crate }}, skipping."
+
+      - name: Create/reset local release branch
+        if: steps.check.outputs.release == 'true'
+        run: git checkout -B "release/${{ matrix.crate }}"
+
+      - name: Bump version and update changelog via cargo-release
+        if: steps.check.outputs.release == 'true'
+        run: |
+          cargo release "${{ steps.version.outputs.version }}" \
+            -p "${{ matrix.crate }}" \
+            --no-confirm --no-publish --no-tag --no-push \
+            --execute
+
+      - name: Push release branch
+        if: steps.check.outputs.release == 'true'
+        run: git push --force origin "HEAD:refs/heads/release/${{ matrix.crate }}"
+
+      - name: Create or update release PR
+        if: steps.check.outputs.release == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN }}
+        run: |
+          crate="${{ matrix.crate }}"
+          version="${{ steps.version.outputs.version }}"
+          title="chore(${crate}): release v${version}"
+          body="Automated release PR for **${crate} v${version}**, computed from conventional commits by git-cliff. Review the CHANGELOG.md diff and Cargo.toml bump, then merge — merging tags and builds binaries automatically."
+          existing=$(gh pr list --head "release/${crate}" --state open --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh pr edit "$existing" --title "$title" --body "$body"
+          else
+            gh pr create --head "release/${crate}" --base main --title "$title" --body "$body"
+          fi
