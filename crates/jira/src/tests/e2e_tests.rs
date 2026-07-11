@@ -27,10 +27,10 @@
 
 use serde_json::Value;
 
+use cli_fields::filter_fields;
 use crate::auth::{self, Credentials};
 use crate::client::JiraClient;
 use crate::context;
-use crate::fields::filter_fields;
 
 // ── Constants ──────────────────────────────────────────────────────────────
 

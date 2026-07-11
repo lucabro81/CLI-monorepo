@@ -193,6 +193,31 @@ fn fields_flag_is_none_when_absent() {
     let cli = Cli::try_parse_from(["jira", "issue", "get", "KAN-4"]).expect("should parse");
 
     assert!(cli.select.is_none());
+    assert!(!cli.select_all);
+}
+
+#[test]
+fn select_all_flag_parses() {
+    let cli = Cli::try_parse_from(["jira", "--select-all", "issue", "get", "KAN-4"])
+        .expect("should parse");
+
+    assert!(cli.select_all);
+    assert!(cli.select.is_none());
+}
+
+#[test]
+fn select_and_select_all_together_are_rejected() {
+    let result = Cli::try_parse_from([
+        "jira",
+        "--select",
+        "summary",
+        "--select-all",
+        "issue",
+        "get",
+        "KAN-4",
+    ]);
+
+    assert!(result.is_err(), "--select and --select-all should conflict");
 }
 
 #[test]

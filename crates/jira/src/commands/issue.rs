@@ -16,7 +16,7 @@ use crate::context::{authenticated_client, print_json};
 use crate::error::CliError;
 
 /// Dispatches an `IssueCommand` variant to the appropriate Jira API call.
-pub fn run(command: IssueCommand, select: &[&str]) -> Result<(), CliError> {
+pub fn run(command: IssueCommand, select: cli_fields::Select<'_>) -> Result<(), CliError> {
     let client = authenticated_client()?;
     match command {
         IssueCommand::Search { jql, max_results, page_token, fields } => {
@@ -47,7 +47,8 @@ pub fn run(command: IssueCommand, select: &[&str]) -> Result<(), CliError> {
                     priority.as_deref(),
                 )
                 .map_err(client_error_to_cli)?;
-            print_json(&value, select)
+            // Exempt: POST /issue returns only {id, key, self} — small, fixed shape.
+            print_json(&value, select.or_all())
         }
         IssueCommand::Delete {
             key,
@@ -61,13 +62,15 @@ pub fn run(command: IssueCommand, select: &[&str]) -> Result<(), CliError> {
                 .delete_issue(&key, delete_subtasks)
                 .map_err(client_error_to_cli)?;
             let result = serde_json::json!({"deleted": true, "key": key});
-            print_json(&result, select)
+            // Exempt: synthesized by us, always small.
+            print_json(&result, select.or_all())
         }
         IssueCommand::Transitions { key } => {
             let value = client
                 .list_transitions_json(&key)
                 .map_err(client_error_to_cli)?;
-            print_json(&value, select)
+            // Exempt: bounded workflow-transition list, no `expand` requested.
+            print_json(&value, select.or_all())
         }
         IssueCommand::Transition { key, to } => {
             let transitions = client.get_transitions(&key).map_err(client_error_to_cli)?;
@@ -88,13 +91,15 @@ pub fn run(command: IssueCommand, select: &[&str]) -> Result<(), CliError> {
                 .map_err(client_error_to_cli)?;
             let result =
                 serde_json::json!({"transitioned": true, "key": key, "to": transition.name});
-            print_json(&result, select)
+            // Exempt: synthesized by us, always small.
+            print_json(&result, select.or_all())
         }
         IssueCommand::Comment {
             command: CommentCommand::Add { key, body },
         } => {
             let value = client.add_comment(&key, &body).map_err(client_error_to_cli)?;
-            print_json(&value, select)
+            // Exempt: a single comment object, fixed shape.
+            print_json(&value, select.or_all())
         }
         IssueCommand::Comment {
             command: CommentCommand::Remove { key, id },
@@ -103,7 +108,8 @@ pub fn run(command: IssueCommand, select: &[&str]) -> Result<(), CliError> {
                 .delete_comment(&key, &id)
                 .map_err(client_error_to_cli)?;
             let result = serde_json::json!({"deleted": true, "id": id});
-            print_json(&result, select)
+            // Exempt: synthesized by us, always small.
+            print_json(&result, select.or_all())
         }
     }
 }

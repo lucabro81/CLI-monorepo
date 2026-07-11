@@ -16,11 +16,21 @@ use clap::{Parser, Subcommand};
 #[command(name = "jira", version, about)]
 pub struct Cli {
     /// Comma-separated dot-notation paths to project from the JSON output (client-side).
-    /// If omitted, the full response from Jira is printed.
+    /// Required on most commands: if both this and --select-all are omitted, the
+    /// command fails with an error reporting the byte size of the full response and
+    /// its top-level field names, so you can retry with an informed --select. A few
+    /// commands whose output is always small and fixed-shape (doctor, auth whoami,
+    /// issue create/delete/transitions/transition/comment add/comment remove) are
+    /// exempt and print in full regardless — see that command's own --help.
     /// Example: --select summary,status.name,assignee.displayName
     /// Example: --select transitions.id,transitions.name
-    #[arg(long, global = true, value_name = "PATHS")]
+    #[arg(long, global = true, value_name = "PATHS", conflicts_with = "select_all")]
     pub select: Option<String>,
+
+    /// Explicitly print the full, unfiltered JSON response instead of specifying --select.
+    /// Use when you already know the response is small; otherwise prefer --select.
+    #[arg(long, global = true, conflicts_with = "select")]
+    pub select_all: bool,
 
     #[command(subcommand)]
     pub command: Command,
@@ -46,7 +56,9 @@ pub enum Command {
     ///
     /// Runs three checks in order: app credentials file, stored OAuth tokens,
     /// and a live API call. Prints a JSON object with a status field per check.
-    /// Exits non-zero if any check fails or is skipped.
+    /// Exits non-zero if any check fails or is skipped. Always prints its full
+    /// result regardless of --select — the report is generated internally and is
+    /// always small and fixed-shape.
     #[command(after_help = "Examples:\n  jira doctor\n  jira doctor --select app_config.status,credentials.status,api.status\n\nEach check has a status field: \"ok\", \"error\", or \"skipped\".\nLater checks are skipped if an earlier one fails.")]
     Doctor,
     /// Manage authentication with Jira
@@ -83,6 +95,9 @@ pub enum AuthCommand {
         user: bool,
     },
     /// Print the currently authenticated user as JSON
+    ///
+    /// Always prints its full result regardless of --select — an identity check,
+    /// small and fixed-shape.
     #[command(after_help = "Examples:\n  jira auth whoami\n  jira auth whoami --select displayName,emailAddress,accountId")]
     Whoami,
 }
@@ -101,6 +116,9 @@ pub enum IssueCommand {
         command: CommentCommand,
     },
     /// List the workflow transitions available for an issue in its current state, as JSON
+    ///
+    /// Always prints its full result regardless of --select — a bounded list of
+    /// workflow states, small and fixed-shape.
     #[command(after_help = "Examples:\n  jira issue transitions PROJ-123\n  jira issue transitions PROJ-123 --select transitions.id,transitions.name\n\nUse the transition names returned here as the --to argument for `issue transition`.")]
     Transitions {
         /// Issue key, e.g. PROJ-123
@@ -125,6 +143,9 @@ pub enum IssueCommand {
         fields: Option<String>,
     },
     /// Create a new issue in a Jira project
+    ///
+    /// Always prints its full result regardless of --select — Jira's create
+    /// response is only {id, key, self}, small and fixed-shape.
     #[command(after_help = "Examples:\n  jira issue create --project KAN --type Task --summary \"Fix login bug\"\n  jira issue create --project KAN --type Bug --summary \"Crash on startup\" --description \"Happens on macOS 14\" --priority High")]
     Create {
         /// Project key, e.g. KAN
@@ -147,6 +168,9 @@ pub enum IssueCommand {
         priority: Option<String>,
     },
     /// Permanently delete an issue — requires --confirm
+    ///
+    /// Always prints its full result regardless of --select — a small, synthesized
+    /// confirmation object.
     #[command(after_help = "Example: jira issue delete KAN-5 --confirm\n\nThis action is irreversible. --confirm must be passed explicitly so the caller acknowledges the deletion. Pass --delete-subtasks if the issue has subtasks, otherwise Jira will refuse the request.")]
     Delete {
         /// Issue key to delete, e.g. PROJ-123
@@ -159,6 +183,9 @@ pub enum IssueCommand {
         delete_subtasks: bool,
     },
     /// Move an issue to a different status via a workflow transition
+    ///
+    /// Always prints its full result regardless of --select — a small, synthesized
+    /// confirmation object.
     #[command(after_help = "Example: jira issue transition KAN-4 --to \"In Progress\"\n\nUse the exact status name as it appears in Jira. If the name does not match any available transition, the command fails and lists the valid options.")]
     Transition {
         /// Issue key, e.g. PROJ-123
@@ -172,6 +199,9 @@ pub enum IssueCommand {
 #[derive(Debug, Subcommand)]
 pub enum CommentCommand {
     /// Add a comment to an issue and print the created comment as JSON
+    ///
+    /// Always prints its full result regardless of --select — a single comment
+    /// object, small and fixed-shape.
     #[command(after_help = "Example: jira issue comment add KAN-4 --body \"Blocked by network issue, retrying tomorrow\"")]
     Add {
         /// Issue key, e.g. PROJ-123
@@ -181,6 +211,9 @@ pub enum CommentCommand {
         body: String,
     },
     /// Delete a comment from an issue by its ID
+    ///
+    /// Always prints its full result regardless of --select — a small, synthesized
+    /// confirmation object.
     #[command(after_help = "Example: jira issue comment remove KAN-4 10012\n\nThe comment ID is the \"id\" field in the JSON returned by comment add or issue get.")]
     Remove {
         /// Issue key, e.g. PROJ-123

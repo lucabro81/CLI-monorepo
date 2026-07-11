@@ -65,6 +65,9 @@ pub enum CliError {
     #[error("failed to serialize response to JSON: {reason}")]
     JsonSerialize { reason: String },
 
+    #[error(transparent)]
+    Select(#[from] cli_fields::RenderError),
+
     #[error(
         "transition \"{name}\" not found for this issue in its current state. \
         Available transitions: {available}"

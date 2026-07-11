@@ -26,13 +26,15 @@ src/
   endpoints.rs    — URL/path constants for Atlassian OAuth and Jira REST API v3,
                     used by auth.rs and client.rs. No logic.
   error.rs        — CliError (top-level, thiserror-derived). Includes IoError
-                    for stdin prompts in init.
-  fields.rs       — filter_fields(value, select): dot-notation projection,
-                    array-aware, backed by FieldTree (recursive BTreeMap).
+                    for stdin prompts in init, and a transparent Select variant
+                    wrapping cli_fields::RenderError.
   tests/          — all *_tests.rs files, mirroring the src/ layout (see "Test file
                     convention" below). tests/e2e_tests.rs holds the ignored e2e tests.
-  main.rs         — pure dispatch: parse --select, match Command, call commands::*.
+  main.rs         — pure dispatch: resolve --select/--select-all into a
+                    cli_fields::Select once, match Command, call commands::*.
 ```
+
+`--select` dot-notation projection itself (`filter_fields`, `describe_top_level_shape`, the `Select` enum, `render_json`) lives in the shared `crates/cli-fields` workspace crate, not in this crate — see root `CLAUDE.md`'s "Shared library: crates/cli-fields".
 
 ## Running tests
 
@@ -80,7 +82,19 @@ Kept separate so automatic token writes never clobber the app identity.
 ## API design notes
 
 - **Search endpoint**: `GET /rest/api/3/search/jql` (the old `POST /rest/api/3/search` is 410 Gone). Cursor-based pagination via `nextPageToken`.
-- **`--select`** (global flag): client-side dot-notation projection via `fields::filter_fields`. Applied by `context::print_json` before printing.
+- **`--select`/`--select-all`** (global flags, see root `CLAUDE.md`): `--select` is mandatory by default; omitting both flags fails with the response's byte size and top-level fields instead of printing. `--select-all` is the explicit stateless opt-out. Exempt commands (always print in full via `select.or_all()` at their `print_json` call site) and why:
+  | Command | Exempt? | Why |
+  |---|---|---|
+  | `doctor` | yes | internally-generated report, fixed/small |
+  | `auth whoami` | yes | identity check, fixed/small |
+  | `issue get` | **no** | issues carry arbitrary per-project custom fields — can be large even for one record |
+  | `issue search` | **no** | paginated list, same custom-field risk multiplied |
+  | `issue create` | yes | `POST /issue` returns only `{id, key, self}` |
+  | `issue delete` | yes | synthesized by us: `{"deleted": true, "key": ...}` |
+  | `issue transitions` | yes | bounded workflow-state list, no `expand` requested |
+  | `issue transition` | yes | synthesized by us: `{"transitioned": true, ...}` |
+  | `issue comment add` | yes | single comment object, fixed shape |
+  | `issue comment remove` | yes | synthesized by us: `{"deleted": true, "id": ...}` |
 - **`--fields`** (issue search only): server-side Jira field selection. Defaults to `*navigable`. Reduces payload at the source; orthogonal to `--select`.
 - **ADF**: comment bodies and issue descriptions are wrapped in Atlassian Document Format by the client methods; callers pass plain text.
 - **Destructive commands**: no interactive prompts (an LLM cannot respond). `issue delete` requires explicit `--confirm`; error message includes the exact command to retry.
