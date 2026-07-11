@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1](https://github.com/lucabro81/CLI-monorepo/compare/jira-v0.2.0...jira-v0.2.1) - 2026-07-11
+
+### Other
+
+- update Cargo.toml dependencies
+
 ## [0.1.2](https://github.com/lucabro81/CLI-monorepo/compare/jira-v0.0.1...jira-v0.1.2) - 2026-06-23
 
 ### Added
