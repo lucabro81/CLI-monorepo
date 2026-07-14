@@ -20,7 +20,9 @@ pub fn run(command: SubscriptionCommand, select: cli_fields::Select<'_>) -> Resu
             pubsub_subscription,
             event_type,
             message_filter,
+            allow_unfiltered,
         } => {
+            require_message_filter(message_filter.as_deref(), allow_unfiltered, &pubsub_subscription)?;
             let credentials = authenticated_credentials()?;
             let client = EventsClient::new(&credentials.access_token);
             client
@@ -43,3 +45,26 @@ pub fn run(command: SubscriptionCommand, select: cli_fields::Select<'_>) -> Resu
         }
     }
 }
+
+/// Enforces that `subscription create` was given an explicit delivery scope:
+/// either a `--message-filter` expression, or an explicit `--allow-unfiltered`
+/// opt-out. Mirrors the `--select`/`--select-all` "required unless explicitly
+/// confirmed" pattern — an unfiltered subscription silently flooding an
+/// agent's `listen` stream with events from unrelated spaces is the same
+/// class of footgun as an unbounded JSON dump.
+fn require_message_filter(
+    message_filter: Option<&str>,
+    allow_unfiltered: bool,
+    pubsub_subscription: &str,
+) -> Result<(), CliError> {
+    if message_filter.is_none() && !allow_unfiltered {
+        return Err(CliError::MessageFilterRequired {
+            pubsub_subscription: pubsub_subscription.to_string(),
+        });
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+#[path = "../tests/commands/subscription_tests.rs"]
+mod tests;

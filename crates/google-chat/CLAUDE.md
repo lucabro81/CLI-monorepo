@@ -233,12 +233,25 @@ Both files live under `$XDG_CONFIG_HOME/google-chat-cli/` (falling back to
   blast radius than needed, and the wrong default for an agent that should
   only see the conversation it's actually part of. The intended pattern is
   one `subscription create --space <id>` per conversation the agent is
-  currently in, all sharing the same Pub/Sub topic/subscription/`listen`
-  process if convenient (the topic is just transport — it doesn't broaden
-  access; only an explicit Workspace Events subscription does), paired with
-  `subscription delete --name <name>` when the agent is done with that
-  conversation, rather than relying solely on the ~4h natural expiry.
-- **`--message-filter` on `subscription create`**: passed straight through
+  currently in, paired with `subscription delete --name <name>` when the
+  agent is done with that conversation, rather than relying solely on the
+  ~4h natural expiry. Multiple concurrent conversations can either use one
+  dedicated `--pubsub-subscription`/`listen` process each, or share one
+  subscription/process via an OR-combined `--message-filter` covering every
+  active space — see the `--message-filter` bullet below and
+  `crates/google-chat/README.md`'s `subscription create` section for the
+  full tradeoff.
+- **`--message-filter` on `subscription create`, required unless
+  `--allow-unfiltered` is passed**: mirrors the `--select`/`--select-all`
+  "required unless explicitly confirmed" pattern (`require_message_filter`
+  in `commands/subscription.rs`, checked before any network call) — an
+  unfiltered pull subscription silently delivers events for every space
+  ever attached to it, which can flood an agent's `listen` stream with
+  messages from conversations it isn't part of, the same class of footgun
+  `--select`'s mandatory-by-default rule guards against for JSON output.
+  `--message-filter` and `--allow-unfiltered` are mutually exclusive
+  (`conflicts_with` in `cli.rs`).
+  `--message-filter`'s value is passed straight through
   as the Pub/Sub `filter` field on `projects.subscriptions.create`
   (`ensure_pubsub_subscription`'s PUT body, built by
   `build_pubsub_subscription_body` in `events_client.rs`) — the flag doesn't
@@ -246,6 +259,10 @@ Both files live under `$XDG_CONFIG_HOME/google-chat-cli/` (falling back to
   Pub/Sub's filter syntax (attributes-only, e.g.
   `hasPrefix(attributes.ce-subject, ...)`; see
   [Pub/Sub subscription filters](https://cloud.google.com/pubsub/docs/subscription-message-filter)).
+  Because it's opaque pass-through, **no CLI support was needed to scope
+  multiple spaces in one subscription** — combine several `hasPrefix(...)`
+  clauses with `OR` (confirmed live 2026-07-14 that Pub/Sub accepts this
+  syntax without issue).
   **Two gotchas confirmed live** (2026-07-14, against a real message in
   `spaces/AAQAtCLmaho`): the space id lives in the `ce-subject` CloudEvents
   attribute (`//chat.googleapis.com/spaces/{id}`), **not** `ce-source`
@@ -257,18 +274,19 @@ Both files live under `$XDG_CONFIG_HOME/google-chat-cli/` (falling back to
   notation, `attributes.ce-subject`, confirmed to parse correctly even
   though the key itself contains a hyphen.
   Omitted entirely from the request body when not passed (not sent as an
-  empty string), so default (unfiltered) behavior is preserved. `topic` and
+  empty string), so `--allow-unfiltered` produces unfiltered (not
+  empty-string-filtered) behavior. `topic` and
   `filter` are both immutable on a Pub/Sub subscription after creation, and
-  `ensure_pubsub_subscription` now enforces this: on a 409 (subscription
+  `ensure_pubsub_subscription` enforces this: on a 409 (subscription
   already exists) it fetches the existing subscription
   (`get_pubsub_subscription`) and compares its `topic`/`filter` against what
   was requested (`subscription_config_mismatch`) — a match is still treated
   as idempotent success, but a mismatch is a hard `CliError::PubsubSubscriptionMismatch`
-  instead of the previous silent no-op. This means the "share one
-  `--pubsub-subscription` across multiple spaces" pattern described above is
-  **not** compatible with per-space `--message-filter`: filtering scoped to
-  one space needs a dedicated (not shared) `--pubsub-subscription` for that
-  space, since the filter applies to the whole subscription.
+  instead of a silent no-op. This means growing the set of spaces on a
+  **shared** subscription (the OR-filter pattern above) requires deleting
+  and recreating it with the wider filter — a dedicated
+  `--pubsub-subscription` per space avoids that disruption for already-active
+  conversations, at the cost of one `listen` process per space.
 
 ## Implemented commands
 
@@ -280,7 +298,7 @@ Both files live under `$XDG_CONFIG_HOME/google-chat-cli/` (falling back to
 | `spaces list [--page-size --page-token]` | Lists spaces (`spaces.list`) the authenticated identity belongs to. Verified live — real spaces returned, types (`SPACE`/`GROUP_CHAT`/`DIRECT_MESSAGE`) confirmed. |
 | `messages list --space <id> [--page-size --page-token --order-by]` | Lists messages in a space (`spaces.messages.list`). Chronological by default (`createTime ASC`, the Chat API's own default) — the context-recovery path for an agent resuming after a gap or summarization. `--order-by "createTime DESC"` gets the most recent first. `--space` accepts bare id or full `spaces/{id}`. Verified live against real conversation history both orderings, both id forms. |
 | `messages send --space <id> --text <text>` | Creates a message (`spaces.messages.create`) in a space; prints the created Message (including its `name`). Not gated by `--confirm` — visible but not data-destructive. Verified live: real message delivered and visible to the other party, both `--space` id forms confirmed. |
-| `subscription create --space <id> --topic <topic> --pubsub-subscription <sub> [--event-type ... --message-filter <filter>]` | Ensures the Pub/Sub pull subscription exists (idempotent), optionally scoped with a Pub/Sub filter expression via `--message-filter` (e.g. to limit delivery to one space), then creates a Workspace Events subscription delivering Chat events for the space to that topic. On a pre-existing pull subscription with a different `--topic`/`--message-filter` than requested, fails with `PubsubSubscriptionMismatch` instead of silently ignoring the mismatch (both fields are immutable after creation). Verified live — real subscription created, `state: ACTIVE`. `--message-filter` verified live 2026-07-14 against `spaces/AAQAtCLmaho`/project `mercury-500017`: a matching `hasPrefix(attributes.ce-subject, "//chat.googleapis.com/spaces/AAQAtCLmaho")` filter both let a real test message through and, on a second `subscription create` reusing the same `--pubsub-subscription` with a different filter, correctly failed with `PubsubSubscriptionMismatch` (exit code 1) instead of silently succeeding. The subscription expires after ~4h (Workspace Events API's own default TTL); pass its `name` to `listen --workspace-events-subscription` to keep it renewed (BACKLOG.md GCHAT-4). |
+| `subscription create --space <id> --topic <topic> --pubsub-subscription <sub> (--message-filter <filter> \| --allow-unfiltered) [--event-type ...]` | Ensures the Pub/Sub pull subscription exists (idempotent), scoped with a Pub/Sub filter expression via `--message-filter` (one `hasPrefix(attributes.ce-subject, ...)` clause per space, OR-combinable for multiple spaces) — required unless `--allow-unfiltered` explicitly opts out, mirroring `--select`/`--select-all`'s mandatory-by-default pattern (fails fast with `MessageFilterRequired`, no network call, if neither is passed). Then creates a Workspace Events subscription delivering Chat events for the space to that topic. On a pre-existing pull subscription with a different `--topic`/`--message-filter` than requested, fails with `PubsubSubscriptionMismatch` instead of silently ignoring the mismatch (both fields are immutable after creation). Verified live — real subscription created, `state: ACTIVE`. `--message-filter` verified live 2026-07-14 against `spaces/AAQAtCLmaho`/project `mercury-500017`: a matching `hasPrefix(attributes.ce-subject, "//chat.googleapis.com/spaces/AAQAtCLmaho")` filter both let a real test message through and, on a second `subscription create` reusing the same `--pubsub-subscription` with a different filter, correctly failed with `PubsubSubscriptionMismatch` (exit code 1) instead of silently succeeding; an OR-combined multi-space filter was also confirmed to parse. The subscription expires after ~4h (Workspace Events API's own default TTL); pass its `name` to `listen --workspace-events-subscription` to keep it renewed (BACKLOG.md GCHAT-4). |
 | `subscription delete --name <name>` | Deletes a Workspace Events subscription, stopping delivery immediately — call when an agent leaves a conversation, instead of relying on the ~4h expiry. Verified live: real subscription deleted (`done: true`); a second delete on the same name correctly returned `403 SUBSCRIPTION_ACCESS_DENIED` (Workspace Events conflates "gone" with "no permission" in this error). |
 | `listen --pubsub-subscription <sub> --workspace-events-subscription <name> [--max-messages N]` | Streams messages from a Pub/Sub subscription via `google-cloud-pubsub`, printing each as NDJSON and acking it. Refreshes its own token every 5 min and renews the Workspace Events subscription's TTL every 30 min, both in the background; stops cleanly on SIGINT/SIGTERM. Verified live — a real `messages send` was received and printed within ~2s, `kill -TERM <pid>` exited cleanly, and the renewal PATCH call was confirmed directly (pushed `expireTime` out another ~4h, same scopes, no extra scope needed). Neither background task's periodic *trigger* was observed firing during an actual `listen` run (would need a 5/30-minute-long session) — the calls they invoke were verified directly instead (BACKLOG.md GCHAT-3, GCHAT-4). |
 

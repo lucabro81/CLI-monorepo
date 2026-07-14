@@ -286,10 +286,14 @@ creating one if missing (a no-op if it already exists) — you don't need to
 check beforehand whether one was set up in a previous step.
 
 ```sh
-cargo run -p google-chat -- subscription create --space spaces/AAQA-_d58OQ --topic projects/my-project/topics/my-topic --pubsub-subscription projects/my-project/subscriptions/my-sub
-
 # Scoped to one space's messages via a Pub/Sub attribute filter:
 cargo run -p google-chat -- subscription create --space spaces/AAQA-_d58OQ --topic projects/my-project/topics/my-topic --pubsub-subscription projects/my-project/subscriptions/my-sub --message-filter 'hasPrefix(attributes.ce-subject, "//chat.googleapis.com/spaces/AAQA-_d58OQ")'
+
+# Scoped to two spaces sharing one subscription (OR filter):
+cargo run -p google-chat -- subscription create --space spaces/AAQA-_d58OQ --topic projects/my-project/topics/my-topic --pubsub-subscription projects/my-project/subscriptions/my-sub --message-filter 'hasPrefix(attributes.ce-subject, "//chat.googleapis.com/spaces/AAQA-_d58OQ") OR hasPrefix(attributes.ce-subject, "//chat.googleapis.com/spaces/OTHER_SPACE_ID")'
+
+# Explicit opt-out, no filtering:
+cargo run -p google-chat -- subscription create --space spaces/AAQA-_d58OQ --topic projects/my-project/topics/my-topic --pubsub-subscription projects/my-project/subscriptions/my-sub --allow-unfiltered
 ```
 
 **Flags:**
@@ -297,7 +301,12 @@ cargo run -p google-chat -- subscription create --space spaces/AAQA-_d58OQ --top
 - `--topic <TOPIC>` (required) — Pub/Sub topic that will receive events: `projects/{project}/topics/{topic}`
 - `--pubsub-subscription <SUBSCRIPTION>` (required) — pull subscription on that topic, created if missing: `projects/{project}/subscriptions/{subscription}`
 - `--event-type <TYPE>` (repeatable) — Chat event type to subscribe to; default `google.workspace.chat.message.v1.created`. Other valid values: `.updated`, `.deleted`
-- `--message-filter <FILTER>` (optional) — Pub/Sub filter expression applied to the pull subscription, so only matching messages are delivered (e.g. scope to one space with `hasPrefix(attributes.ce-subject, "//chat.googleapis.com/spaces/SPACE_ID")`); see [Pub/Sub subscription filters](https://cloud.google.com/pubsub/docs/subscription-message-filter) for syntax
+- `--message-filter <FILTER>` — Pub/Sub filter expression applied to the pull subscription, so only matching messages are delivered; see [Pub/Sub subscription filters](https://cloud.google.com/pubsub/docs/subscription-message-filter) for syntax. **One of `--message-filter` or `--allow-unfiltered` is required** (same "required unless explicitly confirmed" pattern as `--select`/`--select-all` — an unfiltered subscription silently delivers events for every space ever attached to it, which can flood an agent's `listen` stream with messages from conversations it isn't part of).
+- `--allow-unfiltered` — explicitly confirm an unfiltered subscription instead of passing `--message-filter`.
+
+**Scoping to a single space:** `hasPrefix(attributes.ce-subject, "//chat.googleapis.com/spaces/SPACE_ID")` — the space id lives in the `ce-subject` CloudEvents attribute (**not** `ce-source`, which instead holds the Workspace Events subscription's own resource name). Attribute access must use dot notation (`attributes.ce-subject`); Pub/Sub's filter grammar rejects bracket indexing (`attributes["ce-subject"]`) with a parse error, even though the attribute key itself contains a hyphen.
+
+**Scoping to multiple spaces:** since `--message-filter` is passed straight through as Pub/Sub's `filter` field with no interpretation by this CLI, any valid Pub/Sub filter expression works — combine several `hasPrefix(...)` clauses with `OR` to have one subscription (and one `listen` process) deliver events for several spaces at once.
 
 The Pub/Sub topic itself, and the IAM grant of `roles/pubsub.publisher` on it
 to `chat-api-push@system.gserviceaccount.com` (required by the Workspace
@@ -309,9 +318,21 @@ is created.** If `--pubsub-subscription` already exists with a different
 `--topic` or `--message-filter` than requested, the command fails instead of
 silently keeping the original configuration — delete the subscription or use
 a different `--pubsub-subscription` name to apply the new configuration.
-This means per-space filtering needs a dedicated `--pubsub-subscription` per
-space; it can't be layered onto a subscription already shared across
-multiple spaces.
+
+This creates a real tradeoff between two ways to handle multiple concurrent
+conversations:
+- **One dedicated `--pubsub-subscription` per space**, each with its own
+  `listen` process. Starting a new conversation only creates a new
+  subscription/process — already-active ones are untouched. Costs one
+  `listen` process per active conversation.
+- **One shared `--pubsub-subscription`** with an OR filter covering every
+  active space, and a single `listen` process. Starting or ending a
+  conversation means deleting and recreating that one subscription with an
+  updated filter — which briefly interrupts delivery for every
+  already-active conversation sharing it, not just the one changing.
+
+Neither is enforced by the CLI; pick based on how disruptive a brief
+`listen` restart is for your use case.
 
 **The created subscription expires after ~4 hours** (the Workspace Events
 API's own default TTL) — confirmed live, not configurable by this command

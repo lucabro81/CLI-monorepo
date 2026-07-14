@@ -181,13 +181,28 @@ pub enum SubscriptionCommand {
     /// receive the events. Always prints its full result regardless of
     /// --select — a single subscription object, fixed-shape.
     ///
+    /// --message-filter is required unless --allow-unfiltered is passed: an
+    /// unfiltered pull subscription delivers events for every space that
+    /// ever gets attached to it, which can flood an agent's `listen` stream
+    /// with messages from conversations it isn't part of (the same
+    /// "required unless explicitly confirmed" pattern as --select /
+    /// --select-all). --message-filter accepts any Pub/Sub filter
+    /// expression, so multiple spaces can be scoped in one subscription by
+    /// combining `hasPrefix(...)` clauses with OR — see the second example
+    /// below.
+    ///
     /// --topic and --message-filter are immutable once the pull subscription
     /// is created: reusing the same --pubsub-subscription name across calls
     /// with a different --topic or --message-filter fails instead of
-    /// silently keeping the original configuration. Per-space filtering
-    /// therefore needs a dedicated --pubsub-subscription per space, not one
-    /// shared across spaces.
-    #[command(after_help = "Example:\n  google-chat subscription create --space [SPACE_ID] --topic projects/my-project/topics/my-topic --pubsub-subscription projects/my-project/subscriptions/my-sub\n\n--space accepts either the bare id or the full \"spaces/...\" resource name.\n--event-type can be repeated; defaults to google.workspace.chat.message.v1.created.\nValid event types: google.workspace.chat.message.v1.created, .updated, .deleted.\n--message-filter sets the Pub/Sub subscription's filter (see https://cloud.google.com/pubsub/docs/subscription-message-filter), e.g.\n  --message-filter 'hasPrefix(attributes.ce-subject, \"//chat.googleapis.com/spaces/[SPACE_ID]\")'")]
+    /// silently keeping the original configuration. This means growing the
+    /// set of spaces on a shared subscription (single-listen-process
+    /// pattern) requires deleting and recreating it with an updated OR
+    /// filter; using a dedicated --pubsub-subscription per space avoids that
+    /// disruption for already-active conversations when a new one starts,
+    /// at the cost of one `listen` process per space instead of one shared
+    /// process. See README.md's `subscription create` section for the full
+    /// tradeoff between the two patterns.
+    #[command(after_help = "Examples:\n  google-chat subscription create --space [SPACE_ID] --topic projects/my-project/topics/my-topic --pubsub-subscription projects/my-project/subscriptions/my-sub --message-filter 'hasPrefix(attributes.ce-subject, \"//chat.googleapis.com/spaces/[SPACE_ID]\")'\n\n  # Scope one shared subscription to two spaces at once:\n  google-chat subscription create --space [SPACE_ID] --topic projects/my-project/topics/my-topic --pubsub-subscription projects/my-project/subscriptions/my-sub --message-filter 'hasPrefix(attributes.ce-subject, \"//chat.googleapis.com/spaces/[SPACE_ID]\") OR hasPrefix(attributes.ce-subject, \"//chat.googleapis.com/spaces/OTHER_SPACE_ID\")'\n\n  # Explicitly opt out of filtering (receives events for every space ever attached to this subscription):\n  google-chat subscription create --space [SPACE_ID] --topic projects/my-project/topics/my-topic --pubsub-subscription projects/my-project/subscriptions/my-sub --allow-unfiltered\n\n--space accepts either the bare id or the full \"spaces/...\" resource name.\n--event-type can be repeated; defaults to google.workspace.chat.message.v1.created.\nValid event types: google.workspace.chat.message.v1.created, .updated, .deleted.\n--message-filter sets the Pub/Sub subscription's filter (see https://cloud.google.com/pubsub/docs/subscription-message-filter). One of --message-filter or --allow-unfiltered is required.")]
     Create {
         /// Space to subscribe to — bare id or full "spaces/{id}" resource name
         #[arg(long)]
@@ -201,9 +216,12 @@ pub enum SubscriptionCommand {
         /// Chat event type to subscribe to (repeatable); default: google.workspace.chat.message.v1.created
         #[arg(long, default_values_t = ["google.workspace.chat.message.v1.created".to_string()])]
         event_type: Vec<String>,
-        /// Pub/Sub filter expression applied to the pull subscription, e.g. `hasPrefix(attributes.ce-subject, "//chat.googleapis.com/spaces/SPACE_ID")` to scope delivery to one space (see <https://cloud.google.com/pubsub/docs/subscription-message-filter>)
-        #[arg(long)]
+        /// Pub/Sub filter expression applied to the pull subscription, e.g. `hasPrefix(attributes.ce-subject, "//chat.googleapis.com/spaces/SPACE_ID")` to scope delivery to one space, or multiple spaces combined with OR (see <https://cloud.google.com/pubsub/docs/subscription-message-filter>). Required unless --allow-unfiltered is passed.
+        #[arg(long, conflicts_with = "allow_unfiltered")]
         message_filter: Option<String>,
+        /// Explicitly confirm an unfiltered subscription (delivers events for every space ever attached to it). Required if --message-filter is omitted.
+        #[arg(long, conflicts_with = "message_filter")]
+        allow_unfiltered: bool,
     },
     /// Delete a Workspace Events subscription so it stops delivering events
     ///

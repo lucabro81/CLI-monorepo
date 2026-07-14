@@ -98,4 +98,14 @@ pub enum CliError {
         (gcloud pubsub subscriptions delete <name>) or use a different --pubsub-subscription name to apply this configuration."
     )]
     PubsubSubscriptionMismatch { subscription: String, reason: String },
+
+    #[error(
+        "refusing to create subscription {pubsub_subscription} without --message-filter — an unfiltered \
+        pull subscription delivers events for every space that ever gets attached to it, which can flood \
+        an agent's `listen` stream with messages from conversations it isn't part of. Pass --message-filter \
+        with a Pub/Sub filter expression to scope delivery (e.g. hasPrefix(attributes.ce-subject, \
+        \"//chat.googleapis.com/spaces/SPACE_ID\"); combine multiple spaces with OR), or pass \
+        --allow-unfiltered to explicitly confirm unfiltered delivery is intended."
+    )]
+    MessageFilterRequired { pubsub_subscription: String },
 }

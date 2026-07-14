@@ -313,13 +313,62 @@ fn parses_subscription_create_with_required_flags_only() {
                 ref pubsub_subscription,
                 ref event_type,
                 ref message_filter,
+                allow_unfiltered,
             }
         } if space == "spaces/AAQA-_d58OQ"
             && topic == "projects/p/topics/t"
             && pubsub_subscription == "projects/p/subscriptions/s"
             && event_type == &["google.workspace.chat.message.v1.created".to_string()]
             && message_filter.is_none()
+            && !allow_unfiltered
     ));
+}
+
+#[test]
+fn parses_subscription_create_with_allow_unfiltered() {
+    let cli = Cli::parse_from([
+        "google-chat",
+        "subscription",
+        "create",
+        "--space",
+        "spaces/AAQA-_d58OQ",
+        "--topic",
+        "projects/p/topics/t",
+        "--pubsub-subscription",
+        "projects/p/subscriptions/s",
+        "--allow-unfiltered",
+    ]);
+
+    assert!(matches!(
+        cli.command,
+        Command::Subscription {
+            command: SubscriptionCommand::Create {
+                ref message_filter,
+                allow_unfiltered,
+                ..
+            }
+        } if message_filter.is_none() && allow_unfiltered
+    ));
+}
+
+#[test]
+fn rejects_subscription_create_with_message_filter_and_allow_unfiltered_together() {
+    let result = Cli::try_parse_from([
+        "google-chat",
+        "subscription",
+        "create",
+        "--space",
+        "spaces/AAQA-_d58OQ",
+        "--topic",
+        "projects/p/topics/t",
+        "--pubsub-subscription",
+        "projects/p/subscriptions/s",
+        "--message-filter",
+        "hasPrefix(attributes.ce-subject, \"//chat.googleapis.com/spaces/AAQA-_d58OQ\")",
+        "--allow-unfiltered",
+    ]);
+
+    assert!(result.is_err());
 }
 
 #[test]
