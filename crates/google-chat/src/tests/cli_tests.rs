@@ -312,11 +312,41 @@ fn parses_subscription_create_with_required_flags_only() {
                 ref topic,
                 ref pubsub_subscription,
                 ref event_type,
+                ref message_filter,
             }
         } if space == "spaces/AAQA-_d58OQ"
             && topic == "projects/p/topics/t"
             && pubsub_subscription == "projects/p/subscriptions/s"
             && event_type == &["google.workspace.chat.message.v1.created".to_string()]
+            && message_filter.is_none()
+    ));
+}
+
+#[test]
+fn parses_subscription_create_with_message_filter() {
+    let cli = Cli::parse_from([
+        "google-chat",
+        "subscription",
+        "create",
+        "--space",
+        "spaces/AAQA-_d58OQ",
+        "--topic",
+        "projects/p/topics/t",
+        "--pubsub-subscription",
+        "projects/p/subscriptions/s",
+        "--message-filter",
+        "hasPrefix(attributes.ce-subject, \"//chat.googleapis.com/spaces/AAQA-_d58OQ\")",
+    ]);
+
+    assert!(matches!(
+        cli.command,
+        Command::Subscription {
+            command: SubscriptionCommand::Create {
+                ref message_filter,
+                ..
+            }
+        } if message_filter.as_deref()
+            == Some("hasPrefix(attributes.ce-subject, \"//chat.googleapis.com/spaces/AAQA-_d58OQ\")")
     ));
 }
 

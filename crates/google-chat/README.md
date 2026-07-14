@@ -287,6 +287,9 @@ check beforehand whether one was set up in a previous step.
 
 ```sh
 cargo run -p google-chat -- subscription create --space spaces/AAQA-_d58OQ --topic projects/my-project/topics/my-topic --pubsub-subscription projects/my-project/subscriptions/my-sub
+
+# Scoped to one space's messages via a Pub/Sub attribute filter:
+cargo run -p google-chat -- subscription create --space spaces/AAQA-_d58OQ --topic projects/my-project/topics/my-topic --pubsub-subscription projects/my-project/subscriptions/my-sub --message-filter 'hasPrefix(attributes.ce-subject, "//chat.googleapis.com/spaces/AAQA-_d58OQ")'
 ```
 
 **Flags:**
@@ -294,11 +297,21 @@ cargo run -p google-chat -- subscription create --space spaces/AAQA-_d58OQ --top
 - `--topic <TOPIC>` (required) — Pub/Sub topic that will receive events: `projects/{project}/topics/{topic}`
 - `--pubsub-subscription <SUBSCRIPTION>` (required) — pull subscription on that topic, created if missing: `projects/{project}/subscriptions/{subscription}`
 - `--event-type <TYPE>` (repeatable) — Chat event type to subscribe to; default `google.workspace.chat.message.v1.created`. Other valid values: `.updated`, `.deleted`
+- `--message-filter <FILTER>` (optional) — Pub/Sub filter expression applied to the pull subscription, so only matching messages are delivered (e.g. scope to one space with `hasPrefix(attributes.ce-subject, "//chat.googleapis.com/spaces/SPACE_ID")`); see [Pub/Sub subscription filters](https://cloud.google.com/pubsub/docs/subscription-message-filter) for syntax
 
 The Pub/Sub topic itself, and the IAM grant of `roles/pubsub.publisher` on it
 to `chat-api-push@system.gserviceaccount.com` (required by the Workspace
 Events API to publish to it), are **not** created by this command — set
 those up once via the Cloud Console or `gcloud` before running it.
+
+**`--topic` and `--message-filter` are immutable once the pull subscription
+is created.** If `--pubsub-subscription` already exists with a different
+`--topic` or `--message-filter` than requested, the command fails instead of
+silently keeping the original configuration — delete the subscription or use
+a different `--pubsub-subscription` name to apply the new configuration.
+This means per-space filtering needs a dedicated `--pubsub-subscription` per
+space; it can't be layered onto a subscription already shared across
+multiple spaces.
 
 **The created subscription expires after ~4 hours** (the Workspace Events
 API's own default TTL) — confirmed live, not configurable by this command

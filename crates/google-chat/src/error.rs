@@ -91,4 +91,11 @@ pub enum CliError {
         Run: google-chat auth login --user, then retry google-chat listen"
     )]
     PubsubSubscribeFailed { reason: String },
+
+    #[error(
+        "Pub/Sub subscription {subscription} already exists with a different configuration: {reason}. \
+        Pub/Sub subscription topic and filter are immutable after creation — delete the subscription \
+        (gcloud pubsub subscriptions delete <name>) or use a different --pubsub-subscription name to apply this configuration."
+    )]
+    PubsubSubscriptionMismatch { subscription: String, reason: String },
 }

@@ -18,6 +18,11 @@ pub enum EventsClientError {
     Request(String),
     /// The server responded but with a non-2xx, non-already-exists status code.
     Status { status: u16, body: String },
+    /// A pull subscription with this name already exists, but its `topic`
+    /// and/or `filter` differ from what was requested — both are immutable
+    /// after creation, so this can't be silently reconciled the way a
+    /// matching 409 is.
+    ConfigMismatch { subscription: String, reason: String },
 }
 
 impl std::fmt::Display for EventsClientError {
@@ -26,6 +31,9 @@ impl std::fmt::Display for EventsClientError {
             EventsClientError::Request(msg) => write!(f, "request failed: {msg}"),
             EventsClientError::Status { status, body } => {
                 write!(f, "API returned status {status}: {body}")
+            }
+            EventsClientError::ConfigMismatch { subscription, reason } => {
+                write!(f, "subscription {subscription} already exists with different configuration: {reason}")
             }
         }
     }
@@ -38,6 +46,9 @@ impl EventsClientError {
         match self {
             EventsClientError::Request(reason) => CliError::PubsubRequestFailed { reason },
             EventsClientError::Status { status, body } => CliError::PubsubApiError { status, body },
+            EventsClientError::ConfigMismatch { subscription, reason } => {
+                CliError::PubsubSubscriptionMismatch { subscription, reason }
+            }
         }
     }
 
@@ -48,6 +59,12 @@ impl EventsClientError {
             EventsClientError::Request(reason) => CliError::WorkspaceEventsRequestFailed { reason },
             EventsClientError::Status { status, body } => {
                 CliError::WorkspaceEventsApiError { status, body }
+            }
+            // Never produced by the Workspace Events calls this maps errors
+            // for (only ensure_pubsub_subscription produces it) — mapped the
+            // same way as into_pubsub_error for exhaustiveness.
+            EventsClientError::ConfigMismatch { subscription, reason } => {
+                CliError::PubsubSubscriptionMismatch { subscription, reason }
             }
         }
     }
@@ -67,10 +84,20 @@ impl EventsClient {
         }
     }
 
-    /// Ensures a pull subscription named `subscription` exists on `topic`,
-    /// creating it if missing. A subscription that already exists (Pub/Sub
-    /// returns 409 `ALREADY_EXISTS`) is treated as success — the caller does
-    /// not need to check beforehand whether it exists.
+    /// Ensures a pull subscription named `subscription` exists on `topic`
+    /// with the given `filter` (if any), creating it if missing. `filter`,
+    /// if given, is a Pub/Sub filter expression (e.g.
+    /// `hasPrefix(attributes.ce-subject, ...)`) applied to the
+    /// subscription so only matching messages are delivered — see Pub/Sub's
+    /// subscription filter docs.
+    ///
+    /// If a subscription with this name already exists (Pub/Sub returns 409
+    /// `ALREADY_EXISTS`), its actual `topic`/`filter` are fetched and
+    /// compared against what was requested: a match is treated as success
+    /// (the caller does not need to check beforehand whether it exists), but
+    /// a mismatch is an error — both fields are immutable after creation, so
+    /// a differing request can never actually take effect on the existing
+    /// subscription.
     ///
     /// `subscription` and `topic` are full resource names
     /// (`projects/{project}/subscriptions/{subscription}` and
@@ -79,9 +106,10 @@ impl EventsClient {
         &self,
         subscription: &str,
         topic: &str,
+        filter: Option<&str>,
     ) -> Result<(), EventsClientError> {
         let url = format!("{}/{subscription}", endpoints::PUBSUB_API_BASE_URL);
-        let body = serde_json::json!({ "topic": topic });
+        let body = build_pubsub_subscription_body(topic, filter);
 
         let response = self
             .http
@@ -93,13 +121,49 @@ impl EventsClient {
             .map_err(|e| EventsClientError::Request(e.to_string()))?;
 
         let status = response.status();
-        if status.is_success() || status.as_u16() == 409 {
+        if status.is_success() {
             return Ok(());
+        }
+        if status.as_u16() == 409 {
+            let existing = self.get_pubsub_subscription(subscription)?;
+            return match subscription_config_mismatch(&existing, topic, filter) {
+                Some(reason) => Err(EventsClientError::ConfigMismatch {
+                    subscription: subscription.to_string(),
+                    reason,
+                }),
+                None => Ok(()),
+            };
         }
         Err(EventsClientError::Status {
             status: status.as_u16(),
             body: response.text().unwrap_or_default(),
         })
+    }
+
+    /// Fetches the current state of a Pub/Sub pull subscription. `subscription`
+    /// is a full resource name (`projects/{project}/subscriptions/{subscription}`).
+    pub fn get_pubsub_subscription(&self, subscription: &str) -> Result<serde_json::Value, EventsClientError> {
+        let url = format!("{}/{subscription}", endpoints::PUBSUB_API_BASE_URL);
+
+        let response = self
+            .http
+            .get(&url)
+            .bearer_auth(&self.access_token)
+            .header("Accept", "application/json")
+            .send()
+            .map_err(|e| EventsClientError::Request(e.to_string()))?;
+
+        let status = response.status();
+        if !status.is_success() {
+            return Err(EventsClientError::Status {
+                status: status.as_u16(),
+                body: response.text().unwrap_or_default(),
+            });
+        }
+
+        response
+            .json::<serde_json::Value>()
+            .map_err(|e| EventsClientError::Request(e.to_string()))
     }
 
     /// Creates a Workspace Events subscription delivering `event_types` for
@@ -213,6 +277,46 @@ fn build_subscription_body(
         "notificationEndpoint": { "pubsubTopic": topic },
         "payloadOptions": { "includeResource": true },
     })
+}
+
+/// Builds the Pub/Sub `subscriptions.create` request body. Includes a
+/// `filter` key only when `filter` is `Some` — Pub/Sub treats an absent
+/// `filter` as "no filtering", so omitting the key (rather than sending an
+/// empty string) is required to preserve default behavior when the caller
+/// doesn't pass `--message-filter`.
+fn build_pubsub_subscription_body(topic: &str, filter: Option<&str>) -> serde_json::Value {
+    match filter {
+        Some(filter) => serde_json::json!({ "topic": topic, "filter": filter }),
+        None => serde_json::json!({ "topic": topic }),
+    }
+}
+
+/// Compares an existing Pub/Sub subscription resource (as returned by
+/// `get_pubsub_subscription`) against a requested `topic`/`filter`. Returns
+/// `None` if they match, or `Some(reason)` describing which field(s) differ
+/// if they don't — both fields are immutable after creation, so a mismatch
+/// here means the requested configuration can never take effect on the
+/// existing subscription.
+fn subscription_config_mismatch(existing: &serde_json::Value, topic: &str, filter: Option<&str>) -> Option<String> {
+    let existing_topic = existing["topic"].as_str().unwrap_or("");
+    let existing_filter = existing["filter"].as_str().unwrap_or("");
+    let requested_filter = filter.unwrap_or("");
+
+    let mut mismatches = Vec::new();
+    if existing_topic != topic {
+        mismatches.push(format!("topic: existing \"{existing_topic}\" vs requested \"{topic}\""));
+    }
+    if existing_filter != requested_filter {
+        mismatches.push(format!(
+            "filter: existing \"{existing_filter}\" vs requested \"{requested_filter}\""
+        ));
+    }
+
+    if mismatches.is_empty() {
+        None
+    } else {
+        Some(mismatches.join("; "))
+    }
 }
 
 #[cfg(test)]

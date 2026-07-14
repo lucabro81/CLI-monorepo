@@ -238,6 +238,37 @@ Both files live under `$XDG_CONFIG_HOME/google-chat-cli/` (falling back to
   access; only an explicit Workspace Events subscription does), paired with
   `subscription delete --name <name>` when the agent is done with that
   conversation, rather than relying solely on the ~4h natural expiry.
+- **`--message-filter` on `subscription create`**: passed straight through
+  as the Pub/Sub `filter` field on `projects.subscriptions.create`
+  (`ensure_pubsub_subscription`'s PUT body, built by
+  `build_pubsub_subscription_body` in `events_client.rs`) — the flag doesn't
+  validate or interpret the filter expression itself, that's entirely
+  Pub/Sub's filter syntax (attributes-only, e.g.
+  `hasPrefix(attributes.ce-subject, ...)`; see
+  [Pub/Sub subscription filters](https://cloud.google.com/pubsub/docs/subscription-message-filter)).
+  **Two gotchas confirmed live** (2026-07-14, against a real message in
+  `spaces/AAQAtCLmaho`): the space id lives in the `ce-subject` CloudEvents
+  attribute (`//chat.googleapis.com/spaces/{id}`), **not** `ce-source`
+  (which instead holds the Workspace Events subscription's own resource
+  name, `//workspaceevents.googleapis.com/subscriptions/{id}` — unique per
+  subscription, useless for space filtering); and Pub/Sub's filter grammar
+  rejects bracket indexing (`attributes["ce-subject"]`, a
+  `FILTER_EXPRESSION_FAILED_TO_PARSE` 400) — attribute access must use dot
+  notation, `attributes.ce-subject`, confirmed to parse correctly even
+  though the key itself contains a hyphen.
+  Omitted entirely from the request body when not passed (not sent as an
+  empty string), so default (unfiltered) behavior is preserved. `topic` and
+  `filter` are both immutable on a Pub/Sub subscription after creation, and
+  `ensure_pubsub_subscription` now enforces this: on a 409 (subscription
+  already exists) it fetches the existing subscription
+  (`get_pubsub_subscription`) and compares its `topic`/`filter` against what
+  was requested (`subscription_config_mismatch`) — a match is still treated
+  as idempotent success, but a mismatch is a hard `CliError::PubsubSubscriptionMismatch`
+  instead of the previous silent no-op. This means the "share one
+  `--pubsub-subscription` across multiple spaces" pattern described above is
+  **not** compatible with per-space `--message-filter`: filtering scoped to
+  one space needs a dedicated (not shared) `--pubsub-subscription` for that
+  space, since the filter applies to the whole subscription.
 
 ## Implemented commands
 
@@ -249,7 +280,7 @@ Both files live under `$XDG_CONFIG_HOME/google-chat-cli/` (falling back to
 | `spaces list [--page-size --page-token]` | Lists spaces (`spaces.list`) the authenticated identity belongs to. Verified live — real spaces returned, types (`SPACE`/`GROUP_CHAT`/`DIRECT_MESSAGE`) confirmed. |
 | `messages list --space <id> [--page-size --page-token --order-by]` | Lists messages in a space (`spaces.messages.list`). Chronological by default (`createTime ASC`, the Chat API's own default) — the context-recovery path for an agent resuming after a gap or summarization. `--order-by "createTime DESC"` gets the most recent first. `--space` accepts bare id or full `spaces/{id}`. Verified live against real conversation history both orderings, both id forms. |
 | `messages send --space <id> --text <text>` | Creates a message (`spaces.messages.create`) in a space; prints the created Message (including its `name`). Not gated by `--confirm` — visible but not data-destructive. Verified live: real message delivered and visible to the other party, both `--space` id forms confirmed. |
-| `subscription create --space <id> --topic <topic> --pubsub-subscription <sub> [--event-type ...]` | Ensures the Pub/Sub pull subscription exists (idempotent), then creates a Workspace Events subscription delivering Chat events for the space to that topic. Verified live — real subscription created, `state: ACTIVE`. The subscription expires after ~4h (Workspace Events API's own default TTL); pass its `name` to `listen --workspace-events-subscription` to keep it renewed (BACKLOG.md GCHAT-4). |
+| `subscription create --space <id> --topic <topic> --pubsub-subscription <sub> [--event-type ... --message-filter <filter>]` | Ensures the Pub/Sub pull subscription exists (idempotent), optionally scoped with a Pub/Sub filter expression via `--message-filter` (e.g. to limit delivery to one space), then creates a Workspace Events subscription delivering Chat events for the space to that topic. On a pre-existing pull subscription with a different `--topic`/`--message-filter` than requested, fails with `PubsubSubscriptionMismatch` instead of silently ignoring the mismatch (both fields are immutable after creation). Verified live — real subscription created, `state: ACTIVE`. `--message-filter` verified live 2026-07-14 against `spaces/AAQAtCLmaho`/project `mercury-500017`: a matching `hasPrefix(attributes.ce-subject, "//chat.googleapis.com/spaces/AAQAtCLmaho")` filter both let a real test message through and, on a second `subscription create` reusing the same `--pubsub-subscription` with a different filter, correctly failed with `PubsubSubscriptionMismatch` (exit code 1) instead of silently succeeding. The subscription expires after ~4h (Workspace Events API's own default TTL); pass its `name` to `listen --workspace-events-subscription` to keep it renewed (BACKLOG.md GCHAT-4). |
 | `subscription delete --name <name>` | Deletes a Workspace Events subscription, stopping delivery immediately — call when an agent leaves a conversation, instead of relying on the ~4h expiry. Verified live: real subscription deleted (`done: true`); a second delete on the same name correctly returned `403 SUBSCRIPTION_ACCESS_DENIED` (Workspace Events conflates "gone" with "no permission" in this error). |
 | `listen --pubsub-subscription <sub> --workspace-events-subscription <name> [--max-messages N]` | Streams messages from a Pub/Sub subscription via `google-cloud-pubsub`, printing each as NDJSON and acking it. Refreshes its own token every 5 min and renews the Workspace Events subscription's TTL every 30 min, both in the background; stops cleanly on SIGINT/SIGTERM. Verified live — a real `messages send` was received and printed within ~2s, `kill -TERM <pid>` exited cleanly, and the renewal PATCH call was confirmed directly (pushed `expireTime` out another ~4h, same scopes, no extra scope needed). Neither background task's periodic *trigger* was observed firing during an actual `listen` run (would need a 5/30-minute-long session) — the calls they invoke were verified directly instead (BACKLOG.md GCHAT-3, GCHAT-4). |
 

@@ -19,11 +19,12 @@ pub fn run(command: SubscriptionCommand, select: cli_fields::Select<'_>) -> Resu
             topic,
             pubsub_subscription,
             event_type,
+            message_filter,
         } => {
             let credentials = authenticated_credentials()?;
             let client = EventsClient::new(&credentials.access_token);
             client
-                .ensure_pubsub_subscription(&pubsub_subscription, &topic)
+                .ensure_pubsub_subscription(&pubsub_subscription, &topic, message_filter.as_deref())
                 .map_err(EventsClientError::into_pubsub_error)?;
             let value = client
                 .create_workspace_events_subscription(&space, &event_type, &topic)

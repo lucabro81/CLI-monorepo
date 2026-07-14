@@ -180,7 +180,14 @@ pub enum SubscriptionCommand {
     /// JSON. Pair with `google-chat listen --pubsub-subscription <name>` to
     /// receive the events. Always prints its full result regardless of
     /// --select — a single subscription object, fixed-shape.
-    #[command(after_help = "Example:\n  google-chat subscription create --space spaces/AAQA-_d58OQ --topic projects/my-project/topics/my-topic --pubsub-subscription projects/my-project/subscriptions/my-sub\n\n--space accepts either the bare id or the full \"spaces/...\" resource name.\n--event-type can be repeated; defaults to google.workspace.chat.message.v1.created.\nValid event types: google.workspace.chat.message.v1.created, .updated, .deleted.")]
+    ///
+    /// --topic and --message-filter are immutable once the pull subscription
+    /// is created: reusing the same --pubsub-subscription name across calls
+    /// with a different --topic or --message-filter fails instead of
+    /// silently keeping the original configuration. Per-space filtering
+    /// therefore needs a dedicated --pubsub-subscription per space, not one
+    /// shared across spaces.
+    #[command(after_help = "Example:\n  google-chat subscription create --space [SPACE_ID] --topic projects/my-project/topics/my-topic --pubsub-subscription projects/my-project/subscriptions/my-sub\n\n--space accepts either the bare id or the full \"spaces/...\" resource name.\n--event-type can be repeated; defaults to google.workspace.chat.message.v1.created.\nValid event types: google.workspace.chat.message.v1.created, .updated, .deleted.\n--message-filter sets the Pub/Sub subscription's filter (see https://cloud.google.com/pubsub/docs/subscription-message-filter), e.g.\n  --message-filter 'hasPrefix(attributes.ce-subject, \"//chat.googleapis.com/spaces/[SPACE_ID]\")'")]
     Create {
         /// Space to subscribe to — bare id or full "spaces/{id}" resource name
         #[arg(long)]
@@ -194,6 +201,9 @@ pub enum SubscriptionCommand {
         /// Chat event type to subscribe to (repeatable); default: google.workspace.chat.message.v1.created
         #[arg(long, default_values_t = ["google.workspace.chat.message.v1.created".to_string()])]
         event_type: Vec<String>,
+        /// Pub/Sub filter expression applied to the pull subscription, e.g. `hasPrefix(attributes.ce-subject, "//chat.googleapis.com/spaces/SPACE_ID")` to scope delivery to one space (see <https://cloud.google.com/pubsub/docs/subscription-message-filter>)
+        #[arg(long)]
+        message_filter: Option<String>,
     },
     /// Delete a Workspace Events subscription so it stops delivering events
     ///
