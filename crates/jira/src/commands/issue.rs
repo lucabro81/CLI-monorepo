@@ -16,16 +16,23 @@ use crate::context::{authenticated_client, print_json};
 use crate::error::CliError;
 
 /// Dispatches an `IssueCommand` variant to the appropriate Jira API call.
+///
+/// `authenticated_client()` is called per-arm rather than once up front, so
+/// that free, local validation (`Delete`'s `--confirm` check) runs before
+/// the network round-trip a token refresh may require — a caller who forgot
+/// `--confirm` finds out immediately instead of waiting on (and possibly
+/// being confused by) an unrelated auth failure.
 pub fn run(command: IssueCommand, select: cli_fields::Select<'_>) -> Result<(), CliError> {
-    let client = authenticated_client()?;
     match command {
         IssueCommand::Search { jql, max_results, page_token, fields } => {
+            let client = authenticated_client()?;
             let value = client
                 .search_issues(&jql, max_results, page_token.as_deref(), fields.as_deref())
                 .map_err(client_error_to_cli)?;
             print_json(&value, select)
         }
         IssueCommand::Get { key } => {
+            let client = authenticated_client()?;
             let value = client.get_issue(&key).map_err(client_error_to_cli)?;
             print_json(&value, select)
         }
@@ -37,6 +44,7 @@ pub fn run(command: IssueCommand, select: cli_fields::Select<'_>) -> Result<(), 
             assignee,
             priority,
         } => {
+            let client = authenticated_client()?;
             let value = client
                 .create_issue(
                     &project,
@@ -58,6 +66,7 @@ pub fn run(command: IssueCommand, select: cli_fields::Select<'_>) -> Result<(), 
             if !confirm {
                 return Err(CliError::DeleteNotConfirmed { key });
             }
+            let client = authenticated_client()?;
             client
                 .delete_issue(&key, delete_subtasks)
                 .map_err(client_error_to_cli)?;
@@ -66,6 +75,7 @@ pub fn run(command: IssueCommand, select: cli_fields::Select<'_>) -> Result<(), 
             print_json(&result, select.or_all())
         }
         IssueCommand::Transitions { key } => {
+            let client = authenticated_client()?;
             let value = client
                 .list_transitions_json(&key)
                 .map_err(client_error_to_cli)?;
@@ -73,6 +83,7 @@ pub fn run(command: IssueCommand, select: cli_fields::Select<'_>) -> Result<(), 
             print_json(&value, select.or_all())
         }
         IssueCommand::Transition { key, to } => {
+            let client = authenticated_client()?;
             let transitions = client.get_transitions(&key).map_err(client_error_to_cli)?;
             let matched = transitions.iter().find(|t| t.name.eq_ignore_ascii_case(&to));
             let transition = matched.ok_or_else(|| {
@@ -97,6 +108,7 @@ pub fn run(command: IssueCommand, select: cli_fields::Select<'_>) -> Result<(), 
         IssueCommand::Comment {
             command: CommentCommand::Add { key, body },
         } => {
+            let client = authenticated_client()?;
             let value = client.add_comment(&key, &body).map_err(client_error_to_cli)?;
             // Exempt: a single comment object, fixed shape.
             print_json(&value, select.or_all())
@@ -104,6 +116,7 @@ pub fn run(command: IssueCommand, select: cli_fields::Select<'_>) -> Result<(), 
         IssueCommand::Comment {
             command: CommentCommand::Remove { key, id },
         } => {
+            let client = authenticated_client()?;
             client
                 .delete_comment(&key, &id)
                 .map_err(client_error_to_cli)?;
