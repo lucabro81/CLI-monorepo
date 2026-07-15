@@ -436,19 +436,27 @@ E2e tests call the real Google Chat API. They are all marked `#[ignore]` and
 never run as part of the normal test suite. Unlike jira, coverage is
 deliberately **read-only**: `spaces list` and `messages list` only.
 `messages send` creates real, visible messages in spaces shared with real
-people, so it's covered only by manual `cargo run` testing during
-development, not by an automated test (see `BACKLOG.md` GCHAT-2).
+people, and `messages delete` permanently removes real messages, so both are
+covered only by manual `cargo run` testing during development, not by an
+automated test (see `BACKLOG.md` GCHAT-2).
 `subscription create` (creates real GCP subscriptions) and `listen` (a
 long-running process) are likewise only covered by manual testing, not
 automated e2e tests (see `BACKLOG.md` GCHAT-3).
 
 **Prerequisites:** `google-chat auth login --user` (or `init`) must have been
-completed on this machine.
+completed on this machine. One test additionally needs `GOOGLE_CHAT_E2E_SPACE`
+set to a Chat space safe for repeated automated checks — either exported
+inline per run, or set once in a workspace-root `.env` file (copy
+`.env.example`, gitignored); `setup()` loads it automatically, and an
+already-exported value still takes precedence.
 
 **Running:**
 
 ```sh
 cargo test -p google-chat -- --ignored
+
+# The space-scoped test additionally needs GOOGLE_CHAT_E2E_SPACE if not already in .env:
+GOOGLE_CHAT_E2E_SPACE=spaces/AAAAAAAAAAA cargo test -p google-chat e2e_messages_list_on_designated_test_space_succeeds -- --ignored
 ```
 
 No isolation/cleanup step is needed — these tests create nothing.

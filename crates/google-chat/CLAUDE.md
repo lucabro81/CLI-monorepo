@@ -48,7 +48,9 @@ src/
                     variants for the new commands, and a transparent Select
                     variant wrapping cli_fields::RenderError.
   tests/          — all *_tests.rs files, mirroring the src/ layout (see root
-                    CLAUDE.md's "Test file convention").
+                    CLAUDE.md's "Test file convention"); e2e_tests.rs loads a
+                    workspace-root .env (GOOGLE_CHAT_E2E_SPACE) via dotenvy
+                    in setup() — see BACKLOG.md TESTENV-1, README.md Testing.
   main.rs         — pure dispatch: resolve --select/--select-all into a
                     cli_fields::Select once, match Command, call commands::*.
 ```

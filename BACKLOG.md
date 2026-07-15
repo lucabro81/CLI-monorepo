@@ -209,6 +209,17 @@ there, not just jira.
 
 ---
 
+### TESTENV-1 — RESOLVED: `.env`-based e2e test-target configuration, across crates
+**Found:** 2026-07-14, while adding `google-chat messages delete`
+**Context:** every crate's e2e tests need a real, pre-agreed test target, and today that's handled two different, both-imperfect ways: jira reads `JIRA_E2E_PROJECT` from an inline env var supplied on the command line each run (`JIRA_E2E_PROJECT=KAN cargo test -p jira -- --ignored`), not persisted anywhere in the repo; google-chat has no env var at all — its equivalent test space (`spaces/AAQAtCLmaho`, `spaces/ud85UsAAAAE`) lives only in conversational memory across sessions, not in the codebase. No crate uses a `.env` file or the `dotenvy` crate (confirmed: no such dependency anywhere in `Cargo.lock`, no `.env*` file in the repo).
+**User's ask:** a proper `.env`-based convention, applying to jira and google-chat at minimum, so e2e test targets are configured once and persisted in the environment/repo (e.g. a checked-in `.env.example` + a gitignored local `.env`) rather than re-typed per invocation or kept as tribal knowledge.
+**Why it matters beyond convenience:** for `google-chat`, this is also a prerequisite for closing GCHAT-2 — a safe, explicit, self-cleaning e2e test for `messages send`+`messages delete` needs a specific known space id available to the test code, not just "first space returned by `spaces.list`".
+**Resolved 2026-07-15:** added `dotenvy` as a `[dev-dependencies]` entry to jira and google-chat; a workspace-root `.env.example` (checked in, placeholder values) documents `JIRA_E2E_PROJECT` and `GOOGLE_CHAT_E2E_SPACE`; `.env` itself is gitignored and holds the real local values (`KAN`, `spaces/AAQAtCLmaho`). Both crates' `src/tests/e2e_tests.rs::setup()` call `dotenvy::dotenv().ok()` first, so `.env` is loaded automatically — an already-exported env var still takes precedence (dotenvy never overrides an existing value), so the old inline-per-run style keeps working unchanged. `google-chat` also gained a `test_space()` helper (mirroring jira's `project_key()`) and a new read-only e2e test, `e2e_messages_list_on_designated_test_space_succeeds`, giving `GOOGLE_CHAT_E2E_SPACE` a real consumer instead of sitting unused. **Verified live**: ran `e2e_messages_list_on_designated_test_space_succeeds` with both `JIRA_E2E_PROJECT`/`GOOGLE_CHAT_E2E_SPACE` explicitly unset in the shell — it passed, confirming the value came from `.env`, not a leftover export.
+**Residual, not done:** `new-cli-crate`'s scaffold was not updated to wire this in by default for future crates — still copy-paste-and-adapt for now. Add when a third crate needs e2e tests.
+**See also:** GCHAT-2 (still open — `GOOGLE_CHAT_E2E_SPACE` existing doesn't by itself authorize automated `messages send`/`delete`; that still needs explicit confirmation the designated space is safe for repeated automated message cycles, not just read-only checks).
+
+---
+
 ## `crates/google-chat`
 
 ### GCHAT-1 — Service-account/domain-wide-delegation login not yet activated
@@ -220,11 +231,11 @@ there, not just jira.
 
 ---
 
-### GCHAT-2 — `messages send` deliberately has no automated e2e test
-**Found:** 2026-06-23, while adding read-only e2e tests for `spaces list`/`messages list`
-**Context:** `crates/google-chat/src/tests/e2e_tests.rs` covers `spaces.list` and `messages.list` (read-only, no side effects). `messages send` is excluded on purpose: it creates a real, visible message in a real space shared with a real person — currently the manual live test target is `spaces/ud85UsAAAAE`, a DM with a colleague who's aware test messages might appear there occasionally, but who has **not** been told this could become an automated/repeated test.
-**Current behaviour:** `messages send` is verified only via manual `cargo run` smoke tests during development, not by any test that runs as part of `cargo test`.
-**Add when:** the user confirms the colleague has been informed that automated tests may send messages to that space (or a different dedicated test space is set up instead) — then add an `#[ignore]` e2e test for `messages send` following jira's `IssueGuard`-style pattern if cleanup/deletion becomes possible, or simply documenting that the test message is expected and harmless if not.
+### GCHAT-2 — `messages send`/`messages delete` deliberately have no automated e2e test
+**Found:** 2026-06-23, while adding read-only e2e tests for `spaces list`/`messages list`; extended 2026-07-14 when `messages delete` was added
+**Context:** `crates/google-chat/src/tests/e2e_tests.rs` covers `spaces.list` and `messages.list` (read-only, no side effects). `messages send` is excluded on purpose: it creates a real, visible message in a real space shared with a real person — currently the manual live test target is `spaces/ud85UsAAAAE`, a DM with a colleague who's aware test messages might appear there occasionally, but who has **not** been told this could become an automated/repeated test. `messages delete` is excluded for the same reason, and more conservatively still — it permanently removes a real message with no undo, so even a self-cleaning e2e test needs a space where automated create+delete cycles are known and accepted, not just tolerated.
+**Current behaviour:** `messages send` and `messages delete` are verified only via manual `cargo run` smoke tests during development, not by any test that runs as part of `cargo test`.
+**Add when:** the user confirms a specific space is designated and safe for repeated automated `messages send`+`messages delete` cycles — `GOOGLE_CHAT_E2E_SPACE`/`.env` (see the cross-crate `TESTENV-1` entry below, now resolved) already has a place to record that space id once this is unblocked — then add an `#[ignore]` e2e test following jira's `IssueGuard`-style self-cleaning pattern: send a disposable message, assert on it, delete it via `messages delete` in teardown.
 
 ---
 

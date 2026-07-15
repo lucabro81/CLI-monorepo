@@ -722,6 +722,7 @@ dependencies = [
  "clap",
  "cli-fields",
  "dirs",
+ "dotenvy",
  "google-cloud-auth",
  "google-cloud-pubsub",
  "http",

@@ -4,6 +4,11 @@
 //!
 //! - `google-chat auth login --user` (or `init`) must have been run on this
 //!   machine — these tests use whatever credentials are already stored.
+//! - Some tests additionally need `GOOGLE_CHAT_E2E_SPACE` set to a Chat
+//!   space safe for repeated automated checks — either exported inline per
+//!   run, or via a workspace-root `.env` file (see `.env.example`; loaded
+//!   automatically by `setup()` below, an already-exported value always
+//!   wins over `.env`).
 //!
 //! # Running
 //!
@@ -15,10 +20,11 @@
 //!
 //! Unlike jira's e2e suite, these tests are deliberately read-only —
 //! `spaces.list` and `messages.list` only. `messages send` creates real,
-//! visible messages in spaces shared with real people (colleagues), so it
-//! is **not** covered by an automated/repeatable e2e test — see
-//! `BACKLOG.md` for the reasoning. Manual live verification (as done while
-//! implementing the command) is the only check for `messages send`.
+//! visible messages in spaces shared with real people (colleagues), and
+//! `messages delete` permanently removes real messages, so neither is
+//! covered by an automated/repeatable e2e test — see `BACKLOG.md` GCHAT-2
+//! for the reasoning. Manual live verification (as done while implementing
+//! each command) is the only check for both.
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
@@ -26,7 +32,12 @@ use crate::auth;
 use crate::client::GoogleChatClient;
 use crate::context;
 
+/// Builds an authenticated `GoogleChatClient`. Loads `.env` from the
+/// workspace root first (if present) so `GOOGLE_CHAT_E2E_SPACE` doesn't need
+/// to be exported inline every run — an already-exported value still takes
+/// precedence.
 fn setup() -> GoogleChatClient {
+    dotenvy::dotenv().ok();
     let config_dir = context::config_dir().expect("could not resolve config dir");
     let oauth_config = auth::OAuthConfig::load(&auth::app_config_path(&config_dir))
         .expect("app.json not found — run `google-chat init` first");
@@ -34,6 +45,13 @@ fn setup() -> GoogleChatClient {
         auth::load_credentials(&oauth_config, &auth::credentials_path(&config_dir))
             .expect("not authenticated — run `google-chat auth login --user` first");
     GoogleChatClient::new(&credentials)
+}
+
+/// Returns the designated e2e test space from the environment, panicking
+/// with a clear message if unset.
+fn test_space() -> String {
+    std::env::var("GOOGLE_CHAT_E2E_SPACE")
+        .expect("set GOOGLE_CHAT_E2E_SPACE to a Chat space safe for automated e2e checks")
 }
 
 #[test]
@@ -75,6 +93,27 @@ fn e2e_messages_list_on_first_space_succeeds() {
     let response = client
         .list_messages(first_space, 10, None, None)
         .unwrap_or_else(|e| panic!("messages.list should succeed for {first_space}: {e}"));
+
+    assert!(
+        response.get("messages").is_none_or(serde_json::Value::is_array),
+        "if present, \"messages\" must be an array"
+    );
+}
+
+#[test]
+#[ignore = "e2e: requires credentials and GOOGLE_CHAT_E2E_SPACE"]
+fn e2e_messages_list_on_designated_test_space_succeeds() {
+    let client = setup();
+    let space = test_space();
+
+    // Unlike e2e_messages_list_on_first_space_succeeds (whatever space
+    // happens to be first for this account), this targets the specific
+    // space designated safe for repeated automated checks — the
+    // prerequisite BACKLOG.md's GCHAT-2 needs before messages send/delete
+    // can get their own automated e2e coverage.
+    let response = client
+        .list_messages(&space, 10, None, None)
+        .unwrap_or_else(|e| panic!("messages.list should succeed for {space}: {e}"));
 
     assert!(
         response.get("messages").is_none_or(serde_json::Value::is_array),
