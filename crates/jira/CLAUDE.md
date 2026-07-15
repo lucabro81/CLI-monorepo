@@ -49,6 +49,12 @@ JIRA_E2E_PROJECT=KAN cargo test -p jira -- --ignored --test-threads=1
 JIRA_E2E_PROJECT=KAN cargo test -p jira e2e_cleanup -- --ignored
 ```
 
+`JIRA_E2E_PROJECT` can also be set once in a workspace-root `.env` (see
+`.env.example`) instead of exporting it inline every run — `setup()` in
+`src/tests/e2e_tests.rs` loads it via `dotenvy::dotenv()`, and an
+already-exported value still takes precedence. See `BACKLOG.md`'s
+`TESTENV-1` for why this exists.
+
 ## Test file convention
 
 See root `CLAUDE.md` for the general `src/tests/` convention and the

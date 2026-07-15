@@ -268,6 +268,11 @@ E2e tests call the real Jira API. They are all marked `#[ignore]` and never run 
 1. `jira auth login` must have been completed on this machine.
 2. A writable Jira project must exist. Set its key via the `JIRA_E2E_PROJECT` environment variable (e.g. `KAN`). The project must allow creating and deleting Task issues.
 
+`JIRA_E2E_PROJECT` can be exported inline per run (as below), or set once in a
+workspace-root `.env` file (copy `.env.example`, gitignored) — it's loaded
+automatically before every e2e test runs. An inline/exported value always
+takes precedence over `.env`.
+
 **Running:**
 
 ```sh
@@ -276,6 +281,9 @@ JIRA_E2E_PROJECT=KAN cargo test -p jira -- --ignored --test-threads=1
 
 # Run a single test
 JIRA_E2E_PROJECT=KAN cargo test -p jira e2e_smoke_doctor -- --ignored
+
+# Same, relying on JIRA_E2E_PROJECT from a workspace-root .env instead:
+cargo test -p jira e2e_smoke_doctor -- --ignored
 ```
 
 > **Note:** use `--test-threads=1`. The search tests run JQL queries scoped to the whole project (e.g. for pagination); when other tests create/delete issues concurrently, those queries can return inconsistent results.

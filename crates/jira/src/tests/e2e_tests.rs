@@ -3,7 +3,9 @@
 //! # Prerequisites
 //!
 //! - `jira auth login` must have been run on this machine.
-//! - The env var `JIRA_E2E_PROJECT` must be set to a writable Jira project key (e.g. `KAN`).
+//! - The env var `JIRA_E2E_PROJECT` must be set to a writable Jira project key (e.g. `KAN`) —
+//!   either exported inline per run, or via a workspace-root `.env` file (see `.env.example`;
+//!   loaded automatically by `setup()` below, an already-exported value always wins over `.env`).
 //!
 //! # Running
 //!
@@ -51,8 +53,11 @@ fn project_key() -> String {
 }
 
 /// Builds an authenticated `JiraClient` and returns the credentials alongside it
-/// so they can be stored in an `IssueGuard`.
+/// so they can be stored in an `IssueGuard`. Loads `.env` from the workspace
+/// root first (if present) so `JIRA_E2E_PROJECT` doesn't need to be exported
+/// inline every run — an already-exported value still takes precedence.
 fn setup() -> (JiraClient, Credentials) {
+    dotenvy::dotenv().ok();
     let config_dir = context::config_dir().expect("could not resolve config dir");
     let oauth_config = auth::OAuthConfig::load(&auth::app_config_path(&config_dir))
         .expect("app.json not found — run `jira init` first");
