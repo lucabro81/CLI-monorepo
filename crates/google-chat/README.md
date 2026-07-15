@@ -62,7 +62,7 @@ setup by a Workspace **super-admin**:
 3. In the Google Admin Console (admin.google.com → Security → Access and
    data control → API controls → Domain-wide delegation), add that Client
    ID authorized for exactly these scopes (comma-separated):
-   `https://www.googleapis.com/auth/chat.spaces.readonly,https://www.googleapis.com/auth/chat.messages.readonly,https://www.googleapis.com/auth/chat.messages.create,https://www.googleapis.com/auth/chat.memberships.readonly,https://www.googleapis.com/auth/pubsub`
+   `https://www.googleapis.com/auth/chat.spaces.readonly,https://www.googleapis.com/auth/chat.messages.readonly,https://www.googleapis.com/auth/chat.messages.create,https://www.googleapis.com/auth/chat.messages,https://www.googleapis.com/auth/chat.memberships.readonly,https://www.googleapis.com/auth/pubsub`
 4. Add a `service_account` block to `app.json`, using `client_email` and
    `private_key` from the downloaded key, and `impersonate_user` set to the
    service user's email:
@@ -93,7 +93,10 @@ cargo run -p google-chat -- init
 `auth login` (no flags) uses the service account from step 5, silently. `auth
 login --user` opens Google's consent screen in your browser, listing the
 requested scopes (`chat.spaces.readonly`, `chat.messages.readonly`,
-`chat.messages.create`, `chat.memberships.readonly`, `pubsub`).
+`chat.messages.create`, `chat.messages`, `chat.memberships.readonly`, `pubsub`).
+If you logged in before `chat.messages` was added, re-run `auth login --user`
+to re-consent — no Cloud Console changes needed, since the consent screen is
+Internal (step 2 above).
 `google-chat init` does step 4 plus the `--user`
 login together: it prints setup instructions, prompts for Client ID and
 Client Secret, writes `app.json`, runs the interactive OAuth flow, and
@@ -272,6 +275,24 @@ cargo run -p google-chat -- messages send --space AAQA-_d58OQ --text "Same thing
 **Flags:**
 - `--space <ID>` (required) — bare space id or full `spaces/{id}` resource name
 - `--text <TEXT>` (required) — plain-text message body
+
+### `google-chat messages delete --name <name> --confirm`
+
+Permanently deletes a message — it disappears for everyone immediately, with
+no undo. Requires the `chat.messages` scope (re-run `auth login --user` if
+you logged in before this command was added).
+
+Prints a synthesized `{"deleted": true, "name": ...}` confirmation object —
+the Chat API itself returns an empty response on success.
+
+```sh
+cargo run -p google-chat -- messages delete --name spaces/AAQA-_d58OQ/messages/abc123.abc123 --confirm
+```
+
+**Flags:**
+- `--name <NAME>` (required) — full message resource name `spaces/{space}/messages/{message}`, from the `name` field of `messages send`'s or `messages list`'s output
+- `--confirm` (required) — explicit acknowledgment that this is irreversible; omitting it fails immediately with the exact retry command, before any network call
+- `--delete-threaded-replies` (optional) — also deletes the message's threaded replies (the Chat API's `force` parameter); without it, deletion fails if the message has replies
 
 ### `google-chat subscription create`
 

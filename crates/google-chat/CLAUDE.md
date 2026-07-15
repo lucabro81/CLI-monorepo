@@ -145,11 +145,18 @@ on a fixed schedule — no rotate-on-every-use concern for the 3LO path.
 **Scopes** (both grants): `https://www.googleapis.com/auth/chat.spaces.readonly
 https://www.googleapis.com/auth/chat.messages.readonly
 https://www.googleapis.com/auth/chat.messages.create
+https://www.googleapis.com/auth/chat.messages
 https://www.googleapis.com/auth/chat.memberships.readonly
-https://www.googleapis.com/auth/pubsub`. The last two were added for
-`subscription create`/`listen` — verified live (`BACKLOG.md` GCHAT-3):
-`chat.spaces.readonly` + `chat.memberships.readonly` are sufficient for
-Workspace Events subscriptions, no extra scope needed.
+https://www.googleapis.com/auth/pubsub`. `chat.memberships.readonly`/`pubsub`
+were added for `subscription create`/`listen` — verified live (`BACKLOG.md`
+GCHAT-3): `chat.spaces.readonly` + `chat.memberships.readonly` are sufficient
+for Workspace Events subscriptions, no extra scope needed. `chat.messages`
+was added for `messages delete` — per the Chat API's `spaces.messages.delete`
+docs, deletion requires `chat.bot`/`chat.import`/`chat.messages` (one of),
+and this crate's user-auth (3LO) path only has `chat.messages` available to
+it. The narrower `chat.messages.readonly`/`chat.messages.create` scopes are
+intentionally left in place even though `chat.messages` is a superset —
+removing them was judged an unrelated cleanup, not folded into that change.
 
 **Token endpoint requests must be `application/x-www-form-urlencoded`**, not
 JSON — Google's `jwt-bearer` grant rejects a JSON body with
@@ -223,6 +230,20 @@ Both files live under `$XDG_CONFIG_HOME/google-chat-cli/` (falling back to
 - **`messages send` is not `--confirm`-gated**: unlike jira's `issue delete`,
   sending a message isn't irreversible data destruction — it's visible,
   ordinary chat activity. No confirmation flag.
+- **`messages delete` is this crate's first `--confirm`-gated command**,
+  mirroring jira's `issue delete`/`DeleteNotConfirmed` pattern exactly
+  (same error wording, same synthesized `{"deleted": true, "name": ...}`
+  response — the Chat API's `spaces.messages.delete` returns an empty body
+  on success). `--delete-threaded-replies` maps to the API's `force` query
+  param (deletion otherwise fails if the message has replies).
+  `commands/messages.rs::run` calls `authenticated_client()` **per match
+  arm** rather than once up front, specifically so `Delete`'s `--confirm`
+  check (free, local) runs before the network round-trip a token refresh
+  may require — otherwise a caller who forgot `--confirm` with expired
+  credentials would see a confusing auth error instead of the actionable
+  `DeleteNotConfirmed` one. `jira`'s `commands/issue.rs::run` had the same
+  hoisted-auth structure for `issue delete` and was fixed the same way in
+  the same change, once spotted here.
 - **`post_json`**: `client.rs` gained a `post_json` helper (mirroring jira's)
   for `create_message` — the crate's first write call. Same
   bearer-auth/status-check/JSON-decode shape as `get_json`.
@@ -298,6 +319,7 @@ Both files live under `$XDG_CONFIG_HOME/google-chat-cli/` (falling back to
 | `spaces list [--page-size --page-token]` | Lists spaces (`spaces.list`) the authenticated identity belongs to. Verified live — real spaces returned, types (`SPACE`/`GROUP_CHAT`/`DIRECT_MESSAGE`) confirmed. |
 | `messages list --space <id> [--page-size --page-token --order-by]` | Lists messages in a space (`spaces.messages.list`). Chronological by default (`createTime ASC`, the Chat API's own default) — the context-recovery path for an agent resuming after a gap or summarization. `--order-by "createTime DESC"` gets the most recent first. `--space` accepts bare id or full `spaces/{id}`. Verified live against real conversation history both orderings, both id forms. |
 | `messages send --space <id> --text <text>` | Creates a message (`spaces.messages.create`) in a space; prints the created Message (including its `name`). Not gated by `--confirm` — visible but not data-destructive. Verified live: real message delivered and visible to the other party, both `--space` id forms confirmed. |
+| `messages delete --name <name> --confirm [--delete-threaded-replies]` | Permanently deletes a message (`spaces.messages.delete`); prints a synthesized `{"deleted": true, "name": ...}` confirmation (the API itself returns nothing). First `--confirm`-gated command in this crate — omitting `--confirm` fails fast with `DeleteNotConfirmed`, before any network call. Requires the `chat.messages` scope (new, added alongside this command; re-consent via `auth login --user` needed for accounts logged in before this command existed). Verified live 2026-07-15 against `spaces/AAQAtCLmaho`: sent a disposable test message via `messages send`, deleted it, got the synthesized confirmation JSON, then confirmed via `messages list` that it no longer appears. `--delete-threaded-replies`/`force` behavior on a message that actually has replies was not separately exercised. |
 | `subscription create --space <id> --topic <topic> --pubsub-subscription <sub> (--message-filter <filter> \| --allow-unfiltered) [--event-type ...]` | Ensures the Pub/Sub pull subscription exists (idempotent), scoped with a Pub/Sub filter expression via `--message-filter` (one `hasPrefix(attributes.ce-subject, ...)` clause per space, OR-combinable for multiple spaces) — required unless `--allow-unfiltered` explicitly opts out, mirroring `--select`/`--select-all`'s mandatory-by-default pattern (fails fast with `MessageFilterRequired`, no network call, if neither is passed). Then creates a Workspace Events subscription delivering Chat events for the space to that topic. On a pre-existing pull subscription with a different `--topic`/`--message-filter` than requested, fails with `PubsubSubscriptionMismatch` instead of silently ignoring the mismatch (both fields are immutable after creation). Verified live — real subscription created, `state: ACTIVE`. `--message-filter` verified live 2026-07-14 against `spaces/AAQAtCLmaho`/project `mercury-500017`: a matching `hasPrefix(attributes.ce-subject, "//chat.googleapis.com/spaces/AAQAtCLmaho")` filter both let a real test message through and, on a second `subscription create` reusing the same `--pubsub-subscription` with a different filter, correctly failed with `PubsubSubscriptionMismatch` (exit code 1) instead of silently succeeding; an OR-combined multi-space filter was also confirmed to parse. The subscription expires after ~4h (Workspace Events API's own default TTL); pass its `name` to `listen --workspace-events-subscription` to keep it renewed (BACKLOG.md GCHAT-4). |
 | `subscription delete --name <name>` | Deletes a Workspace Events subscription, stopping delivery immediately — call when an agent leaves a conversation, instead of relying on the ~4h expiry. Verified live: real subscription deleted (`done: true`); a second delete on the same name correctly returned `403 SUBSCRIPTION_ACCESS_DENIED` (Workspace Events conflates "gone" with "no permission" in this error). |
 | `listen --pubsub-subscription <sub> --workspace-events-subscription <name> [--max-messages N]` | Streams messages from a Pub/Sub subscription via `google-cloud-pubsub`, printing each as NDJSON and acking it. Refreshes its own token every 5 min and renews the Workspace Events subscription's TTL every 30 min, both in the background; stops cleanly on SIGINT/SIGTERM. Verified live — a real `messages send` was received and printed within ~2s, `kill -TERM <pid>` exited cleanly, and the renewal PATCH call was confirmed directly (pushed `expireTime` out another ~4h, same scopes, no extra scope needed). Neither background task's periodic *trigger* was observed firing during an actual `listen` run (would need a 5/30-minute-long session) — the calls they invoke were verified directly instead (BACKLOG.md GCHAT-3, GCHAT-4). |

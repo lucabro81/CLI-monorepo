@@ -104,6 +104,36 @@ impl GoogleChatClient {
         self.post_json(&format!("/{parent}/messages"), &body)
     }
 
+    /// Permanently deletes a message. `name` is the full resource name
+    /// (`spaces/{space}/messages/{message}`). `delete_threaded_replies`
+    /// maps to the API's `force` query param — the request fails if the
+    /// message has threaded replies and this is `false`.
+    pub fn delete_message(&self, name: &str, delete_threaded_replies: bool) -> Result<(), ClientError> {
+        let url = format!(
+            "{}/{name}?force={delete_threaded_replies}",
+            endpoints::CHAT_API_BASE_URL
+        );
+
+        let response = self
+            .http
+            .delete(&url)
+            .bearer_auth(&self.access_token)
+            .header("Accept", "application/json")
+            .send()
+            .map_err(|e| ClientError::Request(e.to_string()))?;
+
+        let status = response.status();
+        if !status.is_success() {
+            let body = response.text().unwrap_or_default();
+            return Err(ClientError::Status {
+                status: status.as_u16(),
+                body,
+            });
+        }
+
+        Ok(())
+    }
+
     fn get_json(&self, path: &str) -> Result<serde_json::Value, ClientError> {
         self.get_json_absolute(&format!("{}{path}", endpoints::CHAT_API_BASE_URL))
     }

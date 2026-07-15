@@ -166,6 +166,26 @@ pub enum MessagesCommand {
         #[arg(long)]
         text: String,
     },
+    /// Permanently delete a message — requires --confirm
+    ///
+    /// Deletes a message from a space; this is irreversible and removes it
+    /// for everyone immediately. Requires the `chat.messages` scope
+    /// (re-run `auth login --user` if you logged in before this command was
+    /// added). On success prints a synthesized `{"deleted": true, "name":
+    /// ...}` confirmation object — the Chat API itself returns nothing.
+    /// Always prints its full result regardless of --select.
+    #[command(after_help = "Example:\n  google-chat messages delete --name spaces/AAQA-_d58OQ/messages/abc123.abc123 --confirm\n\n--name is the \"name\" field from `messages send`'s or `messages list`'s output.\nThis action is irreversible. --confirm must be passed explicitly so the caller acknowledges the deletion.\nPass --delete-threaded-replies if the message has threaded replies, otherwise the Chat API will refuse the request.")]
+    Delete {
+        /// Message to delete: full resource name "spaces/{space}/messages/{message}"
+        #[arg(long)]
+        name: String,
+        /// Explicitly confirm the deletion (required — omitting this fails the command)
+        #[arg(long)]
+        confirm: bool,
+        /// Also delete the message's threaded replies, if any (maps to the Chat API's "force" parameter)
+        #[arg(long)]
+        delete_threaded_replies: bool,
+    },
 }
 
 #[derive(Debug, Subcommand)]

@@ -233,6 +233,59 @@ fn rejects_messages_send_without_space_flag() {
 }
 
 #[test]
+fn parses_messages_delete_with_name_only() {
+    let cli = Cli::parse_from([
+        "google-chat",
+        "messages",
+        "delete",
+        "--name",
+        "spaces/AAQA-_d58OQ/messages/abc123",
+    ]);
+
+    assert!(matches!(
+        cli.command,
+        Command::Messages {
+            command: MessagesCommand::Delete {
+                ref name,
+                confirm,
+                delete_threaded_replies,
+            }
+        } if name == "spaces/AAQA-_d58OQ/messages/abc123" && !confirm && !delete_threaded_replies
+    ));
+}
+
+#[test]
+fn parses_messages_delete_with_all_flags() {
+    let cli = Cli::parse_from([
+        "google-chat",
+        "messages",
+        "delete",
+        "--name",
+        "spaces/AAQA-_d58OQ/messages/abc123",
+        "--confirm",
+        "--delete-threaded-replies",
+    ]);
+
+    assert!(matches!(
+        cli.command,
+        Command::Messages {
+            command: MessagesCommand::Delete {
+                ref name,
+                confirm,
+                delete_threaded_replies,
+            }
+        } if name == "spaces/AAQA-_d58OQ/messages/abc123" && confirm && delete_threaded_replies
+    ));
+}
+
+#[test]
+fn rejects_messages_delete_without_name_flag() {
+    let result = Cli::try_parse_from(["google-chat", "messages", "delete", "--confirm"]);
+
+    assert!(result.is_err());
+}
+
+#[test]
 fn parses_global_select_flag_before_subcommand() {
     let cli = Cli::parse_from(["google-chat", "--select", "foo,bar", "auth", "login"]);
 

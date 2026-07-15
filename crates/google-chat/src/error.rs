@@ -108,4 +108,10 @@ pub enum CliError {
         --allow-unfiltered to explicitly confirm unfiltered delivery is intended."
     )]
     MessageFilterRequired { pubsub_subscription: String },
+
+    #[error(
+        "deleting {name} is permanent and cannot be undone. \
+        Pass --confirm to execute: google-chat messages delete --name {name} --confirm"
+    )]
+    DeleteNotConfirmed { name: String },
 }
