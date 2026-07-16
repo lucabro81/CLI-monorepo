@@ -12,10 +12,47 @@ CLI for Jira Cloud, designed to be driven by an LLM agent (output is JSON, error
 
 ## Setup
 
-### 1. Create an Atlassian OAuth 2.0 (3LO) app
+Whatever the source, the CLI ends up needing the same thing: `client_id`/`client_secret` written to `app.json`, used by `jira auth login` to get tokens (`credentials.json`). There are two ways to obtain that `client_id`/`client_secret` pair:
+
+- **Option A — Service Account (recommended for agent-driven usage)**: generated directly in Atlassian's admin console, with site access assigned by an org admin at generation time. No OAuth "app" is created at all, and no human ever needs to authorize anything afterward — verified end-to-end against a real org: `jira auth login` and `jira doctor` (all six checks) succeed immediately with no prior browser step.
+- **Option B — 3LO app (human login)**: requires actually registering an OAuth 2.0 app in the developer console, plus one human completing a one-time browser consent before that app has access to any site. Only needed if you specifically want an interactive human identity (`jira auth login --user`), in addition to or instead of the agent identity — don't do this if all you need is agent access.
+
+Both options produce the same `app.json` shape and both work with the same `jira auth login` / `jira doctor` / `jira issue ...` commands afterward — nothing downstream of `app.json` needs to know which option you used.
+
+### Option A: Service Account credentials (recommended, no human login ever)
+
+Requires an Atlassian **organization** (admin.atlassian.com) — this is a different, org-wide console from developer.atlassian.com's per-developer app console used in Option B.
+
+1. Go to [admin.atlassian.com](https://admin.atlassian.com) → **Directory** → **Service accounts**. (Free tier includes a small number of free service accounts; Atlassian Guard Standard/Enterprise unlocks more. Check your org's current limit in the console if you're unsure.)
+2. Create (or select an existing) service account.
+3. On the service account, click **Create credentials** → **OAuth 2.0**.
+4. Select scopes: the Jira product scopes matching this CLI's needs — `read:jira-work`, `read:jira-user`, `write:jira-work`. (`offline_access` doesn't apply here: `client_credentials` never returns a refresh token, by design — see "Automatic renewal" below.)
+5. Copy the generated **Client ID** and **Client Secret** immediately — they are shown once.
+6. Write `$XDG_CONFIG_HOME/jira-cli/app.json` (typically `~/.config/jira-cli/app.json`):
+
+   ```json
+   {
+     "client_id": "your-service-account-client-id",
+     "client_secret": "your-service-account-client-secret"
+   }
+   ```
+
+7. Log in and verify — no browser involved:
+
+   ```sh
+   cargo run -p jira -- auth login
+   cargo run -p jira -- doctor
+   ```
+
+That's it. Site access for this credential was already assigned by whoever set up the service account in steps 1–3, in the admin console itself — there is no separate "grant access" step, and no equivalent of Option B's step below.
+
+### Option B: 3LO app (human login)
+
+Only do this if you specifically need a human/interactive login (`jira auth login --user`) — skip straight to Option A above if agent-only access is all you need.
 
 Go to [developer.atlassian.com/console/myapps](https://developer.atlassian.com/console/myapps/) and create a new **OAuth 2.0 integration**:
 
+- **Access type**: select **Resource-level**, not Account-level. This CLI only supports a single Jira site: `fetch_cloud_id` (`src/auth.rs`) takes the first entry returned by the accessible-resources endpoint and assumes it's the only one. Resource-level matches this — the consent screen limits the grant (and what `accessible-resources` returns) to the one site the user selects. Account-level would let one consent cover every site in the user's Atlassian account, which this codebase doesn't handle: multiple accessible sites would make `fetch_cloud_id` silently pick an arbitrary one. Supporting Account-level (letting the user or config pick which site to target) is a separate, deliberate change — not a setup detail to work around here.
 - **Callback/redirect URI**: `http://localhost:8080/callback`
 - **Permissions**: enable Jira API access with scopes `read:jira-work` and `read:jira-user` (more will be added as commands grow)
 
@@ -23,26 +60,11 @@ From the app's **Settings** page, note down the **Client ID** and **Client Secre
 
 > The third scope the CLI requests, `offline_access`, doesn't need to be enabled in the console — it's requested at runtime via the authorization URL and is what makes the refresh token possible.
 
-### 2. Write the app credentials file
+Write the same `app.json` shape as Option A (step 6 above), with this app's Client ID/Secret.
 
-Create `$XDG_CONFIG_HOME/jira-cli/app.json` (typically `~/.config/jira-cli/app.json`):
+Make sure the Atlassian account you'll log in with has access to at least one Jira Cloud site (e.g. `your-name.atlassian.net`). If it doesn't, authorization fails with "Access denied — this app requires access to a Jira site...". Create a free site at [atlassian.com/software/jira/free](https://www.atlassian.com/software/jira/free) if needed.
 
-```json
-{
-  "client_id": "your-client-id",
-  "client_secret": "your-client-secret"
-}
-```
-
-This file is static and hand-written — the CLI never modifies it. It's kept separate from `credentials.json` (the dynamic token store, see below) precisely so that automatic token writes never overwrite your app identity.
-
-### 3. Make sure the Atlassian account has a Jira site
-
-The OAuth account you log in with must have access to at least one Jira Cloud site (e.g. `your-name.atlassian.net`). If it doesn't, authorization fails with "Access denied — this app requires access to a Jira site...". Create a free site at [atlassian.com/software/jira/free](https://www.atlassian.com/software/jira/free) if needed.
-
-### 4. Grant the app access to your site (one-time, human step)
-
-The app you registered in step 1 has no access to any Jira site until a human explicitly grants it, by completing the consent screen once:
+Unlike Option A, this app has **no** access to any Jira site until a human explicitly grants it, by completing the consent screen once:
 
 ```sh
 cargo run -p jira -- init
@@ -50,15 +72,15 @@ cargo run -p jira -- init
 
 (or `cargo run -p jira -- auth login --user` if `app.json` is already set up)
 
-This opens the Atlassian **consent screen** in your browser, listing the site(s) the app is requesting access to (`read:jira-work read:jira-user write:jira-work offline_access`). **Approving this is the actual "install"/authorization step** — it's what makes the site show up in `https://api.atlassian.com/oauth/token/accessible-resources`, which both grant types use to resolve `cloud_id`.
+This opens the Atlassian **consent screen** in your browser, listing the site(s) the app is requesting access to (`read:jira-work read:jira-user write:jira-work offline_access`). **Approving this is the actual "install"/authorization step** — it's what makes the site show up in `https://api.atlassian.com/oauth/token/accessible-resources`. This one-time human step is specific to Option B — Option A's Service Account has no equivalent, because site access is assigned in the admin console directly, not via a consent screen.
 
-`jira init` does this plus steps 2 and writes `app.json` for you: it prints setup instructions, prompts for Client ID and Client Secret, writes `app.json`, runs this consent flow, and finally runs `jira doctor` as a confirmation.
+`jira init` does this plus writing `app.json`: it prints setup instructions, prompts for Client ID and Client Secret, writes `app.json`, runs this consent flow, and finally runs `jira doctor` as a confirmation. **`jira init` is only for Option B** — see the note in "Usage → `jira init`" below. If you're setting up a Service Account (Option A), skip `jira init` entirely.
 
-You must do this **at least once per Atlassian site**, signed in as a user who has access to that site. Until then, every login attempt — including the default `client_credentials` one below — fails (no accessible resources).
+You must do the browser consent **at least once per Atlassian site**, signed in as a user who has access to that site, before the default `jira auth login` (the `client_credentials` grant, unchanged either way) can succeed against this app's credentials.
 
-### 5. Day-to-day login
+### Day-to-day login
 
-Once step 4 has been completed, day-to-day login (e.g. for an agent) is non-interactive:
+Once `app.json` is in place — whichever option produced it — day-to-day login (e.g. for an agent) is the same, non-interactive command:
 
 ```sh
 cargo run -p jira -- auth login
@@ -80,9 +102,14 @@ The CLI supports two OAuth 2.0 grant types, both using the same `client_id`/`cli
 
 This is the expected mode for agent-driven usage: fast, no human interaction, and the resulting account has `accountType: "app"` (visible via `jira auth whoami`).
 
-This requires the OAuth app to already have been granted access to a Jira site — i.e. step 4 above (`jira init` / `jira auth login --user`) must have been completed at least once.
+Whether this works immediately depends on which Setup option produced `app.json`:
+
+- **Option A (Service Account)** — works immediately. Site access was already assigned by an org admin when the OAuth 2.0 credential was created in admin.atlassian.com; there is no prior-consent dependency at all.
+- **Option B (3LO app)** — requires the one-time human 3LO consent (`jira init` / `jira auth login --user`) to have been completed at least once for this app. Without it, this call fails with "no accessible resources" — Atlassian ties a 3LO app's site access to that one-time human authorization, not to the app registration itself.
 
 ### Human login: OAuth 2.0 (3LO) + PKCE — `jira auth login --user` or `jira init`
+
+This is Option B from Setup above — not needed at all if you're using a Service Account (Option A).
 
 The standard flow for apps that can't keep a secret fully safe (a CLI binary on a user's machine), combined with a confidential client (since Atlassian 3LO apps do issue a client secret).
 
@@ -102,6 +129,8 @@ Before each API call, the CLI checks whether the access token is expired (or abo
 ## Usage
 
 ### `jira init`
+
+**Only for Option B (3LO app) from Setup.** It always ends by running the interactive browser consent flow — there is no way to skip that step, because that flow is what "installs" a 3LO app's access to a Jira site. If you're setting up a Service Account (Option A), skip `jira init`: write `app.json` by hand (Setup, Option A, step 6) and run `jira auth login` directly.
 
 Interactive onboarding. Prints setup instructions, prompts for Client ID and Client Secret (or accepts `--client-id`/`--client-secret` flags for non-interactive use), writes `app.json`, runs the OAuth login flow, and prints a `jira doctor` JSON report as final confirmation.
 
@@ -130,7 +159,7 @@ cargo run -p jira -- auth login              # service account (client_credentia
 cargo run -p jira -- auth login --user       # human account (OAuth 2.0 3LO + PKCE)
 ```
 
-Run this once per machine, or again if `credentials.json` is lost or revoked. The `--user` flow must have been completed at least once (e.g. via `jira init`) before the default flow can succeed.
+Run this once per machine, or again if `credentials.json` is lost or revoked. If `app.json` holds a 3LO app's credentials (Setup Option B), the `--user` flow must have been completed at least once (e.g. via `jira init`) before the default flow can succeed. If `app.json` holds Service Account credentials (Setup Option A), the default flow works immediately — no prior `--user` run needed or possible.
 
 ### `jira auth whoami`
 

@@ -69,18 +69,29 @@ Two grant types, both using `client_id`/`client_secret` from `app.json`:
 - **`client_credentials`** (default, `auth login`) — `login_client_credentials()` POSTs `grant_type=client_credentials` + `audience=api.atlassian.com`, no browser. Returns `Credentials` with `refresh_token: None`. Expected mode for agent-driven usage; resulting account has `accountType: "app"`.
 - **3LO + PKCE** (`auth login --user`, also used by `init`) — `login()` builds the authorization URL, opens the browser, runs a one-shot TCP server on `localhost:8080` for the callback, exchanges the code for tokens, resolves `cloud_id` via the accessible-resources endpoint. Returns `Credentials` with `refresh_token: Some(...)`.
 
-Both grants resolve `cloud_id` via the accessible-resources endpoint after obtaining the access token.
+### App identity sourcing: 3LO app vs. Service Account
+
+`app.json`'s `client_id`/`client_secret` can come from either of two different Atlassian consoles, and this is what actually determines whether `client_credentials` needs a prior human step — not anything in this crate's code, which sends the identical request either way. Verified empirically against a real org: a Service Account's OAuth 2.0 credential works immediately with the existing `login_client_credentials()`/`fetch_cloud_id()` code, unmodified — `jira auth login` + `jira doctor` (all six checks) succeeded on the first try, no code change needed.
+
+| Source | Console | Site access provisioning | Can also do 3LO (`auth login --user`)? |
+|---|---|---|---|
+| 3LO app | developer.atlassian.com/console/myapps | Human completes the 3LO consent screen once (`jira init` / `auth login --user`); until then `client_credentials` fails with "no accessible resources" | Yes — that's what issues the credential in the first place |
+| Service Account | admin.atlassian.com → Directory → Service accounts → Create credentials → OAuth 2.0 | Assigned directly by an org admin at credential-creation time in the console; no consent screen exists or is needed | No — a Service Account's OAuth2 client only supports `client_credentials` |
+
+`jira init` always ends with the 3LO browser flow, so it only makes sense for the 3LO app path. Service Account setup skips `init` entirely: write `app.json` by hand, then run `jira auth login` directly (see README Setup, Option A).
+
+Both grants resolve `cloud_id` via the accessible-resources endpoint after obtaining the access token. `fetch_cloud_id` takes the first entry returned — this crate only supports a single Jira site per `app.json`/`credentials.json`. For the 3LO app path this requires the Atlassian app to be registered as **Resource-level** access type (not Account-level) in the developer console, so the 3LO consent screen limits the grant to one site (see README Setup, Option B). Supporting multiple sites (Account-level access, site selection) is a separate feature, not a config tweak.
 
 - **Refresh tokens rotate**: Atlassian invalidates the previous refresh token on every use. The new token pair must be written to `credentials.json` immediately after each refresh.
 - **Transparent renewal**: `renew(config, credentials)` dispatches to `refresh()` (if `refresh_token` is `Some`) or re-runs `login_client_credentials()` (if `None`, service account). `refresh()` itself returns `LoginError::Internal` if called with `refresh_token: None`. Both `load_credentials()` and `doctor`'s `check_credentials` go through `renew()` (with a 60s expiry buffer) — never call `refresh()` directly on possibly-expired credentials.
-- **Scopes**: `read:jira-work read:jira-user write:jira-work offline_access` (requested by the 3LO authorization URL; `client_credentials` inherits whatever scopes were granted to the app during the 3LO consent).
-- The `client_credentials` grant requires the `--user` flow to have been completed at least once for the app to have site access (e.g. via `jira init`).
+- **Scopes**: `read:jira-work read:jira-user write:jira-work offline_access` are what the 3LO authorization URL requests. `client_credentials` has no `scope` parameter in its own request body — it inherits whatever scopes were granted at credential-creation time: from the 3LO consent screen for a 3LO app, or from the scopes selected in admin.atlassian.com when the OAuth 2.0 credential was created for a Service Account.
+- The `client_credentials` grant only requires the `--user` flow to have been completed at least once **when `app.json` holds a 3LO app's credentials**. When `app.json` holds Service Account credentials, `client_credentials` works immediately — site access was already assigned by an org admin in the console, not via a consent step this crate could observe or trigger.
 
 ## Config layout (XDG-style)
 
 Both files live under `$XDG_CONFIG_HOME/jira-cli/` (falling back to `~/.config/jira-cli/`):
 
-- `app.json` — `{"client_id": "...", "client_secret": "..."}`. Static; written by `jira init` or by hand. Never modified at runtime.
+- `app.json` — `{"client_id": "...", "client_secret": "..."}`. Static; written by `jira init` (3LO app path only) or by hand (either path). Never modified at runtime. The shape is identical whether the credentials came from a 3LO app (developer.atlassian.com) or a Service Account (admin.atlassian.com) — see "OAuth / auth design" above for how the two differ in site-access provisioning.
 - `credentials.json` — OAuth tokens. Fully managed by the CLI; never edit by hand.
 
 Kept separate so automatic token writes never clobber the app identity.

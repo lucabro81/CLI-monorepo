@@ -28,6 +28,13 @@ use crate::error::CliError;
 const INSTRUCTIONS: &str = "\
 === jira init: Atlassian OAuth 2.0 app setup ===
 
+Note: this walks through creating a classic OAuth 2.0 (3LO) app for
+human/browser login. If you want agent-only login with no browser ever,
+use a Service Account instead (admin.atlassian.com -> Directory -> Service
+accounts -> Create credentials -> OAuth 2.0) and skip `jira init` entirely:
+write app.json by hand and run `jira auth login` directly. See README
+Setup, Option A, for the full walkthrough.
+
 Step 1: Go to https://developer.atlassian.com/console/myapps/
 Step 2: Click \"Create\" and choose \"OAuth 2.0 integration\".
 Step 3: Give it a name (e.g. \"jira-cli\").
