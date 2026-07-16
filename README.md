@@ -10,6 +10,16 @@ A Cargo workspace of CLI tools, one per external service, designed to be driven 
 | [bitbucket](crates/bitbucket/README.md) | Bitbucket Cloud (PRs, repos) | init/doctor/auth/repo get/list/create implemented — see crate CLAUDE.md for planned commands |
 | [google-chat](crates/google-chat/README.md) | Google Chat (Workspace) | auth implemented — see crate CLAUDE.md for planned commands |
 
+## Install prebuilt binaries
+
+No clone, no Rust toolchain needed — downloads the release binary for your platform (linux-x86_64, linux-arm64, macos-arm64) straight from GitHub Releases:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/lucabro81/CLI-monorepo/main/scripts/install.sh | bash -s install
+```
+
+Installs to `$HOME/.local/bin` by default (override with `INSTALL_DIR=...`). Same command with `update` re-downloads the latest version; `uninstall` removes them. Pass crate names to target just one, e.g. `... | bash -s install jira`.
+
 ## Development
 
 ```sh

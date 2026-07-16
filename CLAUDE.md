@@ -108,6 +108,7 @@ Clippy is configured at workspace level (`[workspace.lints.clippy]` in root `Car
 - Lint: `cargo clippy -p <crate>` — must pass with zero warnings before merging
 - Run a CLI: `cargo run -p <crate> -- <args>`, e.g. `cargo run -p jira -- issue get PROJ-123`
 - Help: `cargo run -p <crate> -- --help`
+- Install/update/uninstall prebuilt binaries from GitHub Releases (no clone, no cargo): `scripts/install.sh [install|update|uninstall] [crate...]` — see root README's "Install prebuilt binaries" section.
 
 ## CI/CD
 
