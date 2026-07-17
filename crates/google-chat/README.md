@@ -62,7 +62,7 @@ setup by a Workspace **super-admin**:
 3. In the Google Admin Console (admin.google.com → Security → Access and
    data control → API controls → Domain-wide delegation), add that Client
    ID authorized for exactly these scopes (comma-separated):
-   `https://www.googleapis.com/auth/chat.spaces.readonly,https://www.googleapis.com/auth/chat.messages.readonly,https://www.googleapis.com/auth/chat.messages.create,https://www.googleapis.com/auth/chat.messages,https://www.googleapis.com/auth/chat.memberships.readonly,https://www.googleapis.com/auth/pubsub`
+   `https://www.googleapis.com/auth/chat.spaces.readonly,https://www.googleapis.com/auth/chat.messages.readonly,https://www.googleapis.com/auth/chat.messages.create,https://www.googleapis.com/auth/chat.messages,https://www.googleapis.com/auth/chat.memberships.readonly,https://www.googleapis.com/auth/pubsub,https://www.googleapis.com/auth/directory.readonly`
 4. Add a `service_account` block to `app.json`, using `client_email` and
    `private_key` from the downloaded key, and `impersonate_user` set to the
    service user's email:
@@ -93,10 +93,15 @@ cargo run -p google-chat -- init
 `auth login` (no flags) uses the service account from step 5, silently. `auth
 login --user` opens Google's consent screen in your browser, listing the
 requested scopes (`chat.spaces.readonly`, `chat.messages.readonly`,
-`chat.messages.create`, `chat.messages`, `chat.memberships.readonly`, `pubsub`).
-If you logged in before `chat.messages` was added, re-run `auth login --user`
-to re-consent — no Cloud Console changes needed, since the consent screen is
-Internal (step 2 above).
+`chat.messages.create`, `chat.messages`, `chat.memberships.readonly`, `pubsub`,
+`directory.readonly`).
+If you logged in before `chat.messages` or `directory.readonly` were added,
+re-run `auth login --user` to re-consent — no Cloud Console changes needed,
+since the consent screen is Internal (step 2 above). `directory.readonly`
+also requires the **People API** to be enabled on the underlying Google Cloud
+project (APIs & Services → Library → People API → Enable, or `gcloud services
+enable people.googleapis.com --project=<project>`) — without it, `users get`
+fails with a `SERVICE_DISABLED` error even with the right scope granted.
 `google-chat init` does step 4 plus the `--user`
 login together: it prints setup instructions, prompts for Client ID and
 Client Secret, writes `app.json`, runs the interactive OAuth flow, and
@@ -413,6 +418,37 @@ This is the one async corner of the crate — `google-cloud-pubsub` is
 tokio-async only, so `listen` builds and runs its own tokio runtime
 internally. Every other command stays on plain blocking `reqwest`.
 
+### `google-chat users get --user <id>`
+
+Resolves a Google Chat user id — the `users/{id}` format found in a
+message's `sender.name` field (see `messages list`/`messages send`) — to
+that user's display name. The Chat API itself never returns this under
+either of this crate's auth modes: per Google's docs, a Chat `User` resource
+returned to a caller "authenticated as a user" (both this crate's modes are,
+since neither uses the `chat.bot` scope) only ever contains `name`/`type`,
+never `displayName`. This command instead calls the Google People API's
+`people.get` (`personFields=names`), which shares the same underlying
+numeric account id as the Chat `users/{id}` — just under a `people/{id}`
+resource name. Requires the `directory.readonly` scope (re-run `auth login
+--user` if you logged in before this command was added) and the People API
+enabled on the underlying Google Cloud project (see Setup above).
+
+**Only resolves users in the same Google Workspace domain as the
+authenticated identity** — a sender from a different domain, or a personal
+Gmail account, fails with a `403 PERMISSION_DENIED` instead of a name (see
+`BACKLOG.md` GCHAT-5).
+
+```sh
+cargo run -p google-chat -- users get --user users/108506379394699518479
+cargo run -p google-chat -- users get --user 108506379394699518479   # bare id also accepted
+```
+
+**Flags:**
+- `--user <ID>` (required) — bare numeric id or full `users/{id}` resource name, as found in a message's `sender.name` field
+
+Always prints its full result regardless of `--select` — a single, small,
+fixed-shape profile object.
+
 ### `--select <PATHS>` (global flag)
 
 All commands that return JSON support a `--select` flag for client-side
@@ -432,13 +468,13 @@ cargo test -p google-chat
 
 ### End-to-end tests
 
-E2e tests call the real Google Chat API. They are all marked `#[ignore]` and
-never run as part of the normal test suite. Unlike jira, coverage is
-deliberately **read-only**: `spaces list` and `messages list` only.
-`messages send` creates real, visible messages in spaces shared with real
-people, and `messages delete` permanently removes real messages, so both are
-covered only by manual `cargo run` testing during development, not by an
-automated test (see `BACKLOG.md` GCHAT-2).
+E2e tests call the real Google Chat (and, for `users get`, People) API. They
+are all marked `#[ignore]` and never run as part of the normal test suite.
+Unlike jira, coverage is deliberately **read-only**: `spaces list`, `messages
+list`, and `users get` only. `messages send` creates real, visible messages
+in spaces shared with real people, and `messages delete` permanently removes
+real messages, so both are covered only by manual `cargo run` testing during
+development, not by an automated test (see `BACKLOG.md` GCHAT-2).
 `subscription create` (creates real GCP subscriptions) and `listen` (a
 long-running process) are likewise only covered by manual testing, not
 automated e2e tests (see `BACKLOG.md` GCHAT-3).

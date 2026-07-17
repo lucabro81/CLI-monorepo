@@ -60,7 +60,8 @@ impl OAuthConfig {
         https://www.googleapis.com/auth/chat.messages.create \
         https://www.googleapis.com/auth/chat.messages \
         https://www.googleapis.com/auth/chat.memberships.readonly \
-        https://www.googleapis.com/auth/pubsub";
+        https://www.googleapis.com/auth/pubsub \
+        https://www.googleapis.com/auth/directory.readonly";
     pub const REDIRECT_URI: &'static str = "http://localhost:8080/callback";
 
     /// Parses app credentials from the contents of `app.json`.

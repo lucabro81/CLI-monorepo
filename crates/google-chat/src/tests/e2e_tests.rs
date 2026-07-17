@@ -31,20 +31,30 @@
 use crate::auth;
 use crate::client::GoogleChatClient;
 use crate::context;
+use crate::people_client::PeopleClient;
 
-/// Builds an authenticated `GoogleChatClient`. Loads `.env` from the
-/// workspace root first (if present) so `GOOGLE_CHAT_E2E_SPACE` doesn't need
-/// to be exported inline every run — an already-exported value still takes
-/// precedence.
-fn setup() -> GoogleChatClient {
+/// Loads `.env` from the workspace root first (if present) so
+/// `GOOGLE_CHAT_E2E_SPACE` doesn't need to be exported inline every run (an
+/// already-exported value still takes precedence), then loads and
+/// auto-renews the credentials already stored on this machine.
+fn authenticated_credentials_for_e2e() -> auth::Credentials {
     dotenvy::dotenv().ok();
     let config_dir = context::config_dir().expect("could not resolve config dir");
     let oauth_config = auth::OAuthConfig::load(&auth::app_config_path(&config_dir))
         .expect("app.json not found — run `google-chat init` first");
-    let credentials =
-        auth::load_credentials(&oauth_config, &auth::credentials_path(&config_dir))
-            .expect("not authenticated — run `google-chat auth login --user` first");
-    GoogleChatClient::new(&credentials)
+    auth::load_credentials(&oauth_config, &auth::credentials_path(&config_dir))
+        .expect("not authenticated — run `google-chat auth login --user` first")
+}
+
+/// Builds an authenticated `GoogleChatClient`.
+fn setup() -> GoogleChatClient {
+    GoogleChatClient::new(&authenticated_credentials_for_e2e())
+}
+
+/// Builds an authenticated `PeopleClient`, sharing the same access token
+/// `setup()` would use for `GoogleChatClient` (different scope, same identity).
+fn setup_people_client() -> PeopleClient {
+    PeopleClient::new(&authenticated_credentials_for_e2e().access_token)
 }
 
 /// Returns the designated e2e test space from the environment, panicking
@@ -97,6 +107,42 @@ fn e2e_messages_list_on_first_space_succeeds() {
     assert!(
         response.get("messages").is_none_or(serde_json::Value::is_array),
         "if present, \"messages\" must be an array"
+    );
+}
+
+#[test]
+#[ignore = "e2e: requires credentials and GOOGLE_CHAT_E2E_SPACE"]
+fn e2e_users_get_resolves_sender_of_a_message_in_the_designated_test_space() {
+    let chat_client = setup();
+    let people_client = setup_people_client();
+    let space = test_space();
+
+    // Targets the designated test space (rather than "first space", like
+    // e2e_messages_list_on_first_space_succeeds) because it needs an actual
+    // message with a sender to resolve, and the designated space is the one
+    // curated to have safe, repeatable content for automated checks.
+    let messages_response = chat_client
+        .list_messages(&space, 10, None, None)
+        .unwrap_or_else(|e| panic!("messages.list should succeed for {space}: {e}"));
+    let sender = messages_response["messages"]
+        .as_array()
+        .and_then(|messages| messages.iter().find_map(|m| m["sender"]["name"].as_str()))
+        .expect(
+            "expected at least one message with a sender.name field in the designated test \
+             space — if it genuinely has none, send a message there first",
+        );
+
+    // Read-only smoke check: only asserts the response is well-formed, not a
+    // specific display name — real account data varies over time, per this
+    // crate's e2e convention.
+    let profile = people_client
+        .get_user(sender)
+        .unwrap_or_else(|e| panic!("people.get should succeed for sender {sender}: {e}"));
+
+    assert!(
+        profile.get("names").is_some_and(serde_json::Value::is_array)
+            || profile.get("resourceName").is_some(),
+        "expected a well-formed People API profile (a names array or a resourceName field), got: {profile}"
     );
 }
 

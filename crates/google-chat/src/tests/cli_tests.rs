@@ -2,7 +2,9 @@
 
 use clap::Parser;
 
-use super::{AuthCommand, Cli, Command, MessagesCommand, SpacesCommand, SubscriptionCommand};
+use super::{
+    AuthCommand, Cli, Command, MessagesCommand, SpacesCommand, SubscriptionCommand, UsersCommand,
+};
 
 #[test]
 fn parses_auth_login_with_no_flags() {
@@ -591,6 +593,50 @@ fn rejects_listen_without_workspace_events_subscription_flag() {
 #[test]
 fn rejects_listen_without_pubsub_subscription_flag() {
     let result = Cli::try_parse_from(["google-chat", "listen"]);
+
+    assert!(result.is_err());
+}
+
+#[test]
+fn parses_users_get_with_bare_id() {
+    let cli = Cli::parse_from(["google-chat", "users", "get", "--user", "108506379394699518479"]);
+
+    assert!(matches!(
+        cli.command,
+        Command::Users {
+            command: UsersCommand::Get { ref user }
+        } if user == "108506379394699518479"
+    ));
+}
+
+#[test]
+fn parses_users_get_with_full_resource_name() {
+    let cli = Cli::parse_from([
+        "google-chat",
+        "users",
+        "get",
+        "--user",
+        "users/108506379394699518479",
+    ]);
+
+    assert!(matches!(
+        cli.command,
+        Command::Users {
+            command: UsersCommand::Get { ref user }
+        } if user == "users/108506379394699518479"
+    ));
+}
+
+#[test]
+fn rejects_users_get_without_user_flag() {
+    let result = Cli::try_parse_from(["google-chat", "users", "get"]);
+
+    assert!(result.is_err());
+}
+
+#[test]
+fn rejects_unknown_users_subcommand() {
+    let result = Cli::try_parse_from(["google-chat", "users", "bogus"]);
 
     assert!(result.is_err());
 }
