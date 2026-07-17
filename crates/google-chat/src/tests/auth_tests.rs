@@ -71,6 +71,7 @@ fn builds_authorization_url_with_required_params() {
     assert!(url.contains(
         "scope=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fchat.spaces.readonly+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fchat.messages.readonly+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fchat.messages.create"
     ));
+    assert!(url.contains("https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fdirectory.readonly"));
 }
 
 #[test]

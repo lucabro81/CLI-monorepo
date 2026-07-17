@@ -15,6 +15,7 @@ src/
     messages.rs   — run(MessagesCommand); dispatches message subcommands
     subscription.rs — run(SubscriptionCommand); dispatches to EventsClient
     listen.rs     — run_listen(); the crate's one async command (see below)
+    users.rs      — run(UsersCommand); dispatches to PeopleClient
   auth.rs         — OAuth infrastructure: OAuthConfig, Credentials, login(),
                     refresh(), renew(), save_credentials(), load_credentials(),
                     path helpers
@@ -33,6 +34,15 @@ src/
                     URLs/scopes. EventsClientError::into_pubsub_error /
                     into_workspace_events_error map to CliError, shared by
                     commands/subscription.rs and commands/listen.rs.
+  people_client.rs — PeopleClient (blocking reqwest) for the Google People
+                    API: get_user (people.get, personFields=names) resolves
+                    a Chat users/{id} to a display name — something the Chat
+                    API itself cannot do under this crate's auth (see "No
+                    auth whoami" below). Same bearer token as
+                    GoogleChatClient, different base URL/scope
+                    (directory.readonly). Only resolves users in the same
+                    Workspace domain as the authenticated identity
+                    (BACKLOG.md GCHAT-5).
   cli.rs          — clap structs: Cli (--select global), Command, AuthCommand,
                     SpacesCommand, MessagesCommand, SubscriptionCommand. No logic.
   context.rs      — config_dir(), load_oauth_config(), authenticated_credentials(),
@@ -149,7 +159,8 @@ https://www.googleapis.com/auth/chat.messages.readonly
 https://www.googleapis.com/auth/chat.messages.create
 https://www.googleapis.com/auth/chat.messages
 https://www.googleapis.com/auth/chat.memberships.readonly
-https://www.googleapis.com/auth/pubsub`. `chat.memberships.readonly`/`pubsub`
+https://www.googleapis.com/auth/pubsub
+https://www.googleapis.com/auth/directory.readonly`. `chat.memberships.readonly`/`pubsub`
 were added for `subscription create`/`listen` — verified live (`BACKLOG.md`
 GCHAT-3): `chat.spaces.readonly` + `chat.memberships.readonly` are sufficient
 for Workspace Events subscriptions, no extra scope needed. `chat.messages`
@@ -159,6 +170,11 @@ and this crate's user-auth (3LO) path only has `chat.messages` available to
 it. The narrower `chat.messages.readonly`/`chat.messages.create` scopes are
 intentionally left in place even though `chat.messages` is a superset —
 removing them was judged an unrelated cleanup, not folded into that change.
+`directory.readonly` was added for `users get` — it's a **People API**
+scope, not a Chat API one, and additionally requires the People API itself
+to be enabled on the underlying Google Cloud project (`gcloud services
+enable people.googleapis.com --project=<project>`), confirmed live: without
+it the call fails `SERVICE_DISABLED` even with the scope correctly granted.
 
 **Token endpoint requests must be `application/x-www-form-urlencoded`**, not
 JSON — Google's `jwt-bearer` grant rejects a JSON body with
@@ -215,6 +231,21 @@ Both files live under `$XDG_CONFIG_HOME/google-chat-cli/` (falling back to
   `email` scopes (or the separate People API), which was explicitly ruled
   out. `doctor`'s `api` check (a live `spaces.list` call) is the
   auth-sanity-check instead of a dedicated whoami command.
+- **`users get` revisits the People API decision above, for a narrower,
+  different case**: the People API was ruled out for *whoami* (identifying
+  the authenticated identity itself, judged not worth an extra scope for).
+  `users get` uses it instead to resolve a *different* user's display name
+  from a message's `sender.name` — confirmed live that the Chat API's `User`
+  resource never populates `displayName` under this crate's auth (only
+  `name`/`type`), for any endpoint (message sender, space membership), so
+  the People API is the only way to get a display name at all here.
+  `chat.bot`/app-authentication was considered as an alternative and
+  rejected: it would require registering a real Chat app, a third auth grant
+  type, and — critically — the app would need to join every space as its
+  own separate, visibly-distinct member, which contradicts the actual goal
+  (the authenticated identity behaves like an ordinary, indistinguishable
+  space member, not a separate bot). Same-Workspace-domain-only limitation
+  applies (`BACKLOG.md` GCHAT-5).
 - **`--select`/`--select-all`** (global flags, see root `CLAUDE.md`): `--select` is mandatory by default; omitting both flags fails with the response's byte size and top-level fields instead of printing. `--select-all` is the explicit stateless opt-out. Exempt commands (always print in full via `select.or_all()` at their `print_json` call site) and why:
   | Command | Exempt? | Why |
   |---|---|---|
@@ -225,6 +256,7 @@ Both files live under `$XDG_CONFIG_HOME/google-chat-cli/` (falling back to
   | `subscription create` | yes | single subscription object, fixed shape |
   | `subscription delete` | yes | small confirmation object, fixed shape |
   | `listen` | N/A | streams NDJSON, doesn't call `print_json`, `--select` has no effect |
+  | `users get` | yes | single People API profile object, fixed shape |
 - **Space identifier normalization**: `--space` flags accept either the bare
   space id or the full `spaces/{id}` resource name (`client::normalize_space_name`),
   so a caller can paste either form straight from `spaces list`'s `name` field.
@@ -325,6 +357,7 @@ Both files live under `$XDG_CONFIG_HOME/google-chat-cli/` (falling back to
 | `subscription create --space <id> --topic <topic> --pubsub-subscription <sub> (--message-filter <filter> \| --allow-unfiltered) [--event-type ...]` | Ensures the Pub/Sub pull subscription exists (idempotent), scoped with a Pub/Sub filter expression via `--message-filter` (one `hasPrefix(attributes.ce-subject, ...)` clause per space, OR-combinable for multiple spaces) — required unless `--allow-unfiltered` explicitly opts out, mirroring `--select`/`--select-all`'s mandatory-by-default pattern (fails fast with `MessageFilterRequired`, no network call, if neither is passed). Then creates a Workspace Events subscription delivering Chat events for the space to that topic. On a pre-existing pull subscription with a different `--topic`/`--message-filter` than requested, fails with `PubsubSubscriptionMismatch` instead of silently ignoring the mismatch (both fields are immutable after creation). Verified live — real subscription created, `state: ACTIVE`. `--message-filter` verified live 2026-07-14 against `spaces/AAQAtCLmaho`/project `mercury-500017`: a matching `hasPrefix(attributes.ce-subject, "//chat.googleapis.com/spaces/AAQAtCLmaho")` filter both let a real test message through and, on a second `subscription create` reusing the same `--pubsub-subscription` with a different filter, correctly failed with `PubsubSubscriptionMismatch` (exit code 1) instead of silently succeeding; an OR-combined multi-space filter was also confirmed to parse. The subscription expires after ~4h (Workspace Events API's own default TTL); pass its `name` to `listen --workspace-events-subscription` to keep it renewed (BACKLOG.md GCHAT-4). |
 | `subscription delete --name <name>` | Deletes a Workspace Events subscription, stopping delivery immediately — call when an agent leaves a conversation, instead of relying on the ~4h expiry. Verified live: real subscription deleted (`done: true`); a second delete on the same name correctly returned `403 SUBSCRIPTION_ACCESS_DENIED` (Workspace Events conflates "gone" with "no permission" in this error). |
 | `listen --pubsub-subscription <sub> --workspace-events-subscription <name> [--max-messages N]` | Streams messages from a Pub/Sub subscription via `google-cloud-pubsub`, printing each as NDJSON and acking it. Refreshes its own token every 5 min and renews the Workspace Events subscription's TTL every 30 min, both in the background; stops cleanly on SIGINT/SIGTERM. Verified live — a real `messages send` was received and printed within ~2s, `kill -TERM <pid>` exited cleanly, and the renewal PATCH call was confirmed directly (pushed `expireTime` out another ~4h, same scopes, no extra scope needed). Neither background task's periodic *trigger* was observed firing during an actual `listen` run (would need a 5/30-minute-long session) — the calls they invoke were verified directly instead (BACKLOG.md GCHAT-3, GCHAT-4). |
+| `users get --user <id>` | Resolves a Chat user id (`users/{id}`, from a message's `sender.name`) to a display name via the People API (`people.get`, `personFields=names`) — the Chat API itself doesn't expose this under either auth mode (confirmed live: a message's `sender` only ever has `name`/`type`, no `displayName`). Requires the `directory.readonly` scope (re-run `auth login --user` if logged in before this command existed) and the People API enabled on the underlying Google Cloud project. Only resolves users in the same Workspace domain as the authenticated identity (BACKLOG.md GCHAT-5). Always prints in full regardless of `--select` — single, small, fixed-shape profile object. Verified live: resolved two real `users/{id}` values (both full and bare-id forms) to their real display names, and confirmed the People API must be separately enabled on the GCP project (`SERVICE_DISABLED` otherwise, even with the scope granted). |
 
 ## Planned commands
 
@@ -332,5 +365,5 @@ Both files live under `$XDG_CONFIG_HOME/google-chat-cli/` (falling back to
 
 ## Known edge cases (see BACKLOG.md)
 
-See `BACKLOG.md` GCHAT-1 through GCHAT-3. Use prefix `GCHAT-` for new entries
+See `BACKLOG.md` GCHAT-1 through GCHAT-5. Use prefix `GCHAT-` for new entries
 as commands are implemented.

@@ -31,3 +31,10 @@ pub const WORKSPACE_EVENTS_API_BASE_URL: &str = "https://workspaceevents.googlea
 /// Base URL for Google Cloud Pub/Sub API v1 calls (used to ensure the pull
 /// subscription that backs a Workspace Events subscription exists).
 pub const PUBSUB_API_BASE_URL: &str = "https://pubsub.googleapis.com/v1";
+
+// ── People API v1 (people_client.rs) ───────────────────────────────────────
+
+/// Base URL for Google People API v1 calls — used to resolve a Google Chat
+/// user id to a display name. The Chat API itself does not expose this under
+/// this crate's auth modes (see `people_client.rs`'s module doc).
+pub const PEOPLE_API_BASE_URL: &str = "https://people.googleapis.com/v1";

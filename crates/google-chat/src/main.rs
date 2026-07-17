@@ -16,6 +16,7 @@ mod context;
 mod endpoints;
 mod error;
 mod events_client;
+mod people_client;
 
 #[cfg(test)]
 #[path = "tests/e2e_tests.rs"]
@@ -76,6 +77,7 @@ fn run() -> Result<(), CliError> {
             workspace_events_subscription,
             max_messages,
         ),
+        Command::Users { command } => commands::users::run(command, select),
     }
 }
 

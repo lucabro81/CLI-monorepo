@@ -5,3 +5,4 @@ pub mod listen;
 pub mod messages;
 pub mod spaces;
 pub mod subscription;
+pub mod users;

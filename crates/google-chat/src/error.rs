@@ -114,4 +114,10 @@ pub enum CliError {
         Pass --confirm to execute: google-chat messages delete --name {name} --confirm"
     )]
     DeleteNotConfirmed { name: String },
+
+    #[error("People API request failed: {reason}")]
+    PeopleApiRequestFailed { reason: String },
+
+    #[error("People API returned status {status}: {body}")]
+    PeopleApiError { status: u16, body: String },
 }

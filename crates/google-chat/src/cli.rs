@@ -19,8 +19,8 @@ pub struct Cli {
     /// command fails with an error reporting the byte size of the full response and
     /// its top-level field names, so you can retry with an informed --select. A few
     /// commands whose output is always small and fixed-shape (doctor, messages send,
-    /// subscription create/delete) are exempt and print in full regardless — see that
-    /// command's own --help.
+    /// subscription create/delete, users get) are exempt and print in full regardless
+    /// — see that command's own --help.
     /// Example: --select spaces.name,spaces.displayName
     #[arg(long, global = true, value_name = "PATHS", conflicts_with = "select_all")]
     pub select: Option<String>,
@@ -105,6 +105,11 @@ pub enum Command {
         /// Exit automatically after receiving this many messages, instead of running until interrupted
         #[arg(long)]
         max_messages: Option<u32>,
+    },
+    /// Resolve a Google Chat user id to their display name
+    Users {
+        #[command(subcommand)]
+        command: UsersCommand,
     },
 }
 
@@ -257,6 +262,34 @@ pub enum SubscriptionCommand {
         /// Workspace Events subscription to delete: "subscriptions/{id}"
         #[arg(long)]
         name: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum UsersCommand {
+    /// Resolve a Google Chat user id to a display name via the People API
+    ///
+    /// Looks up the display name for a Google Chat user identifier — the
+    /// same id format that appears as a message's `sender.name` field
+    /// (`users/{id}`). The Chat API itself does not expose this: per
+    /// Google's docs, when a Chat app authenticates as a user (both of this
+    /// crate's auth modes do — neither requests the `chat.bot` scope), a
+    /// Chat User resource only ever contains `name`/`type`, never a display
+    /// name. This command instead calls the Google People API (`people.get`),
+    /// which shares the same underlying numeric account id, and requires the
+    /// `directory.readonly` scope (re-run `auth login --user` if you logged
+    /// in before this command was added).
+    ///
+    /// Only resolves users in the same Google Workspace domain as the
+    /// authenticated identity — a sender from a different domain (or a
+    /// personal Gmail account) will fail with a permission error; this is a
+    /// known, accepted limitation. Always prints its full result regardless
+    /// of --select — a single, small profile object, fixed shape.
+    #[command(after_help = "Example:\n  google-chat users get --user users/108506379394699518479\n  google-chat users get --user 108506379394699518479\n\n--user accepts either the bare numeric id or the full \"users/{id}\" resource name — the same value found in a message's \"sender.name\" field (see `messages list --select messages.sender.name`).")]
+    Get {
+        /// Chat user id to resolve — bare numeric id or full "users/{id}" resource name, from a message's sender.name field
+        #[arg(long)]
+        user: String,
     },
 }
 
