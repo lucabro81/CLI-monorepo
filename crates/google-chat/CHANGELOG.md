@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.7.0](https://github.com/lucabro81/CLI-monorepo/compare/google-chat-v0.6.0...google-chat-v0.7.0) - 2026-07-17
+
+### Added
+- *(google-chat)* add users get to resolve a Chat user id to a display name (#24) ([#24](https://github.com/lucabro81/CLI-monorepo/pull/24))
 ## [0.6.0](https://github.com/lucabro81/CLI-monorepo/compare/google-chat-v0.5.0...google-chat-v0.6.0) - 2026-07-15
 
 ### Added
