@@ -58,9 +58,10 @@ already-exported value still takes precedence. See `BACKLOG.md`'s
 ## Test file convention
 
 See root `CLAUDE.md` for the general `src/tests/` convention and the
-cli_tests/commands split. In this crate, `issue.rs` is the thin passthrough
-module with no dedicated `tests/commands/` file — its coverage lives entirely
-in `cli_tests.rs`.
+cli_tests/commands split. `issue.rs` has a dedicated `tests/commands/issue_tests.rs`
+covering `apply_stale_filter` (the `--stale-days` JQL builder, the only
+non-HTTP logic in the module besides `issue transition`'s case-insensitive
+status matching, which stays covered end-to-end via `cli_tests.rs` instead).
 
 ## OAuth / auth design
 
@@ -113,6 +114,7 @@ Kept separate so automatic token writes never clobber the app identity.
   | `issue comment add` | yes | single comment object, fixed shape |
   | `issue comment remove` | yes | synthesized by us: `{"deleted": true, "id": ...}` |
 - **`--fields`** (issue search only): server-side Jira field selection. Defaults to `*navigable`. Reduces payload at the source; orthogonal to `--select`.
+- **`--stale-days`** (issue search only): client-side JQL rewriting, not a separate API call — Jira's JQL grammar supports relative-date literals (`-Nd`) directly in a comparison (`updated <= -Nd`), evaluated server-side by Jira's own query engine. `apply_stale_filter` (`commands/issue.rs`) appends `AND updated <= -Nd` to `--jql`, inserting it immediately before an existing `ORDER BY` clause (found case-insensitively) since JQL requires `ORDER BY` to be the final clause — appending unconditionally would produce invalid JQL for any `--jql` that already sorts results.
 - **ADF**: comment bodies and issue descriptions are wrapped in Atlassian Document Format by the client methods; callers pass plain text.
 - **Destructive commands**: no interactive prompts (an LLM cannot respond). `issue delete` requires explicit `--confirm`; error message includes the exact command to retry. `commands/issue.rs::run` calls `authenticated_client()` **per match arm** rather than once up front, so the `--confirm` check (free, local) runs before the network round-trip a token refresh may require — otherwise a caller who forgot `--confirm` with expired credentials would see a confusing auth error instead of the actionable `DeleteNotConfirmed` one (spotted and fixed alongside `google-chat`'s `messages delete`, which had the same hoisted-auth structure).
 
@@ -153,7 +155,7 @@ conceptual background):
 | `issue delete <KEY> --confirm` | Requires explicit confirmation flag |
 | `issue transitions <KEY>` | List available workflow transitions |
 | `issue transition <KEY> --to <STATUS>` | Case-insensitive match; lists valid options on mismatch |
-| `issue search --jql` | Paginated JQL search |
+| `issue search --jql [--stale-days N]` | Paginated JQL search. `--stale-days N` adds `AND updated <= -Nd` to `--jql` (inserted before `ORDER BY` if present) — JQL's own relative-date syntax, no separate staleness API needed |
 | `issue comment add <KEY> --body` | POST with ADF body |
 | `issue comment remove <KEY> <ID>` | DELETE |
 

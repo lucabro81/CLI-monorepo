@@ -5,10 +5,11 @@
 //! `ClientError` to `CliError`, then print the result as JSON (optionally
 //! filtered via `--select`).
 //!
-//! The `issue transition` subcommand contains the only non-trivial logic:
-//! it fetches the available transitions for an issue, matches the requested
-//! status name case-insensitively, and fails with an actionable error listing
-//! valid options if no match is found.
+//! Two subcommands contain non-trivial logic: `issue transition` fetches the
+//! available transitions for an issue, matches the requested status name
+//! case-insensitively, and fails with an actionable error listing valid
+//! options if no match is found; `issue search` builds its `--stale-days`
+//! JQL clause via `apply_stale_filter`.
 
 use crate::client::{self, ClientError};
 use crate::cli::{CommentCommand, IssueCommand};
@@ -24,8 +25,9 @@ use crate::error::CliError;
 /// being confused by) an unrelated auth failure.
 pub fn run(command: IssueCommand, select: cli_fields::Select<'_>) -> Result<(), CliError> {
     match command {
-        IssueCommand::Search { jql, max_results, page_token, fields } => {
+        IssueCommand::Search { jql, max_results, page_token, fields, stale_days } => {
             let client = authenticated_client()?;
+            let jql = apply_stale_filter(&jql, stale_days);
             let value = client
                 .search_issues(&jql, max_results, page_token.as_deref(), fields.as_deref())
                 .map_err(client_error_to_cli)?;
@@ -127,9 +129,29 @@ pub fn run(command: IssueCommand, select: cli_fields::Select<'_>) -> Result<(), 
     }
 }
 
+/// Adds an `updated <= -Nd` condition to a JQL query, filtering to issues not
+/// updated in at least `stale_days` days — JQL's own relative-date syntax,
+/// evaluated server-side by Jira; no separate API call is needed to compute
+/// staleness. `ORDER BY` must be the final clause in JQL, so the condition is
+/// inserted right before it (case-insensitively) rather than appended blindly.
+fn apply_stale_filter(jql: &str, stale_days: Option<u32>) -> String {
+    let Some(days) = stale_days else {
+        return jql.to_string();
+    };
+    let clause = format!("updated <= -{days}d");
+    match jql.to_ascii_lowercase().find("order by") {
+        Some(index) => format!("{} AND {} {}", jql[..index].trim_end(), clause, &jql[index..]),
+        None => format!("{} AND {clause}", jql.trim_end()),
+    }
+}
+
 fn client_error_to_cli(e: ClientError) -> CliError {
     match e {
         client::ClientError::Request(r) => CliError::ApiRequestFailed { reason: r },
         client::ClientError::Status { status, body } => CliError::ApiError { status, body },
     }
 }
+
+#[cfg(test)]
+#[path = "../tests/commands/issue_tests.rs"]
+mod tests;

@@ -125,7 +125,7 @@ pub enum IssueCommand {
         key: String,
     },
     /// Search issues using JQL (Jira Query Language) and return matching issues as JSON
-    #[command(after_help = "Examples:\n  jira issue search --jql \"project=KAN AND status=\\\"In Progress\\\"\"\n  jira issue search --jql \"assignee=currentUser() ORDER BY created DESC\" --max-results 10\n  jira issue search --jql \"project=KAN\" --fields summary,status,priority\n\nPagination: the response includes a nextPageToken field when more results exist.\nPass its value to --page-token on the next call to fetch the following page.")]
+    #[command(after_help = "Examples:\n  jira issue search --jql \"project=KAN AND status=\\\"In Progress\\\"\"\n  jira issue search --jql \"assignee=currentUser() ORDER BY created DESC\" --max-results 10\n  jira issue search --jql \"project=KAN\" --fields summary,status,priority\n  jira issue search --jql \"project=KAN AND status!=Done\" --stale-days 14\n\nPagination: the response includes a nextPageToken field when more results exist.\nPass its value to --page-token on the next call to fetch the following page.\n\n--stale-days N adds \"AND updated <= -Nd\" to --jql (inserted before ORDER BY, if present) to\nfind issues that have not been updated in at least N days.")]
     Search {
         /// JQL query string, e.g. "project=KAN AND status=\"Done\""
         #[arg(long)]
@@ -141,6 +141,10 @@ pub enum IssueCommand {
         /// Example: --fields summary,status,assignee,priority
         #[arg(long)]
         fields: Option<String>,
+        /// Only include issues not updated in at least N days. Adds "AND updated <= -Nd"
+        /// to --jql server-side (JQL's own relative-date syntax — no separate API needed).
+        #[arg(long)]
+        stale_days: Option<u32>,
     },
     /// Create a new issue in a Jira project
     ///

@@ -259,12 +259,14 @@ Searches issues using JQL (Jira Query Language). Returns the raw response includ
 ```sh
 cargo run -p jira -- issue search --jql "project=KAN AND status=\"In Progress\""
 cargo run -p jira -- issue search --jql "project=KAN" --fields summary,status,priority --max-results 10
+cargo run -p jira -- issue search --jql "project=KAN AND status!=Done" --stale-days 14
 ```
 
 **Flags:**
 - `--max-results <N>` — how many issues to return (default 50, max 100)
 - `--fields <NAMES>` — comma-separated Jira field names to include per issue (server-side, reduces payload). Use `*all` for every field, `*navigable` for defaults. Example: `summary,status,assignee,priority`
 - `--page-token <TOKEN>` — cursor for the next page, taken from `nextPageToken` in a previous response
+- `--stale-days <N>` — only include issues not updated in at least N days. Appends `AND updated <= -Nd` to `--jql` server-side (JQL's own relative-date syntax, evaluated by Jira — inserted before `ORDER BY` if your `--jql` already sorts results)
 
 Combine `--fields` (server-side) with `--select` (client-side) for maximum control:
 

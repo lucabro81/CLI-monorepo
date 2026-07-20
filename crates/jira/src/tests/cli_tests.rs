@@ -519,12 +519,28 @@ fn parses_issue_search_with_jql() {
 
     match cli.command {
         Command::Issue {
-            command: IssueCommand::Search { jql, max_results, page_token, fields },
+            command: IssueCommand::Search { jql, max_results, page_token, fields, stale_days },
         } => {
             assert_eq!(jql, "project=KAN AND status=\"In Progress\"");
             assert_eq!(max_results, 50);
             assert!(page_token.is_none());
             assert!(fields.is_none());
+            assert!(stale_days.is_none());
+        }
+        other => panic!("unexpected: {other:?}"),
+    }
+}
+
+#[test]
+fn parses_issue_search_with_stale_days() {
+    let cli = Cli::try_parse_from([
+        "jira", "issue", "search", "--jql", "project=KAN", "--stale-days", "14",
+    ])
+    .expect("should parse");
+
+    match cli.command {
+        Command::Issue { command: IssueCommand::Search { stale_days, .. } } => {
+            assert_eq!(stale_days, Some(14));
         }
         other => panic!("unexpected: {other:?}"),
     }
