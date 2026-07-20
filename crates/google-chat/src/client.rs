@@ -94,6 +94,27 @@ impl GoogleChatClient {
         self.get_json(&format!("/{parent}/messages?{params}"))
     }
 
+    /// Lists a space's memberships, as raw JSON (`{"memberships": [...], "nextPageToken": "..."}`).
+    /// `space` accepts either the bare space id or the full `spaces/{id}` resource name. Each
+    /// membership's `member.name` (`users/{id}`) is the same identifier `people_client::PeopleClient::get_user`
+    /// resolves — used by `commands::spaces` to enrich each member with their People API profile.
+    pub fn list_members(
+        &self,
+        space: &str,
+        page_size: u32,
+        page_token: Option<&str>,
+    ) -> Result<serde_json::Value, ClientError> {
+        let parent = normalize_space_name(space);
+        let mut pairs: Vec<(&str, String)> = vec![("pageSize", page_size.to_string())];
+        if let Some(token) = page_token {
+            pairs.push(("pageToken", token.to_string()));
+        }
+        let params = serde_urlencoded::to_string(&pairs)
+            .map_err(|e| ClientError::Request(format!("failed to encode query params: {e}")))?;
+
+        self.get_json(&format!("/{parent}/members?{params}"))
+    }
+
     /// Sends a plain-text message to a space and returns the created Message
     /// resource as raw JSON (includes its `name` field, needed to identify it
     /// later). `space` accepts either the bare space id or the full

@@ -11,7 +11,12 @@ src/
     auth.rs       — run_login()
     doctor.rs     — run_doctor(); also called by init as final verification
     init.rs       — run_init(), write_app_config(); human onboarding flow
-    spaces.rs     — run(SpacesCommand); dispatches space subcommands
+    spaces.rs     — run(SpacesCommand); dispatches space subcommands, including
+                    the nested `spaces members list` (SpaceMembersCommand) —
+                    combines GoogleChatClient::list_members with
+                    PeopleClient::get_user per HUMAN member
+                    (build_members_response, testable via an injected
+                    resolve closure, no mocking framework needed)
     messages.rs   — run(MessagesCommand); dispatches message subcommands
     subscription.rs — run(SubscriptionCommand); dispatches to EventsClient
     listen.rs     — run_listen(); the crate's one async command (see below)
@@ -21,8 +26,8 @@ src/
                     path helpers
   client.rs       — GoogleChatClient (blocking reqwest); get_json/post_json
                     helpers; all Chat API methods: list_spaces, list_messages,
-                    create_message; normalize_space_name (pub(crate), reused
-                    by events_client.rs)
+                    list_members, create_message; normalize_space_name
+                    (pub(crate), reused by events_client.rs)
   events_client.rs — EventsClient (blocking reqwest) for the Workspace Events
                     API and the Pub/Sub admin API: ensure_pubsub_subscription
                     (idempotent — 409 ALREADY_EXISTS treated as success),
@@ -164,7 +169,10 @@ https://www.googleapis.com/auth/pubsub
 https://www.googleapis.com/auth/directory.readonly`. `chat.memberships.readonly`/`pubsub`
 were added for `subscription create`/`listen` — verified live (`BACKLOG.md`
 GCHAT-3): `chat.spaces.readonly` + `chat.memberships.readonly` are sufficient
-for Workspace Events subscriptions, no extra scope needed. `chat.messages`
+for Workspace Events subscriptions, no extra scope needed.
+`chat.memberships.readonly` also covers `spaces.members.list` (confirmed live
+when `spaces members list` was added — no new scope needed for that command
+either, on top of the already-granted `directory.readonly`). `chat.messages`
 was added for `messages delete` — per the Chat API's `spaces.messages.delete`
 docs, deletion requires `chat.bot`/`chat.import`/`chat.messages` (one of),
 and this crate's user-auth (3LO) path only has `chat.messages` available to
@@ -252,6 +260,7 @@ Both files live under `$XDG_CONFIG_HOME/google-chat-cli/` (falling back to
   |---|---|---|
   | `doctor` | yes | internally-generated report, fixed/small |
   | `spaces list` | **no** | paginated collection |
+  | `spaces members list` | **no** | paginated collection, one People API profile per member |
   | `messages list` | **no** | paginated collection, explicitly meant to page through a lot of history |
   | `messages send` | yes | single message object, fixed shape |
   | `subscription create` | yes | single subscription object, fixed shape |
@@ -352,6 +361,7 @@ Both files live under `$XDG_CONFIG_HOME/google-chat-cli/` (falling back to
 | `doctor` | Cascading JSON health check (app_config, credentials, api); exit non-zero on any failure. Verified live against a real Workspace via the `--user` flow. |
 | `init [--client-id --client-secret]` | Human onboarding; only command with narrative output. `write_app_config` preserves an existing `service_account` block across reruns. |
 | `spaces list [--page-size --page-token]` | Lists spaces (`spaces.list`) the authenticated identity belongs to. Verified live — real spaces returned, types (`SPACE`/`GROUP_CHAT`/`DIRECT_MESSAGE`) confirmed. |
+| `spaces members list --space <id> [--page-size --page-token]` | Lists a space's members (`spaces.members.list`), resolving each `HUMAN` member to their People API profile — the same enrichment `users get` does, applied to a whole space. Returns `{"members": [...], "unresolved": [...], "nextPageToken": ...}`: `unresolved` collects members that couldn't be resolved (non-`HUMAN`, e.g. a chat app/bot member — skipped without a network call — or a People API failure, e.g. cross-domain human, same limitation as `users get`, BACKLOG.md GCHAT-5) with a `reason`, instead of failing the whole command (`build_members_response` in `commands/spaces.rs`, unit-tested via an injected `resolve` closure). Requires `chat.memberships.readonly` + `directory.readonly` (both already granted for `subscription create`/`users get` respectively) — no new scope needed. Verified live against a real 2-member space: both members resolved with correct display names and emails; the `unresolved` path (non-`HUMAN`/failed resolution) is covered by unit tests only, not observed live (no accessible test space currently has a bot/cross-domain member). |
 | `messages list --space <id> [--page-size --page-token --order-by]` | Lists messages in a space (`spaces.messages.list`). Chronological by default (`createTime ASC`, the Chat API's own default) — the context-recovery path for an agent resuming after a gap or summarization. `--order-by "createTime DESC"` gets the most recent first. `--space` accepts bare id or full `spaces/{id}`. Verified live against real conversation history both orderings, both id forms. |
 | `messages send --space <id> --text <text>` | Creates a message (`spaces.messages.create`) in a space; prints the created Message (including its `name`). Not gated by `--confirm` — visible but not data-destructive. Verified live: real message delivered and visible to the other party, both `--space` id forms confirmed. |
 | `messages delete --name <name> --confirm [--delete-threaded-replies]` | Permanently deletes a message (`spaces.messages.delete`); prints a synthesized `{"deleted": true, "name": ...}` confirmation (the API itself returns nothing). First `--confirm`-gated command in this crate — omitting `--confirm` fails fast with `DeleteNotConfirmed`, before any network call. Requires the `chat.messages` scope (new, added alongside this command; re-consent via `auth login --user` needed for accounts logged in before this command existed). Verified live 2026-07-15 against `spaces/AAQAtCLmaho`: sent a disposable test message via `messages send`, deleted it, got the synthesized confirmation JSON, then confirmed via `messages list` that it no longer appears. `--delete-threaded-replies`/`force` behavior on a message that actually has replies was not separately exercised. |

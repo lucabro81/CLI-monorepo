@@ -128,6 +128,35 @@ pub enum SpacesCommand {
         #[arg(long)]
         page_token: Option<String>,
     },
+    /// Work with the members of a Google Chat space
+    Members {
+        #[command(subcommand)]
+        command: SpaceMembersCommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum SpaceMembersCommand {
+    /// List a space's members, each resolved to their People API profile (display name, email), as JSON
+    ///
+    /// Returns {"members": [...], "unresolved": [...], "nextPageToken": "..."}. "members" holds
+    /// the resolved People API profile for each HUMAN member. "unresolved" lists members that
+    /// couldn't be resolved (e.g. a chat app/bot member, or a human in a different Workspace
+    /// domain — see `users get`'s same limitation) with a "reason", rather than failing the
+    /// whole command. Pass --page-token (from a previous response's nextPageToken) for the next
+    /// page of members.
+    #[command(after_help = "Examples:\n  google-chat spaces members list --space AAQAtCLmaho\n  google-chat spaces members list --space spaces/AAQAtCLmaho --page-size 20\n  google-chat spaces members list --space AAQAtCLmaho --select \"members.emailAddresses,unresolved\"")]
+    List {
+        /// Space id or full resource name (spaces/{id}), e.g. from `spaces list`'s name field
+        #[arg(long)]
+        space: String,
+        /// Maximum number of memberships to fetch per page (default: 100; the server may return fewer)
+        #[arg(long, default_value = "100")]
+        page_size: u32,
+        /// Cursor token for the next page, from the nextPageToken field of a previous response
+        #[arg(long)]
+        page_token: Option<String>,
+    },
 }
 
 #[derive(Debug, Subcommand)]

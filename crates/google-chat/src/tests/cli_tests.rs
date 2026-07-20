@@ -3,7 +3,8 @@
 use clap::Parser;
 
 use super::{
-    AuthCommand, Cli, Command, MessagesCommand, SpacesCommand, SubscriptionCommand, UsersCommand,
+    AuthCommand, Cli, Command, MessagesCommand, SpaceMembersCommand, SpacesCommand,
+    SubscriptionCommand, UsersCommand,
 };
 
 #[test]
@@ -122,6 +123,59 @@ fn parses_spaces_list_with_page_size_and_token() {
             }
         } if token == "abc123"
     ));
+}
+
+#[test]
+fn parses_spaces_members_list_with_no_optional_flags() {
+    let cli = Cli::parse_from(["google-chat", "spaces", "members", "list", "--space", "AAQAtCLmaho"]);
+
+    assert!(matches!(
+        cli.command,
+        Command::Spaces {
+            command: SpacesCommand::Members {
+                command: SpaceMembersCommand::List {
+                    ref space,
+                    page_size: 100,
+                    page_token: None,
+                }
+            }
+        } if space == "AAQAtCLmaho"
+    ));
+}
+
+#[test]
+fn parses_spaces_members_list_with_page_size_and_token() {
+    let cli = Cli::parse_from([
+        "google-chat",
+        "spaces",
+        "members",
+        "list",
+        "--space",
+        "spaces/AAQAtCLmaho",
+        "--page-size",
+        "20",
+        "--page-token",
+        "abc123",
+    ]);
+
+    assert!(matches!(
+        cli.command,
+        Command::Spaces {
+            command: SpacesCommand::Members {
+                command: SpaceMembersCommand::List {
+                    ref space,
+                    page_size: 20,
+                    page_token: Some(ref token),
+                }
+            }
+        } if space == "spaces/AAQAtCLmaho" && token == "abc123"
+    ));
+}
+
+#[test]
+fn rejects_spaces_members_list_missing_space() {
+    let result = Cli::try_parse_from(["google-chat", "spaces", "members", "list"]);
+    assert!(result.is_err());
 }
 
 #[test]

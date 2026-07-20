@@ -148,6 +148,42 @@ fn e2e_users_get_resolves_sender_of_a_message_in_the_designated_test_space() {
 
 #[test]
 #[ignore = "e2e: requires credentials and GOOGLE_CHAT_E2E_SPACE"]
+fn e2e_spaces_members_list_resolves_a_human_member_of_the_designated_test_space() {
+    let chat_client = setup();
+    let people_client = setup_people_client();
+    let space = test_space();
+
+    let memberships_response = chat_client
+        .list_members(&space, 10, None)
+        .unwrap_or_else(|e| panic!("spaces.members.list should succeed for {space}: {e}"));
+    let memberships = memberships_response["memberships"]
+        .as_array()
+        .expect("response must contain a memberships array");
+    assert!(
+        !memberships.is_empty(),
+        "expected at least one member in the designated test space {space}"
+    );
+
+    let human_member = memberships
+        .iter()
+        .find(|m| m["member"]["type"] == "HUMAN")
+        .and_then(|m| m["member"]["name"].as_str())
+        .expect("expected at least one HUMAN member in the designated test space");
+
+    // Same read-only smoke check as e2e_users_get: well-formed profile, not a
+    // specific display name — real account data varies over time.
+    let profile = people_client
+        .get_user(human_member)
+        .unwrap_or_else(|e| panic!("people.get should succeed for member {human_member}: {e}"));
+    assert!(
+        profile.get("names").is_some_and(serde_json::Value::is_array)
+            || profile.get("resourceName").is_some(),
+        "expected a well-formed People API profile (a names array or a resourceName field), got: {profile}"
+    );
+}
+
+#[test]
+#[ignore = "e2e: requires credentials and GOOGLE_CHAT_E2E_SPACE"]
 fn e2e_messages_list_on_designated_test_space_succeeds() {
     let client = setup();
     let space = test_space();

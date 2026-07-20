@@ -11,6 +11,7 @@ CLI for Google Chat (Google Workspace), designed to be driven by an LLM agent (o
   - [`google-chat doctor`](#google-chat-doctor)
   - [`google-chat auth login`](#google-chat-auth-login)
   - [`google-chat spaces list`](#google-chat-spaces-list)
+  - [`google-chat spaces members list --space <id>`](#google-chat-spaces-members-list---space-id)
   - [`google-chat messages list --space <id>`](#google-chat-messages-list---space-id)
   - [`google-chat messages send --space <id> --text <text>`](#google-chat-messages-send---space-id---text-text)
   - [`google-chat messages delete --name <name> --confirm`](#google-chat-messages-delete---name-name---confirm)
@@ -113,7 +114,8 @@ since the consent screen is Internal (step 2 above). `directory.readonly`
 also requires the **People API** to be enabled on the underlying Google Cloud
 project (APIs & Services → Library → People API → Enable, or `gcloud services
 enable people.googleapis.com --project=<project>`) — without it, `users get`
-fails with a `SERVICE_DISABLED` error even with the right scope granted.
+and `spaces members list` fail with a `SERVICE_DISABLED` error even with the
+right scope granted.
 `google-chat init` does step 4 plus the `--user`
 login together: it prints setup instructions, prompts for Client ID and
 Client Secret, writes `app.json`, runs the interactive OAuth flow, and
@@ -247,6 +249,31 @@ cargo run -p google-chat -- spaces list --select spaces.name,spaces.displayName,
 Each space has a `spaceType` of `SPACE` (named space), `GROUP_CHAT`, or
 `DIRECT_MESSAGE`. Direct messages and most group chats have no
 `displayName`.
+
+### `google-chat spaces members list --space <id>`
+
+Lists a space's members, resolving each `HUMAN` member to their People API
+profile (display name, email) — the same enrichment `users get` does for a
+single user, applied to every member of a space. Returns
+`{"members": [...], "unresolved": [...], "nextPageToken": "..."}`:
+`members` holds the resolved People API profile for each `HUMAN` member;
+`unresolved` lists members that couldn't be resolved (e.g. a chat app/bot
+member, or a human in a different Workspace domain — same limitation as
+`users get`, see `BACKLOG.md` GCHAT-5) with a `reason`, instead of failing
+the whole command. Requires the `chat.memberships.readonly` and
+`directory.readonly` scopes (both already requested by `auth login`; no new
+scope or re-consent needed if you've already run `users get` before).
+
+```sh
+cargo run -p google-chat -- spaces members list --space AAQAtCLmaho
+cargo run -p google-chat -- spaces members list --space spaces/AAQAtCLmaho --page-size 20
+cargo run -p google-chat -- spaces members list --space AAQAtCLmaho --select "members.names.displayName,members.emailAddresses.value,unresolved"
+```
+
+**Flags:**
+- `--space <ID>` (required) — bare space id or full `spaces/{id}` resource name, as printed in `spaces list`'s `name` field
+- `--page-size <N>` — maximum number of memberships to fetch per page (default 100; the server may return fewer)
+- `--page-token <TOKEN>` — cursor for the next page, taken from `nextPageToken` in a previous response
 
 ### `google-chat messages list --space <id>`
 
@@ -482,10 +509,11 @@ cargo test -p google-chat
 
 ### End-to-end tests
 
-E2e tests call the real Google Chat (and, for `users get`, People) API. They
-are all marked `#[ignore]` and never run as part of the normal test suite.
-Unlike jira, coverage is deliberately **read-only**: `spaces list`, `messages
-list`, and `users get` only. `messages send` creates real, visible messages
+E2e tests call the real Google Chat (and, for `users get`/`spaces members
+list`, People) API. They are all marked `#[ignore]` and never run as part of
+the normal test suite. Unlike jira, coverage is deliberately **read-only**:
+`spaces list`, `spaces members list`, `messages list`, and `users get` only.
+`messages send` creates real, visible messages
 in spaces shared with real people, and `messages delete` permanently removes
 real messages, so both are covered only by manual `cargo run` testing during
 development, not by an automated test (see `BACKLOG.md` GCHAT-2).
