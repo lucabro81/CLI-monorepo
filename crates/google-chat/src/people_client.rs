@@ -1,6 +1,6 @@
 //! HTTP client for the Google People API v1 — used solely to resolve a
 //! Google Chat user id (`users/{id}`, as it appears in a message's
-//! `sender.name`) to that user's display name.
+//! `sender.name`) to that user's display name and email address.
 //!
 //! Kept separate from `client.rs`'s `GoogleChatClient`: this is a different
 //! external API entirely (`people.googleapis.com`, not `chat.googleapis.com`),
@@ -14,7 +14,10 @@
 //! account + domain-wide delegation, and 3LO) are "user auth" from the Chat
 //! API's perspective, since neither requests the `chat.bot` scope. Uses the
 //! same bearer access token as `GoogleChatClient`/`EventsClient` — different
-//! scope, same OAuth identity, no separate auth flow.
+//! scope, same OAuth identity, no separate auth flow. `directory.readonly`
+//! is one of the scopes Google's People API docs list as sufficient for the
+//! `emailAddresses` field, alongside `names`, so no additional scope or
+//! re-consent is needed for email resolution.
 //!
 //! Only resolves users within the same Google Workspace domain as the
 //! authenticated identity — a documented, accepted limitation (see
@@ -71,15 +74,12 @@ impl PeopleClient {
     }
 
     /// Resolves a Google Chat user id to their People API profile
-    /// (`personFields=names`), as raw JSON. `user` accepts the bare numeric
-    /// id, the full `users/{id}` resource name (as it appears in a message's
-    /// `sender.name`), or the full `people/{id}` resource name.
+    /// (`personFields=names,emailAddresses`), as raw JSON. `user` accepts the
+    /// bare numeric id, the full `users/{id}` resource name (as it appears in
+    /// a message's `sender.name`), or the full `people/{id}` resource name.
     pub fn get_user(&self, user: &str) -> Result<serde_json::Value, PeopleClientError> {
         let resource = normalize_to_people_resource(user);
-        let url = format!(
-            "{}/{resource}?personFields=names",
-            endpoints::PEOPLE_API_BASE_URL
-        );
+        let url = build_get_user_url(&resource);
 
         let response = self
             .http
@@ -117,6 +117,16 @@ pub(crate) fn normalize_to_people_resource(user: &str) -> String {
     } else {
         format!("people/{user}")
     }
+}
+
+/// Builds the `people.get` request URL for an already-normalized
+/// `people/{id}` resource, requesting both display names and email
+/// addresses.
+pub(crate) fn build_get_user_url(resource: &str) -> String {
+    format!(
+        "{}/{resource}?personFields=names,emailAddresses",
+        endpoints::PEOPLE_API_BASE_URL
+    )
 }
 
 #[cfg(test)]

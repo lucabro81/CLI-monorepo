@@ -434,16 +434,18 @@ internally. Every other command stays on plain blocking `reqwest`.
 
 Resolves a Google Chat user id — the `users/{id}` format found in a
 message's `sender.name` field (see `messages list`/`messages send`) — to
-that user's display name. The Chat API itself never returns this under
-either of this crate's auth modes: per Google's docs, a Chat `User` resource
-returned to a caller "authenticated as a user" (both this crate's modes are,
-since neither uses the `chat.bot` scope) only ever contains `name`/`type`,
-never `displayName`. This command instead calls the Google People API's
-`people.get` (`personFields=names`), which shares the same underlying
-numeric account id as the Chat `users/{id}` — just under a `people/{id}`
-resource name. Requires the `directory.readonly` scope (re-run `auth login
---user` if you logged in before this command was added) and the People API
-enabled on the underlying Google Cloud project (see Setup above).
+that user's display name and email address. The Chat API itself never
+returns this under either of this crate's auth modes: per Google's docs, a
+Chat `User` resource returned to a caller "authenticated as a user" (both
+this crate's modes are, since neither uses the `chat.bot` scope) only ever
+contains `name`/`type`, never `displayName`. This command instead calls the
+Google People API's `people.get` (`personFields=names,emailAddresses`),
+which shares the same underlying numeric account id as the Chat `users/{id}`
+— just under a `people/{id}` resource name. Requires the `directory.readonly`
+scope (re-run `auth login --user` if you logged in before this command was
+added) and the People API enabled on the underlying Google Cloud project
+(see Setup above); that same scope is already sufficient for the
+`emailAddresses` field, no extra consent needed.
 
 **Only resolves users in the same Google Workspace domain as the
 authenticated identity** — a sender from a different domain, or a personal
