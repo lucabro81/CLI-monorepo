@@ -133,6 +133,24 @@ pub enum SpacesCommand {
         #[command(subcommand)]
         command: SpaceMembersCommand,
     },
+    /// Create a new space, or return an existing one, for messaging users you haven't talked to yet
+    ///
+    /// Wraps spaces.setup. Pass one --user for a 1:1 direct message: this is
+    /// idempotent — if a DM already exists between the authenticated identity
+    /// and that user, the existing space is returned instead of creating a
+    /// duplicate. Pass --user two or more times for an unnamed group chat.
+    /// Prints the created/found Space as JSON, including its "name" field
+    /// (the spaces/{id} to pass to `messages send`, `spaces list`, etc).
+    /// Requires the chat.spaces.create scope — re-run `auth login` (service
+    /// account) or `auth login --user` if you authenticated before this
+    /// command was added. Always prints its full result regardless of
+    /// --select — a single Space object, fixed shape.
+    #[command(after_help = "Examples:\n  google-chat spaces create --user colleague@example.com\n  google-chat spaces create --user colleague@example.com --user other@example.com\n  google-chat spaces create --user users/108506379394699518479\n\n--user accepts an email address, a bare Chat/People user id, or the full \"users/{id}\" resource name; repeat it for multiple users.\nOne --user creates or finds a DIRECT_MESSAGE space; two or more create an unnamed GROUP_CHAT.")]
+    Create {
+        /// User to add to the space — email address, bare user id, or full "users/{id}" resource name. Repeat for multiple users.
+        #[arg(long, required = true)]
+        user: Vec<String>,
+    },
 }
 
 #[derive(Debug, Subcommand)]

@@ -38,6 +38,11 @@ pub fn run(command: SpacesCommand, select: cli_fields::Select<'_>) -> Result<(),
             });
             print_json(&value, select)
         }
+        SpacesCommand::Create { user } => {
+            let client = authenticated_client()?;
+            let value = client.setup_space(&user).map_err(client_error_to_cli)?;
+            print_json(&value, select.or_all())
+        }
     }
 }
 
