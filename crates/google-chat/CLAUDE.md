@@ -16,7 +16,11 @@ src/
                     combines GoogleChatClient::list_members with
                     PeopleClient::get_user per HUMAN member
                     (build_members_response, testable via an injected
-                    resolve closure, no mocking framework needed)
+                    resolve closure, no mocking framework needed) — and
+                    `spaces create`, which calls
+                    GoogleChatClient::setup_space to create/find a DM or
+                    group chat by user identifier instead of requiring a
+                    pre-existing --space
     messages.rs   — run(MessagesCommand); dispatches message subcommands
     subscription.rs — run(SubscriptionCommand); dispatches to EventsClient
     listen.rs     — run_listen(); the crate's one async command (see below)
@@ -161,12 +165,30 @@ refresh tokens for an **Internal** consent-screen app don't rotate or expire
 on a fixed schedule — no rotate-on-every-use concern for the 3LO path.
 
 **Scopes** (both grants): `https://www.googleapis.com/auth/chat.spaces.readonly
+https://www.googleapis.com/auth/chat.spaces.create
 https://www.googleapis.com/auth/chat.messages.readonly
 https://www.googleapis.com/auth/chat.messages.create
 https://www.googleapis.com/auth/chat.messages
 https://www.googleapis.com/auth/chat.memberships.readonly
 https://www.googleapis.com/auth/pubsub
-https://www.googleapis.com/auth/directory.readonly`. `chat.memberships.readonly`/`pubsub`
+https://www.googleapis.com/auth/directory.readonly`. `chat.spaces.create` was
+added for `spaces create` (`spaces.setup`) — confirmed against Google's docs
+that `spaces.setup` requires "user authentication", and that domain-wide
+delegation (this crate's default `auth login`) counts as user authentication
+(a service account impersonating a real user via the JWT `sub` claim), so
+both of this crate's auth modes support it, not just `--user` (3LO) — the
+`--user` path is what was actually verified live (BACKLOG.md GCHAT-6), the
+service-account path is inferred from Google's docs, same as every other
+scope here (GCHAT-1). Re-consenting to a newly-added scope needs a
+genuinely fresh interactive `auth login --user`; if that keeps returning the
+old scope set, check the local OAuth callback server actually completed
+rather than assuming a Google-side propagation delay — a stale process still
+bound to `localhost:8080` from an earlier aborted login makes every
+subsequent attempt fail immediately with `Address already in use (os error
+48)` *before* writing a new `credentials.json`, so a caller re-checking the
+token afterward keeps seeing the same stale scopes and can easily mistake it
+for slow propagation on Google's end (this cost real time diagnosing
+GCHAT-6 — check for a stray bound process first). `chat.memberships.readonly`/`pubsub`
 were added for `subscription create`/`listen` — verified live (`BACKLOG.md`
 GCHAT-3): `chat.spaces.readonly` + `chat.memberships.readonly` are sufficient
 for Workspace Events subscriptions, no extra scope needed.
@@ -261,6 +283,7 @@ Both files live under `$XDG_CONFIG_HOME/google-chat-cli/` (falling back to
   | `doctor` | yes | internally-generated report, fixed/small |
   | `spaces list` | **no** | paginated collection |
   | `spaces members list` | **no** | paginated collection, one People API profile per member |
+  | `spaces create` | yes | single Space object, fixed shape |
   | `messages list` | **no** | paginated collection, explicitly meant to page through a lot of history |
   | `messages send` | yes | single message object, fixed shape |
   | `subscription create` | yes | single subscription object, fixed shape |
@@ -271,6 +294,24 @@ Both files live under `$XDG_CONFIG_HOME/google-chat-cli/` (falling back to
   space id or the full `spaces/{id}` resource name (`client::normalize_space_name`),
   so a caller can paste either form straight from `spaces list`'s `name` field.
   Used by both `messages list` and `messages send`.
+- **`spaces create` (`spaces.setup`) picks `spaceType` from the number of
+  `--user` values, not a separate flag**: exactly one produces a
+  `DIRECT_MESSAGE`; two or more produce an unnamed `GROUP_CHAT`
+  (`client::build_setup_space_body`, unit-tested directly — mirrors
+  `events_client.rs`'s `build_pubsub_subscription_body` pattern of
+  extracting body construction into a pure, testable function separate from
+  the network call). `client::normalize_user_name` wraps a bare email or
+  user id as `users/{value}` for the `member.name` field, passing through an
+  already-prefixed `users/{id}` unchanged — same shape as
+  `normalize_space_name` but for user identifiers. For `DIRECT_MESSAGE`,
+  `spaces.setup` is idempotent on Google's side: calling it again with the
+  same user returns the existing DM instead of creating a duplicate, so
+  `spaces create` is safe to call unconditionally before every `messages
+  send` rather than requiring a caller to check `spaces list` first. Named
+  spaces (`spaceType: SPACE`, requiring a `displayName`) are intentionally
+  not supported by this command — out of scope for the "start a
+  conversation with someone" use case that motivated it; add a `--display-name`
+  flag if that need arises.
 - **`messages send` is not `--confirm`-gated**: unlike jira's `issue delete`,
   sending a message isn't irreversible data destruction — it's visible,
   ordinary chat activity. No confirmation flag.
@@ -362,6 +403,7 @@ Both files live under `$XDG_CONFIG_HOME/google-chat-cli/` (falling back to
 | `init [--client-id --client-secret]` | Human onboarding; only command with narrative output. `write_app_config` preserves an existing `service_account` block across reruns. |
 | `spaces list [--page-size --page-token]` | Lists spaces (`spaces.list`) the authenticated identity belongs to. Verified live — real spaces returned, types (`SPACE`/`GROUP_CHAT`/`DIRECT_MESSAGE`) confirmed. |
 | `spaces members list --space <id> [--page-size --page-token]` | Lists a space's members (`spaces.members.list`), resolving each `HUMAN` member to their People API profile — the same enrichment `users get` does, applied to a whole space. Returns `{"members": [...], "unresolved": [...], "nextPageToken": ...}`: `unresolved` collects members that couldn't be resolved (non-`HUMAN`, e.g. a chat app/bot member — skipped without a network call — or a People API failure, e.g. cross-domain human, same limitation as `users get`, BACKLOG.md GCHAT-5) with a `reason`, instead of failing the whole command (`build_members_response` in `commands/spaces.rs`, unit-tested via an injected `resolve` closure). Requires `chat.memberships.readonly` + `directory.readonly` (both already granted for `subscription create`/`users get` respectively) — no new scope needed. Verified live against a real 2-member space: both members resolved with correct display names and emails; the `unresolved` path (non-`HUMAN`/failed resolution) is covered by unit tests only, not observed live (no accessible test space currently has a bot/cross-domain member). |
+| `spaces create --user <user> [--user <user> ...]` | Creates a new space, or returns an existing one (`spaces.setup`), given user identifiers instead of a pre-existing `--space` — the entry point for messaging someone never interacted with before. One `--user` creates/finds a `DIRECT_MESSAGE` (idempotent on Google's side: an existing DM is returned, not duplicated); two or more create an unnamed `GROUP_CHAT`. Requires the `chat.spaces.create` scope (re-run `auth login`/`auth login --user` to re-consent if you logged in before this command was added). Verified live 2026-07-21 (see BACKLOG.md GCHAT-6): `--user <own email>` correctly rejected with `400 INVALID_ARGUMENT` (can't add the calling user as a membership); `--user mauro.seno@comperio.it` (a colleague with a pre-existing DM, `spaces/ud85UsAAAAE`) returned that exact existing space instead of creating a duplicate — idempotency confirmed, zero new state created. Creating a genuinely new DM and a `GROUP_CHAT` (2+ users) were not separately exercised live — no safe test target for either without contacting someone new. |
 | `messages list --space <id> [--page-size --page-token --order-by]` | Lists messages in a space (`spaces.messages.list`). Chronological by default (`createTime ASC`, the Chat API's own default) — the context-recovery path for an agent resuming after a gap or summarization. `--order-by "createTime DESC"` gets the most recent first. `--space` accepts bare id or full `spaces/{id}`. Verified live against real conversation history both orderings, both id forms. |
 | `messages send --space <id> --text <text>` | Creates a message (`spaces.messages.create`) in a space; prints the created Message (including its `name`). Not gated by `--confirm` — visible but not data-destructive. Verified live: real message delivered and visible to the other party, both `--space` id forms confirmed. |
 | `messages delete --name <name> --confirm [--delete-threaded-replies]` | Permanently deletes a message (`spaces.messages.delete`); prints a synthesized `{"deleted": true, "name": ...}` confirmation (the API itself returns nothing). First `--confirm`-gated command in this crate — omitting `--confirm` fails fast with `DeleteNotConfirmed`, before any network call. Requires the `chat.messages` scope (new, added alongside this command; re-consent via `auth login --user` needed for accounts logged in before this command existed). Verified live 2026-07-15 against `spaces/AAQAtCLmaho`: sent a disposable test message via `messages send`, deleted it, got the synthesized confirmation JSON, then confirmed via `messages list` that it no longer appears. `--delete-threaded-replies`/`force` behavior on a message that actually has replies was not separately exercised. |

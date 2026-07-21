@@ -179,6 +179,47 @@ fn rejects_spaces_members_list_missing_space() {
 }
 
 #[test]
+fn parses_spaces_create_with_single_user() {
+    let cli = Cli::parse_from(["google-chat", "spaces", "create", "--user", "colleague@example.com"]);
+
+    assert!(matches!(
+        cli.command,
+        Command::Spaces {
+            command: SpacesCommand::Create { ref user }
+        } if user == &["colleague@example.com".to_string()]
+    ));
+}
+
+#[test]
+fn parses_spaces_create_with_repeated_user() {
+    let cli = Cli::parse_from([
+        "google-chat",
+        "spaces",
+        "create",
+        "--user",
+        "colleague@example.com",
+        "--user",
+        "other@example.com",
+    ]);
+
+    assert!(matches!(
+        cli.command,
+        Command::Spaces {
+            command: SpacesCommand::Create { ref user }
+        } if user == &[
+            "colleague@example.com".to_string(),
+            "other@example.com".to_string(),
+        ]
+    ));
+}
+
+#[test]
+fn rejects_spaces_create_without_user() {
+    let result = Cli::try_parse_from(["google-chat", "spaces", "create"]);
+    assert!(result.is_err());
+}
+
+#[test]
 fn rejects_unknown_spaces_subcommand() {
     let result = Cli::try_parse_from(["google-chat", "spaces", "bogus"]);
 

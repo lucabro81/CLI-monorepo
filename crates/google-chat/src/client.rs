@@ -125,6 +125,17 @@ impl GoogleChatClient {
         self.post_json(&format!("/{parent}/messages"), &body)
     }
 
+    /// Creates a new space, or returns an existing one, via `spaces.setup`.
+    /// One entry in `users` creates/finds a `DIRECT_MESSAGE` with that user —
+    /// idempotent: if a DM already exists between the caller and that user,
+    /// it is returned instead of creating a duplicate. Two or more entries
+    /// create an unnamed `GROUP_CHAT`. Each entry accepts an email address,
+    /// a bare Chat/People user id, or the full `users/{id}` resource name.
+    pub fn setup_space(&self, users: &[String]) -> Result<serde_json::Value, ClientError> {
+        let body = build_setup_space_body(users);
+        self.post_json(endpoints::PATH_SPACES_SETUP, &body)
+    }
+
     /// Permanently deletes a message. `name` is the full resource name
     /// (`spaces/{space}/messages/{message}`). `delete_threaded_replies`
     /// maps to the API's `force` query param — the request fails if the
@@ -222,6 +233,33 @@ pub(crate) fn normalize_space_name(space: &str) -> String {
     } else {
         format!("spaces/{space}")
     }
+}
+
+/// Normalizes a user identifier to the `users/{id}` resource name expected by
+/// `spaces.setup`'s `member.name` field, accepting an email address, a bare
+/// Chat/People user id, or the full `users/{id}` form already.
+fn normalize_user_name(user: &str) -> String {
+    if user.starts_with("users/") {
+        user.to_string()
+    } else {
+        format!("users/{user}")
+    }
+}
+
+/// Builds the `spaces.setup` request body: one `users` entry produces a
+/// `DIRECT_MESSAGE` space with a single membership; two or more produce an
+/// unnamed `GROUP_CHAT` with one membership per user.
+fn build_setup_space_body(users: &[String]) -> serde_json::Value {
+    let space_type = if users.len() == 1 { "DIRECT_MESSAGE" } else { "GROUP_CHAT" };
+    let memberships: Vec<serde_json::Value> = users
+        .iter()
+        .map(|user| serde_json::json!({ "member": { "name": normalize_user_name(user), "type": "HUMAN" } }))
+        .collect();
+
+    serde_json::json!({
+        "space": { "spaceType": space_type },
+        "memberships": memberships,
+    })
 }
 
 #[cfg(test)]

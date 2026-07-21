@@ -12,6 +12,7 @@ CLI for Google Chat (Google Workspace), designed to be driven by an LLM agent (o
   - [`google-chat auth login`](#google-chat-auth-login)
   - [`google-chat spaces list`](#google-chat-spaces-list)
   - [`google-chat spaces members list --space <id>`](#google-chat-spaces-members-list---space-id)
+  - [`google-chat spaces create --user <user>`](#google-chat-spaces-create---user-user)
   - [`google-chat messages list --space <id>`](#google-chat-messages-list---space-id)
   - [`google-chat messages send --space <id> --text <text>`](#google-chat-messages-send---space-id---text-text)
   - [`google-chat messages delete --name <name> --confirm`](#google-chat-messages-delete---name-name---confirm)
@@ -75,7 +76,7 @@ setup by a Workspace **super-admin**:
 3. In the Google Admin Console (admin.google.com → Security → Access and
    data control → API controls → Domain-wide delegation), add that Client
    ID authorized for exactly these scopes (comma-separated):
-   `https://www.googleapis.com/auth/chat.spaces.readonly,https://www.googleapis.com/auth/chat.messages.readonly,https://www.googleapis.com/auth/chat.messages.create,https://www.googleapis.com/auth/chat.messages,https://www.googleapis.com/auth/chat.memberships.readonly,https://www.googleapis.com/auth/pubsub,https://www.googleapis.com/auth/directory.readonly`
+   `https://www.googleapis.com/auth/chat.spaces.readonly,https://www.googleapis.com/auth/chat.spaces.create,https://www.googleapis.com/auth/chat.messages.readonly,https://www.googleapis.com/auth/chat.messages.create,https://www.googleapis.com/auth/chat.messages,https://www.googleapis.com/auth/chat.memberships.readonly,https://www.googleapis.com/auth/pubsub,https://www.googleapis.com/auth/directory.readonly`
 4. Add a `service_account` block to `app.json`, using `client_email` and
    `private_key` from the downloaded key, and `impersonate_user` set to the
    service user's email:
@@ -105,12 +106,13 @@ cargo run -p google-chat -- init
 
 `auth login` (no flags) uses the service account from step 5, silently. `auth
 login --user` opens Google's consent screen in your browser, listing the
-requested scopes (`chat.spaces.readonly`, `chat.messages.readonly`,
-`chat.messages.create`, `chat.messages`, `chat.memberships.readonly`, `pubsub`,
-`directory.readonly`).
-If you logged in before `chat.messages` or `directory.readonly` were added,
-re-run `auth login --user` to re-consent — no Cloud Console changes needed,
-since the consent screen is Internal (step 2 above). `directory.readonly`
+requested scopes (`chat.spaces.readonly`, `chat.spaces.create`,
+`chat.messages.readonly`, `chat.messages.create`, `chat.messages`,
+`chat.memberships.readonly`, `pubsub`, `directory.readonly`).
+If you logged in before `chat.spaces.create`, `chat.messages`, or
+`directory.readonly` were added, re-run `auth login --user` to re-consent —
+no Cloud Console changes needed, since the consent screen is Internal (step 2
+above). `directory.readonly`
 also requires the **People API** to be enabled on the underlying Google Cloud
 project (APIs & Services → Library → People API → Enable, or `gcloud services
 enable people.googleapis.com --project=<project>`) — without it, `users get`
@@ -274,6 +276,34 @@ cargo run -p google-chat -- spaces members list --space AAQAtCLmaho --select "me
 - `--space <ID>` (required) — bare space id or full `spaces/{id}` resource name, as printed in `spaces list`'s `name` field
 - `--page-size <N>` — maximum number of memberships to fetch per page (default 100; the server may return fewer)
 - `--page-token <TOKEN>` — cursor for the next page, taken from `nextPageToken` in a previous response
+
+### `google-chat spaces create --user <user>`
+
+Creates a new space, or returns an existing one, so you can start messaging a
+user you've never interacted with before — every other command in this crate
+(`messages send`, `spaces members list`, ...) requires a space to already
+exist. Wraps `spaces.setup`.
+
+One `--user` creates or finds a `DIRECT_MESSAGE`: **idempotent** — if a DM
+already exists between the authenticated identity and that user, the
+existing space is returned instead of creating a duplicate, so it's safe to
+call this before every `messages send` without checking first. Passing
+`--user` two or more times creates an unnamed `GROUP_CHAT` instead. Prints
+the created/found `Space` resource as JSON, including its `name` field (the
+`spaces/{id}` to pass to `messages send`, `spaces list`, etc).
+
+Requires the `chat.spaces.create` scope — **re-run `auth login`** (service
+account) or **`auth login --user`** (human) if you authenticated before this
+command was added.
+
+```sh
+cargo run -p google-chat -- spaces create --user colleague@example.com
+cargo run -p google-chat -- spaces create --user colleague@example.com --user other@example.com
+cargo run -p google-chat -- spaces create --user users/108506379394699518479
+```
+
+**Flags:**
+- `--user <USER>` (required, repeatable) — email address, bare Chat/People user id, or full `users/{id}` resource name
 
 ### `google-chat messages list --space <id>`
 

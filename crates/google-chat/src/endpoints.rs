@@ -23,6 +23,10 @@ pub const CHAT_API_BASE_URL: &str = "https://chat.googleapis.com/v1";
 
 pub const PATH_SPACES: &str = "/spaces";
 
+/// `spaces.setup` — creates a space or, for a `DIRECT_MESSAGE`, returns the
+/// existing one if a DM with the given user already exists.
+pub const PATH_SPACES_SETUP: &str = "/spaces:setup";
+
 // ── Workspace Events API v1 and Pub/Sub API v1 (events_client.rs) ──────────
 
 /// Base URL for Google Workspace Events API v1 calls (subscription management).
