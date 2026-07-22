@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/jira", "crates/bitbucket", "crates/google-chat", "crates/cli-fields"]
+members = ["crates/jira", "crates/bitbucket", "crates/google-chat", "crates/cli-fields", "crates/atlassian-admin"]
 
 [workspace.metadata.release]
 # Version bumps are computed by git-cliff and applied by cargo-release, driven

@@ -1,0 +1,19 @@
+[package]
+name = "atlassian-admin"
+version = "0.1.0"
+edition = "2024"
+
+[lints]
+workspace = true
+
+[dependencies]
+cli-fields = { path = "../cli-fields" }
+clap = { version = "4", features = ["derive"] }
+reqwest = { version = "0.12", features = ["blocking", "json"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+dirs = "5"
+thiserror = "1"
+
+[dev-dependencies]
+tempfile = "3"
