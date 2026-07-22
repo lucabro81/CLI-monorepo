@@ -46,6 +46,23 @@ fn credentials_path_is_under_bitbucket_cli_dir() {
 }
 
 #[test]
+fn deserializes_real_bitbucket_token_response_shape() {
+    // Regression test: Bitbucket's client_credentials token endpoint (issued via
+    // auth.atlassian.com) returns the standard OAuth2 field name "scope"
+    // (singular, RFC 6749), not "scopes" (plural). TokenResponse previously
+    // required "scopes", so real responses failed to deserialize with
+    // "error decoding response body".
+    let json = r#"{"access_token":"tok","token_type":"Bearer","expires_in":7200,"scope":"repository:read pullrequest:write"}"#;
+
+    let token: TokenResponse =
+        serde_json::from_str(json).expect("should parse real Bitbucket response shape");
+
+    assert_eq!(token.access_token, "tok");
+    assert_eq!(token.expires_in, 7200);
+    assert_eq!(token.scope, "repository:read pullrequest:write");
+}
+
+#[test]
 fn credentials_round_trip_through_json() {
     let creds = Credentials {
         access_token: "token123".to_string(),
