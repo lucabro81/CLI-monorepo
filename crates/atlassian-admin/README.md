@@ -11,13 +11,14 @@ CLI for the Atlassian Organization Admin API, designed to be driven by an LLM ag
   - [`atlassian-admin init`](#atlassian-admin-init)
   - [`atlassian-admin doctor`](#atlassian-admin-doctor)
   - [`atlassian-admin user get`](#atlassian-admin-user-get)
+  - [`atlassian-admin user list`](#atlassian-admin-user-list)
   - [`--select <PATHS>` (global flag)](#--select-paths-global-flag)
 - [Testing](#testing)
 - [Error design](#error-design)
 
 ## Status
 
-`init`, `doctor`, `user get` implemented. See [CLAUDE.md](CLAUDE.md) for architecture.
+`init`, `doctor`, `user get`, `user list` implemented. See [CLAUDE.md](CLAUDE.md) for architecture.
 
 ## Setup
 
@@ -27,10 +28,9 @@ You need to be an admin (or superadmin) of your Atlassian organization.
 
 1. Go to [admin.atlassian.com](https://admin.atlassian.com), select your organization.
 2. **Organization settings → API keys**.
-3. Choose **API keys with scopes** (recommended over "without scopes").
+3. Choose **API keys without scopes** (full access). `user get` needs a scope (`manage:org`) that doesn't appear in Atlassian's public scope catalog and so can't be selected under "with scopes" at all — confirmed live 2026-07-22, see `CLAUDE.md`'s "Corrections found via live testing".
 4. **Create API key** — give it a descriptive name and an expiration (max 1 year; you'll need to rotate it before then).
-5. Select scopes: `read:accounts:admin` and `read:directories:admin` cover every command this CLI currently implements.
-6. **Create** — the confirmation screen shows the **Organization ID** and the **API key together, once**. Copy both immediately; they cannot be recovered afterward.
+5. **Create** — the confirmation screen shows the **Organization ID** and the **API key together, once**. Copy both immediately; they cannot be recovered afterward. Scopes can't be changed on an existing key — creating a wider-access key later means revoking this one and starting over.
 
 This key is org-wide and significantly more privileged than a single-product OAuth consumer — treat it accordingly (never commit it, prefer the narrowest scope set your commands need).
 
@@ -63,9 +63,11 @@ creates `app.json` as an empty skeleton (if it doesn't already exist) and prints
 
 ## How auth works
 
-No OAuth grant, no consumer, no client_id/secret pair, no token expiry or refresh. Every request sends the API key from `app.json` directly as `Authorization: Bearer <api_key>` to `https://api.atlassian.com/admin/v1/orgs/{org_id}/...`.
+No OAuth grant, no consumer, no client_id/secret pair, no token expiry or refresh. Every request sends the API key from `app.json` directly as `Authorization: Bearer <api_key>`.
 
-The Organization Admin API only resolves accounts that are **managed** under your organization — i.e. their email domain is verified/claimed via Atlassian Access/Guard. An external Atlassian account (personal ID, unrelated domain) won't resolve here regardless of scope.
+Two different hosts are involved (see `CLAUDE.md`'s "API design notes" for the full detail): `doctor` calls the Organization API (`https://api.atlassian.com/admin/v1/orgs/{org_id}`); `user get` calls the user management "manage" API (`https://api.atlassian.com/users/{account_id}/manage/profile` — no `org_id` in the path at all). Both need an unscoped API key in practice — see [Setup](#setup) above.
+
+The user management API only resolves accounts that are **managed** under your organization — i.e. their email domain is verified/claimed via Atlassian Access/Guard. An external Atlassian account (personal ID, unrelated domain) won't resolve here regardless of scope.
 
 ## Usage
 
@@ -89,21 +91,32 @@ cargo run -p atlassian-admin -- doctor --select app_config.status,api.status
 
 ### `atlassian-admin user get`
 
-Resolves an Atlassian `account_id` — the same identity shared across Jira, Confluence, and Bitbucket since the 2019 account unification — to a full profile (including email), for managed accounts only.
+Resolves an Atlassian `account_id` — the same identity shared across Jira, Confluence, and Bitbucket since the 2019 account unification — to a full profile (including email), for managed accounts only. The response wraps everything under an `account` key.
 
 ```sh
-cargo run -p atlassian-admin -- user get --account-id 712020:b6d01943-f1de-4eb4-ab1a-300a17283d42
-cargo run -p atlassian-admin -- user get --account-id 712020:b6d01943-f1de-4eb4-ab1a-300a17283d42 --select email,name
+cargo run -p atlassian-admin -- user get --account-id 5b10a2844c20165700ede21g
+cargo run -p atlassian-admin -- user get --account-id 5b10a2844c20165700ede21g --select account.email,account.name
 ```
 
-Requires the `read:accounts:admin` + `read:directories:admin` scopes.
+Requires an unscoped ("without scopes") API key — see [Setup](#setup).
+
+### `atlassian-admin user list`
+
+Lists every managed user in the organization in one call — each entry already includes `account_id`/`name`/`email` directly, so you don't need `user get` per person if you want to resolve many at once (e.g. cross-referencing an entire team against another system by email).
+
+```sh
+cargo run -p atlassian-admin -- user list --select 'data.account_id,data.name,data.email'
+cargo run -p atlassian-admin -- user list --cursor <cursor-from-previous-response-links.next>
+```
+
+Paginated: if the response's `links` includes a `next` URL, pass its `cursor` query value to `--cursor` to fetch the next page. Verified live against a real 37-person organization (fit in a single page — multi-page behavior not yet observed).
 
 ### `--select <PATHS>` (global flag)
 
 All commands that return JSON support a `--select` flag for client-side field projection. Pass a comma-separated list of dot-notation paths; only those paths are included in the output. If omitted, the full response is printed.
 
 ```sh
-cargo run -p atlassian-admin -- user get --account-id <ID> --select email
+cargo run -p atlassian-admin -- user get --account-id <ID> --select account.email
 ```
 
 The flag can appear before or after the subcommand.

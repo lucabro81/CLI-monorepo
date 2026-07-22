@@ -67,13 +67,26 @@ pub enum UserCommand {
     /// Resolve an Atlassian `account_id` to a managed-account profile (including email), as JSON
     ///
     /// Always prints its full result regardless of --select — a single profile
-    /// object, fixed-shape. Only resolves accounts managed under your
-    /// organization (email domain verified via Atlassian Access/Guard).
-    #[command(after_help = "Examples:\n  atlassian-admin user get --account-id 712020:b6d01943-f1de-4eb4-ab1a-300a17283d42\n  atlassian-admin user get --account-id 712020:b6d01943-f1de-4eb4-ab1a-300a17283d42 --select email,name")]
+    /// object, fixed-shape, wrapped under an "account" key. Only resolves
+    /// accounts managed under your organization (email domain verified via
+    /// Atlassian Access/Guard). Requires an unscoped ("without scopes") API key.
+    #[command(after_help = "Examples:\n  atlassian-admin user get --account-id 5b10a2844c20165700ede21g\n  atlassian-admin user get --account-id 5b10a2844c20165700ede21g --select account.email,account.name")]
     Get {
         /// Atlassian `account_id` (the identity shared across Jira, Confluence, and Bitbucket)
         #[arg(long)]
         account_id: String,
+    },
+    /// List every managed user in the organization, as JSON
+    ///
+    /// Each entry already includes `account_id`/`name`/`email` directly — no
+    /// need to call `user get` per person. Paginated; if the response's
+    /// `links` includes a `next` URL, pass its `cursor` query value to
+    /// --cursor to fetch the next page.
+    #[command(after_help = "Examples:\n  atlassian-admin user list\n  atlassian-admin user list --select data\n  atlassian-admin user list --cursor eyJvZmZzZXQiOjUwfQ")]
+    List {
+        /// Opaque pagination cursor from a previous response's links.next URL
+        #[arg(long)]
+        cursor: Option<String>,
     },
 }
 

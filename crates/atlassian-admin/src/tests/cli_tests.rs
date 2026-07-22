@@ -81,6 +81,33 @@ fn rejects_user_get_without_account_id() {
 }
 
 #[test]
+fn parses_user_list_without_cursor() {
+    let cli = Cli::try_parse_from(["atlassian-admin", "user", "list"]).expect("should parse");
+
+    assert!(matches!(
+        cli.command,
+        Command::User {
+            command: UserCommand::List { cursor: None }
+        }
+    ));
+}
+
+#[test]
+fn parses_user_list_with_cursor() {
+    let cli = Cli::try_parse_from(["atlassian-admin", "user", "list", "--cursor", "abc123"])
+        .expect("should parse");
+
+    match cli.command {
+        Command::User {
+            command: UserCommand::List { cursor },
+        } => {
+            assert_eq!(cursor.as_deref(), Some("abc123"));
+        }
+        other => panic!("expected Command::User(List), got {other:?}"),
+    }
+}
+
+#[test]
 fn parses_user_get_with_select() {
     let cli = Cli::try_parse_from([
         "atlassian-admin",

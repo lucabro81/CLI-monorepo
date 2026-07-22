@@ -14,5 +14,12 @@ pub fn run(command: UserCommand, select: cli_fields::Select<'_>) -> Result<(), C
             // Exempt: a single profile object, fixed shape.
             print_json(&value, select.or_all())
         }
+        UserCommand::List { cursor } => {
+            let value = authenticated_client()?
+                .list_users(cursor.as_deref())
+                .map_err(|e| CliError::ApiRequestFailed { reason: e.to_string() })?;
+            // Mandatory: paginated collection, size scales with org membership.
+            print_json(&value, select)
+        }
     }
 }

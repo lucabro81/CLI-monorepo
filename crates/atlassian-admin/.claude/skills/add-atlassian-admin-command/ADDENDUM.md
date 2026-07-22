@@ -11,12 +11,14 @@ Steps not listed follow `SKILL.md` as-is.
 
 ## Step 1 — Scope
 
-- A new scope requires editing the Organization API key at admin.atlassian.com
-  (Organization settings → API keys) — keys can't have scopes added in place;
-  check whether the existing key's scopes (`read:accounts:admin`,
-  `read:directories:admin`) already cover the new command before asking the
-  user to create a new key with a wider scope set. Scope catalog:
-  `https://developer.atlassian.com/cloud/admin/scopes/`.
+- The configured key is unscoped ("without scopes", full access) — see
+  CLAUDE.md's "Auth design" for why (`user get`'s required scope,
+  `manage:org`, isn't in Atlassian's public scope catalog and can't be
+  selected on a scoped key at all). A new command almost certainly already
+  has access; there's no scope catalog to check against in practice for this
+  crate the way there is for jira/bitbucket. If a future command somehow
+  needs *more* than full org-admin access grants (unlikely), that's a
+  different problem than scope selection.
 - There is no `doctor` permissions check to keep in sync (unlike
   jira/bitbucket) — `doctor` only checks `app_config` and a live `api` call,
   see CLAUDE.md.
@@ -24,10 +26,16 @@ Steps not listed follow `SKILL.md` as-is.
 ## Step 2 — API research
 
 Docs: `https://developer.atlassian.com/cloud/admin/organization/rest/`
-(use WebFetch/WebSearch — this documentation set has been unreliable to
-fetch directly in practice; cross-check with a live curl call against the
-real API using the configured key wherever possible instead of trusting a
-single fetch).
+(use WebFetch/WebSearch — this documentation set has been **confirmed
+unreliable** in practice, not just slow: `user get`'s original path and
+scope were both wrong despite looking confirmed by WebFetch during design,
+and only surfaced once tested against a real organization — see CLAUDE.md's
+"Corrections found via live testing"). **Do not write an endpoint path or
+scope name into code/docs from a WebFetch result alone.** Cross-check with a
+live request first — a deliberately-unscoped or wrong-scope key still
+distinguishes a `403` (route exists, scope wrong — check the response body's
+listed acceptable scopes) from a `404` (route doesn't exist, path is wrong)
+without needing full permissions yet.
 
 ## Live test target
 
