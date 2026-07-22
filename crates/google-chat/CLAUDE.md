@@ -286,6 +286,7 @@ Both files live under `$XDG_CONFIG_HOME/google-chat-cli/` (falling back to
   | `spaces create` | yes | single Space object, fixed shape |
   | `messages list` | **no** | paginated collection, explicitly meant to page through a lot of history |
   | `messages send` | yes | single message object, fixed shape |
+  | `messages delete` | yes | synthesized by us: `{"deleted": true, "name": ...}` |
   | `subscription create` | yes | single subscription object, fixed shape |
   | `subscription delete` | yes | small confirmation object, fixed shape |
   | `listen` | N/A | streams NDJSON, doesn't call `print_json`, `--select` has no effect |
