@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Install, update, or uninstall the jira/bitbucket/google-chat CLI binaries
-# from this repo's GitHub Releases — no local clone, no cargo/Rust toolchain
-# needed. Downloads the prebuilt binary for your platform straight from
-# https://github.com/lucabro81/CLI-monorepo/releases.
+# Install, update, or uninstall the CLI binaries in this workspace (see
+# CRATES below) from this repo's GitHub Releases — no local clone, no
+# cargo/Rust toolchain needed. Downloads the prebuilt binary for your
+# platform straight from https://github.com/lucabro81/CLI-monorepo/releases.
 #
 # Can be run standalone, without cloning the repo, e.g.:
 #   curl -fsSL https://raw.githubusercontent.com/lucabro81/CLI-monorepo/main/scripts/install.sh | bash -s install
@@ -10,8 +10,9 @@
 # Usage:
 #   install.sh [install|update|uninstall] [crate...]
 #
-# With no action, defaults to "install". With no crate names, applies to all
-# three. install/update are the same operation (re-downloading overwrites).
+# With no action, defaults to "install". With no crate names, applies to
+# every crate in CRATES. install/update are the same operation
+# (re-downloading overwrites).
 #
 # Env vars:
 #   INSTALL_DIR   Where binaries are placed (default: $HOME/.local/bin)
@@ -19,7 +20,7 @@
 set -euo pipefail
 
 REPO="lucabro81/CLI-monorepo"
-CRATES=(jira bitbucket google-chat)
+CRATES=(jira bitbucket google-chat atlassian-admin)
 INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
 
 usage() {
