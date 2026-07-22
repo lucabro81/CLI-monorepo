@@ -17,7 +17,7 @@ CLI for the Atlassian Organization Admin API, designed to be driven by an LLM ag
 
 ## Status
 
-Scaffolded, not yet implemented. See [CLAUDE.md](CLAUDE.md) for architecture and the planned command list.
+`init`, `doctor`, `user get` implemented. See [CLAUDE.md](CLAUDE.md) for architecture.
 
 ## Setup
 

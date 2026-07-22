@@ -1,1 +1,3 @@
-//! TODO: pub mod declarations for command handlers, added as commands land.
+pub mod doctor;
+pub mod init;
+pub mod user;

@@ -18,7 +18,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        crate: [jira, bitbucket, google-chat]
+        crate: [jira, bitbucket, google-chat, atlassian-admin]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4

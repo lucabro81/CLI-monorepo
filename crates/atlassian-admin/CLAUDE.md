@@ -4,7 +4,7 @@ Architecture and design notes for the `atlassian-admin` crate. Global rules (TDD
 
 ## Status
 
-Scaffolded, not yet implemented. See "Planned commands" below.
+`init`, `doctor`, `user get` implemented. This is the crate's full planned command pool for now — new commands land as concrete needs arise (per root CLAUDE.md's incremental approach).
 
 ## Module map
 
@@ -42,7 +42,15 @@ src/
 ## Test file convention
 
 See root `CLAUDE.md` for the general `src/tests/` convention and the
-cli_tests/commands split.
+cli_tests/commands split. `doctor.rs` and `user.rs` are thin passthrough
+modules with no dedicated `tests/commands/` file — `doctor.rs` has no
+network-free pure logic to isolate (unlike bitbucket's `check_permissions`),
+and `user.rs` has no body-building/identifier-splitting logic at all; both
+are covered entirely by `cli_tests.rs` plus manual live verification.
+`init.rs` keeps `write_app_config` unit-tested (filesystem-only, no network)
+but `run_init`'s branching (direct write vs skeleton) is verified manually —
+`config_dir()` reads `$XDG_CONFIG_HOME` directly and isn't parameterized for
+injection, matching every other crate's `init` test coverage.
 
 ## Auth design
 
@@ -73,15 +81,15 @@ Every other crate's `init` falls back to an interactive stdin prompt for any cre
 
 ## Implemented commands
 
-(none yet — see "Planned commands")
-
-## Planned commands (build incrementally, smallest first)
-
 | Command | Notes |
 |---------|-------|
-| `init [--api-key --org-id]` | Human onboarding; see "init's non-interactive design" above |
+| `init [--api-key --org-id]` | Non-interactive onboarding; see "init's non-interactive design" above. Re-running bare `init` never overwrites an existing `app.json` — prints "already exists, left untouched" instead |
 | `doctor` | JSON health check: `app_config` (file exists, well-formed), `api` (live `GET /v1/orgs/{org_id}` succeeds) |
 | `user get --account-id <id>` | `GET /admin/v1/orgs/{org_id}/users/{account_id}/manage` — resolves an Atlassian `account_id` (shared across Jira/Confluence/Bitbucket since the 2019 identity unification) to email + profile, for managed accounts only |
+
+## Planned commands
+
+(none currently — add rows here as concrete needs arise, per root CLAUDE.md's incremental approach)
 
 ## API design notes
 
