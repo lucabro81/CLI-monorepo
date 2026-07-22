@@ -80,7 +80,7 @@ dependencies = [
 
 [[package]]
 name = "atlassian-admin"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "clap",
  "cli-fields",
