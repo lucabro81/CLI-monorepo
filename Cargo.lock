@@ -79,6 +79,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "atlassian-admin"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "cli-fields",
+ "dirs",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "atomic-waker"
 version = "1.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"

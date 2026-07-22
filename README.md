@@ -9,6 +9,7 @@ A Cargo workspace of CLI tools, one per external service, designed to be driven 
 | [jira](crates/jira/README.md) | Jira Cloud (issues, comments, transitions, search) | Implemented — see crate README for setup and commands |
 | [bitbucket](crates/bitbucket/README.md) | Bitbucket Cloud (PRs, repos) | init/doctor/auth/repo get/list/create implemented — see crate CLAUDE.md for planned commands |
 | [google-chat](crates/google-chat/README.md) | Google Chat (Workspace) | auth implemented — see crate CLAUDE.md for planned commands |
+| [atlassian-admin](crates/atlassian-admin/README.md) | Atlassian Organization Admin API (account_id → email/profile lookup) | init/doctor/user get implemented — see crate CLAUDE.md |
 
 ## Install prebuilt binaries
 

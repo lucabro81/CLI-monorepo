@@ -1,0 +1,70 @@
+//! Binary entry point for the `atlassian-admin` CLI.
+//!
+//! Responsibilities are kept minimal: parse CLI arguments, resolve the
+//! `--select` flag once, then dispatch to the appropriate command handler in
+//! `commands/`. All business logic lives in those modules.
+//!
+//! Error handling boundary: `run()` returns `Result<(), CliError>`; `main()`
+//! prints any error to stderr and maps it to a non-zero `ExitCode`. No
+//! `process::exit` is used anywhere in the codebase.
+
+mod auth;
+mod cli;
+mod client;
+mod commands;
+mod context;
+mod endpoints;
+mod error;
+
+use std::process::ExitCode;
+
+use clap::Parser;
+use cli::{Cli, Command};
+use context::print_json;
+use error::CliError;
+
+fn run() -> Result<(), CliError> {
+    let cli = Cli::parse();
+
+    // Resolve --select/--select-all once into a single Select value; clap's
+    // conflicts_with guarantees they are never both set.
+    let select_string = cli.select.unwrap_or_default();
+    let select_paths: Vec<&str> = if select_string.is_empty() {
+        vec![]
+    } else {
+        select_string.split(',').map(str::trim).collect()
+    };
+    let select = if cli.select_all {
+        cli_fields::Select::All
+    } else if select_paths.is_empty() {
+        cli_fields::Select::Required
+    } else {
+        cli_fields::Select::Fields(&select_paths)
+    };
+
+    match cli.command {
+        Command::Init { api_key, org_id } => commands::init::run_init(api_key, org_id),
+        Command::Doctor => {
+            let (report, all_ok) = commands::doctor::run_doctor()?;
+            // Exempt from the mandatory --select requirement: the report is generated
+            // internally (fixed, small shape, not an arbitrary external blob). An
+            // explicit --select/--select-all is still honored if passed.
+            print_json(&report, select.or_all())?;
+            if !all_ok {
+                return Err(CliError::DoctorCheckFailed);
+            }
+            Ok(())
+        }
+        Command::User { command } => commands::user::run(command, select),
+    }
+}
+
+fn main() -> ExitCode {
+    match run() {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(err) => {
+            eprintln!("{err}");
+            ExitCode::FAILURE
+        }
+    }
+}
