@@ -63,6 +63,32 @@ fn deserializes_real_bitbucket_token_response_shape() {
 }
 
 #[test]
+fn parse_token_response_includes_raw_body_on_invalid_json() {
+    // Guards against a diagnosability gap: when the token endpoint returns
+    // 200 with a body that doesn't match TokenResponse (e.g. an unexpected
+    // field name, as happened with "scope" vs "scopes"), the error must
+    // include the raw body so the failure is self-diagnosing instead of
+    // requiring a manual curl to see what the server actually sent.
+    let body = r#"{"access_token":"tok","expires_in":7200,"unexpected_field":"x"}"#;
+
+    let err = parse_token_response(body).expect_err("should fail to parse");
+
+    assert!(
+        matches!(&err, LoginError::TokenExchange(msg) if msg.contains(body)),
+        "expected error to contain raw body {body:?}, got {err}"
+    );
+}
+
+#[test]
+fn parse_token_response_succeeds_on_valid_json() {
+    let body = r#"{"access_token":"tok","expires_in":7200,"scope":"repository:read"}"#;
+
+    let token = parse_token_response(body).expect("should parse");
+
+    assert_eq!(token.access_token, "tok");
+}
+
+#[test]
 fn credentials_round_trip_through_json() {
     let creds = Credentials {
         access_token: "token123".to_string(),

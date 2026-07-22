@@ -126,6 +126,13 @@ fn now_unix() -> u64 {
         .as_secs()
 }
 
+/// Parses a token endpoint's response body into a `TokenResponse`. On failure,
+/// the raw body is included in the error so an unexpected response shape
+/// (e.g. an unfamiliar field name) is self-diagnosing without a manual request.
+fn parse_token_response(text: &str) -> Result<TokenResponse, LoginError> {
+    serde_json::from_str(text).map_err(|e| LoginError::TokenExchange(format!("{e}: {text}")))
+}
+
 /// Runs the OAuth 2.0 `client_credentials` flow: exchanges the OAuth consumer's
 /// `client_id`/`client_secret` (via HTTP Basic auth) for an access token. No
 /// browser, no user interaction, no refresh token.
@@ -137,15 +144,16 @@ pub fn login_client_credentials(config: &OAuthConfig) -> Result<Credentials, Log
         .send()
         .map_err(|e| LoginError::TokenExchange(e.to_string()))?;
 
-    if !response.status().is_success() {
-        let status = response.status();
-        let text = response.text().unwrap_or_default();
+    let status = response.status();
+    let text = response
+        .text()
+        .map_err(|e| LoginError::TokenExchange(e.to_string()))?;
+
+    if !status.is_success() {
         return Err(LoginError::TokenExchange(format!("{status}: {text}")));
     }
 
-    let token: TokenResponse = response
-        .json()
-        .map_err(|e| LoginError::TokenExchange(e.to_string()))?;
+    let token = parse_token_response(&text)?;
 
     Ok(Credentials {
         access_token: token.access_token,
