@@ -42,6 +42,7 @@ jobs:
         run: |
           set -euo pipefail
           latest_tag=$(git tag -l "${CRATE}-v*" | sort -V | tail -n1)
+          echo "latest_tag=$latest_tag" >> "$GITHUB_OUTPUT"
           if [ -n "$latest_tag" ]; then
             range="${latest_tag}..HEAD"
           else
@@ -64,10 +65,26 @@ jobs:
       - name: Compute next version
         id: version
         if: steps.check.outputs.release == 'true'
+        env:
+          CRATE: ${{ matrix.crate }}
+          LATEST_TAG: ${{ steps.check.outputs.latest_tag }}
         run: |
           set -euo pipefail
-          next=$(git-cliff --config cliff.toml --tag-pattern "^${{ matrix.crate }}-v.*" --include-path "crates/${{ matrix.crate }}/**" --bumped-version)
-          echo "version=${next#${{ matrix.crate }}-v}" >> "$GITHUB_OUTPUT"
+          if [ -z "$LATEST_TAG" ]; then
+            # First release for this crate — nothing to bump from. git-cliff's
+            # --bumped-version falls back to a bare "0.1.0" (its initial_tag
+            # default) when no tag matches --tag-pattern, which then fails its
+            # own validation against that same pattern. There's nothing to
+            # bump here anyway: use the version already declared in Cargo.toml
+            # as this crate's first release version (same source release-tag.yml
+            # already uses to decide whether a tag is needed).
+            version=$(cargo metadata --no-deps --format-version 1 \
+              | jq -r --arg name "$CRATE" '.packages[] | select(.name == $name) | .version')
+          else
+            next=$(git-cliff --config cliff.toml --tag-pattern "^${CRATE}-v.*" --include-path "crates/${CRATE}/**" --bumped-version)
+            version="${next#${CRATE}-v}"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Skip — nothing to release
         if: steps.check.outputs.release != 'true'
