@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - *(bitbucket)* include raw response body in token exchange errors
+
+### Other
+- Release
+- Merge pull request #32 from lucabro81/release/bitbucket ([#32](https://github.com/lucabro81/CLI-monorepo/pull/32))
+## [0.2.2](https://github.com/lucabro81/CLI-monorepo/compare/bitbucket-v0.2.1...bitbucket-v0.2.2) - 2026-07-22
+
+### Fixed
+- *(bitbucket)* include raw response body in token exchange errors
 ## [0.2.1](https://github.com/lucabro81/CLI-monorepo/compare/bitbucket-v0.2.0...bitbucket-v0.2.1) - 2026-07-22
 
 ### Fixed
