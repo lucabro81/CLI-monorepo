@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.11.0](https://github.com/lucabro81/CLI-monorepo/compare/google-chat-v0.10.0...google-chat-v0.11.0) - 2026-07-23
+
+### Added
+- *(google-chat)* add subscription get and list commands (#37) ([#37](https://github.com/lucabro81/CLI-monorepo/pull/37))
+
+### Other
+- *(google-chat)* add missing messages delete row to --select exemption table
 ## [0.10.0](https://github.com/lucabro81/CLI-monorepo/compare/google-chat-v0.9.0...google-chat-v0.10.0) - 2026-07-21
 
 ### Added
