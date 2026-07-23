@@ -28,9 +28,10 @@ src/
   auth.rs         — OAuth infrastructure: OAuthConfig, Credentials, login(),
                     refresh(), renew(), save_credentials(), load_credentials(),
                     path helpers
-  client.rs       — GoogleChatClient (blocking reqwest); get_json/post_json
-                    helpers; all Chat API methods: list_spaces, list_messages,
-                    list_members, create_message; normalize_space_name
+  client.rs       — GoogleChatClient (blocking reqwest); get_json/post_json/
+                    patch_json helpers; all Chat API methods: list_spaces,
+                    list_messages, list_members, create_message,
+                    update_message; normalize_space_name
                     (pub(crate), reused by events_client.rs)
   events_client.rs — EventsClient (blocking reqwest) for the Workspace Events
                     API and the Pub/Sub admin API: ensure_pubsub_subscription
@@ -286,6 +287,7 @@ Both files live under `$XDG_CONFIG_HOME/google-chat-cli/` (falling back to
   | `spaces create` | yes | single Space object, fixed shape |
   | `messages list` | **no** | paginated collection, explicitly meant to page through a lot of history |
   | `messages send` | yes | single message object, fixed shape |
+  | `messages update` | yes | single message object, fixed shape |
   | `messages delete` | yes | synthesized by us: `{"deleted": true, "name": ...}` |
   | `subscription create` | yes | single subscription object, fixed shape |
   | `subscription delete` | yes | small confirmation object, fixed shape |
@@ -315,6 +317,15 @@ Both files live under `$XDG_CONFIG_HOME/google-chat-cli/` (falling back to
   not supported by this command — out of scope for the "start a
   conversation with someone" use case that motivated it; add a `--display-name`
   flag if that need arises.
+- **`messages update` reuses the `chat.messages` scope added for `messages
+  delete`** — confirmed against the Chat API's `spaces.messages.patch` docs:
+  it requires one of `chat.bot`/`chat.import`/`chat.messages`, same set as
+  `delete`, so no new scope was needed. Only `text` is ever set in the
+  `updateMask` (`client::update_message`) — this crate only ever sends
+  plain-text messages (`messages send` has no attachment/card support), so
+  there's nothing else to update. Not `--confirm`-gated, same reasoning as
+  `messages send` below: replacing a message's text is a visible edit, not
+  irreversible destruction of data the way `messages delete` is.
 - **`messages send` is not `--confirm`-gated**: unlike jira's `issue delete`,
   sending a message isn't irreversible data destruction — it's visible,
   ordinary chat activity. No confirmation flag.
@@ -409,6 +420,7 @@ Both files live under `$XDG_CONFIG_HOME/google-chat-cli/` (falling back to
 | `spaces create --user <user> [--user <user> ...]` | Creates a new space, or returns an existing one (`spaces.setup`), given user identifiers instead of a pre-existing `--space` — the entry point for messaging someone never interacted with before. One `--user` creates/finds a `DIRECT_MESSAGE` (idempotent on Google's side: an existing DM is returned, not duplicated); two or more create an unnamed `GROUP_CHAT`. Requires the `chat.spaces.create` scope (re-run `auth login`/`auth login --user` to re-consent if you logged in before this command was added). Verified live 2026-07-21 (see BACKLOG.md GCHAT-6): `--user <own email>` correctly rejected with `400 INVALID_ARGUMENT` (can't add the calling user as a membership); `--user mauro.seno@comperio.it` (a colleague with a pre-existing DM, `spaces/ud85UsAAAAE`) returned that exact existing space instead of creating a duplicate — idempotency confirmed, zero new state created. Creating a genuinely new DM and a `GROUP_CHAT` (2+ users) were not separately exercised live — no safe test target for either without contacting someone new. |
 | `messages list --space <id> [--page-size --page-token --order-by]` | Lists messages in a space (`spaces.messages.list`). Chronological by default (`createTime ASC`, the Chat API's own default) — the context-recovery path for an agent resuming after a gap or summarization. `--order-by "createTime DESC"` gets the most recent first. `--space` accepts bare id or full `spaces/{id}`. Verified live against real conversation history both orderings, both id forms. |
 | `messages send --space <id> --text <text>` | Creates a message (`spaces.messages.create`) in a space; prints the created Message (including its `name`). Not gated by `--confirm` — visible but not data-destructive. Verified live: real message delivered and visible to the other party, both `--space` id forms confirmed. |
+| `messages update --name <name> --text <text>` | Replaces a message's text (`spaces.messages.patch` with `updateMask=text`); prints the updated Message. Requires the `chat.messages` scope (same as `messages delete`, no new scope needed). Not gated by `--confirm` — a visible edit, not data destruction. Verified live 2026-07-23 against `spaces/ud85UsAAAAE`: sent a disposable test message via `messages send`, updated its text, confirmed the response's `text`/`lastUpdateTime` changed, then cleaned up via `messages delete`. |
 | `messages delete --name <name> --confirm [--delete-threaded-replies]` | Permanently deletes a message (`spaces.messages.delete`); prints a synthesized `{"deleted": true, "name": ...}` confirmation (the API itself returns nothing). First `--confirm`-gated command in this crate — omitting `--confirm` fails fast with `DeleteNotConfirmed`, before any network call. Requires the `chat.messages` scope (new, added alongside this command; re-consent via `auth login --user` needed for accounts logged in before this command existed). Verified live 2026-07-15 against `spaces/AAQAtCLmaho`: sent a disposable test message via `messages send`, deleted it, got the synthesized confirmation JSON, then confirmed via `messages list` that it no longer appears. `--delete-threaded-replies`/`force` behavior on a message that actually has replies was not separately exercised. |
 | `subscription create --space <id> --topic <topic> --pubsub-subscription <sub> (--message-filter <filter> \| --allow-unfiltered) [--event-type ...]` | Ensures the Pub/Sub pull subscription exists (idempotent), scoped with a Pub/Sub filter expression via `--message-filter` (one `hasPrefix(attributes.ce-subject, ...)` clause per space, OR-combinable for multiple spaces) — required unless `--allow-unfiltered` explicitly opts out, mirroring `--select`/`--select-all`'s mandatory-by-default pattern (fails fast with `MessageFilterRequired`, no network call, if neither is passed). Then creates a Workspace Events subscription delivering Chat events for the space to that topic. On a pre-existing pull subscription with a different `--topic`/`--message-filter` than requested, fails with `PubsubSubscriptionMismatch` instead of silently ignoring the mismatch (both fields are immutable after creation). Verified live — real subscription created, `state: ACTIVE`. `--message-filter` verified live 2026-07-14 against `spaces/AAQAtCLmaho`/project `mercury-500017`: a matching `hasPrefix(attributes.ce-subject, "//chat.googleapis.com/spaces/AAQAtCLmaho")` filter both let a real test message through and, on a second `subscription create` reusing the same `--pubsub-subscription` with a different filter, correctly failed with `PubsubSubscriptionMismatch` (exit code 1) instead of silently succeeding; an OR-combined multi-space filter was also confirmed to parse. The subscription expires after ~4h (Workspace Events API's own default TTL); pass its `name` to `listen --workspace-events-subscription` to keep it renewed (BACKLOG.md GCHAT-4). |
 | `subscription delete --name <name>` | Deletes a Workspace Events subscription, stopping delivery immediately — call when an agent leaves a conversation, instead of relying on the ~4h expiry. Verified live: real subscription deleted (`done: true`); a second delete on the same name correctly returned `403 SUBSCRIPTION_ACCESS_DENIED` (Workspace Events conflates "gone" with "no permission" in this error). |
