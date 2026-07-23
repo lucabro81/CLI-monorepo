@@ -238,6 +238,24 @@ pub enum MessagesCommand {
         #[arg(long)]
         delete_threaded_replies: bool,
     },
+    /// Replace the text of an existing message and print the updated Message as JSON
+    ///
+    /// Replaces the message's text content (spaces.messages.patch with
+    /// updateMask=text) — visible to everyone in the space immediately, and
+    /// marked "(edited)" by the Chat UI. Requires the `chat.messages` scope
+    /// (same one required by `messages delete`; re-run `auth login --user`
+    /// if you logged in before that command was added). Always prints its
+    /// full result regardless of --select — a single message object,
+    /// fixed-shape.
+    #[command(after_help = "Example:\n  google-chat messages update --name spaces/AAQA-_d58OQ/messages/abc123.abc123 --text \"corrected status update\"\n\n--name is the \"name\" field from `messages send`'s or `messages list`'s output.")]
+    Update {
+        /// Message to update: full resource name "spaces/{space}/messages/{message}"
+        #[arg(long)]
+        name: String,
+        /// New plain-text message body, replacing the existing text entirely
+        #[arg(long)]
+        text: String,
+    },
 }
 
 #[derive(Debug, Subcommand)]

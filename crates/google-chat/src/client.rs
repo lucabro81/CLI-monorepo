@@ -136,6 +136,14 @@ impl GoogleChatClient {
         self.post_json(endpoints::PATH_SPACES_SETUP, &body)
     }
 
+    /// Replaces a message's text content (`spaces.messages.patch` with
+    /// `updateMask=text`) and returns the updated Message resource as raw
+    /// JSON. `name` is the full resource name (`spaces/{space}/messages/{message}`).
+    pub fn update_message(&self, name: &str, text: &str) -> Result<serde_json::Value, ClientError> {
+        let body = serde_json::json!({ "text": text });
+        self.patch_json(&format!("/{name}?updateMask=text"), &body)
+    }
+
     /// Permanently deletes a message. `name` is the full resource name
     /// (`spaces/{space}/messages/{message}`). `delete_threaded_replies`
     /// maps to the API's `force` query param — the request fails if the
@@ -180,6 +188,36 @@ impl GoogleChatClient {
         let response = self
             .http
             .post(&url)
+            .bearer_auth(&self.access_token)
+            .header("Accept", "application/json")
+            .json(body)
+            .send()
+            .map_err(|e| ClientError::Request(e.to_string()))?;
+
+        let status = response.status();
+        if !status.is_success() {
+            let body = response.text().unwrap_or_default();
+            return Err(ClientError::Status {
+                status: status.as_u16(),
+                body,
+            });
+        }
+
+        response
+            .json::<serde_json::Value>()
+            .map_err(|e| ClientError::Request(e.to_string()))
+    }
+
+    fn patch_json(
+        &self,
+        path: &str,
+        body: &serde_json::Value,
+    ) -> Result<serde_json::Value, ClientError> {
+        let url = format!("{}{path}", endpoints::CHAT_API_BASE_URL);
+
+        let response = self
+            .http
+            .patch(&url)
             .bearer_auth(&self.access_token)
             .header("Accept", "application/json")
             .json(body)

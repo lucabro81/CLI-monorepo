@@ -15,6 +15,7 @@ CLI for Google Chat (Google Workspace), designed to be driven by an LLM agent (o
   - [`google-chat spaces create --user <user>`](#google-chat-spaces-create---user-user)
   - [`google-chat messages list --space <id>`](#google-chat-messages-list---space-id)
   - [`google-chat messages send --space <id> --text <text>`](#google-chat-messages-send---space-id---text-text)
+  - [`google-chat messages update --name <name> --text <text>`](#google-chat-messages-update---name-name---text-text)
   - [`google-chat messages delete --name <name> --confirm`](#google-chat-messages-delete---name-name---confirm)
   - [`google-chat subscription create`](#google-chat-subscription-create)
   - [`google-chat subscription delete --name <name>`](#google-chat-subscription-delete---name-name)
@@ -351,6 +352,26 @@ cargo run -p google-chat -- messages send --space AAQA-_d58OQ --text "Same thing
 **Flags:**
 - `--space <ID>` (required) — bare space id or full `spaces/{id}` resource name
 - `--text <TEXT>` (required) — plain-text message body
+
+### `google-chat messages update --name <name> --text <text>`
+
+Replaces a message's text content (`spaces.messages.patch` with
+`updateMask=text`) and prints the updated Message resource as JSON. Requires
+the `chat.messages` scope (same one required by `messages delete`; re-run
+`auth login --user` if you logged in before this command was added).
+
+**This modifies real, visible state** — the edit appears immediately to
+everyone in the space, and the Chat UI marks the message "(edited)". Not
+gated by `--confirm`, same reasoning as `messages send`: this replaces
+content, it doesn't destroy it the way `messages delete` does.
+
+```sh
+cargo run -p google-chat -- messages update --name spaces/AAQA-_d58OQ/messages/abc123.abc123 --text "corrected status update"
+```
+
+**Flags:**
+- `--name <NAME>` (required) — full message resource name `spaces/{space}/messages/{message}`, from the `name` field of `messages send`'s or `messages list`'s output
+- `--text <TEXT>` (required) — new plain-text message body, replacing the existing text entirely
 
 ### `google-chat messages delete --name <name> --confirm`
 

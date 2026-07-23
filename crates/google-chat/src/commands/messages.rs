@@ -36,6 +36,12 @@ pub fn run(command: MessagesCommand, select: cli_fields::Select<'_>) -> Result<(
             // Exempt: a single message object, fixed shape.
             print_json(&value, select.or_all())
         }
+        MessagesCommand::Update { name, text } => {
+            let client = authenticated_client()?;
+            let value = client.update_message(&name, &text).map_err(client_error_to_cli)?;
+            // Exempt: a single message object, fixed shape.
+            print_json(&value, select.or_all())
+        }
         MessagesCommand::Delete {
             name,
             confirm,
