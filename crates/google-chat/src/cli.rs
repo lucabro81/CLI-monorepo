@@ -19,7 +19,7 @@ pub struct Cli {
     /// command fails with an error reporting the byte size of the full response and
     /// its top-level field names, so you can retry with an informed --select. A few
     /// commands whose output is always small and fixed-shape (doctor, messages send,
-    /// subscription create/delete, users get) are exempt and print in full regardless
+    /// subscription create/delete/get, users get) are exempt and print in full regardless
     /// — see that command's own --help.
     /// Example: --select spaces.name,spaces.displayName
     #[arg(long, global = true, value_name = "PATHS", conflicts_with = "select_all")]
@@ -309,6 +309,42 @@ pub enum SubscriptionCommand {
         /// Workspace Events subscription to delete: "subscriptions/{id}"
         #[arg(long)]
         name: String,
+    },
+    /// Get a Workspace Events subscription by name, as JSON
+    ///
+    /// Useful for checking a subscription's current state (e.g. its expire
+    /// time, to decide whether `listen` needs to renew it) without waiting
+    /// for `listen` to do so implicitly. Always prints its full result
+    /// regardless of --select — a single subscription object, fixed shape.
+    #[command(after_help = "Example:\n  google-chat subscription get --name subscriptions/chat-spaces-abc123\n\n--name is the \"name\" field from `subscription create`'s or `subscription list`'s output.")]
+    Get {
+        /// Workspace Events subscription to fetch: "subscriptions/{id}"
+        #[arg(long)]
+        name: String,
+    },
+    /// List Workspace Events subscriptions, as JSON
+    ///
+    /// Useful for discovering subscriptions already registered — e.g. before
+    /// creating a new one, to check whether one already covers the space and
+    /// event types needed, avoiding a redundant `subscription create` call.
+    /// --event-type is required (the Workspace Events API requires at least
+    /// one event type in every list query); pass it more than once to OR
+    /// multiple event types together. --space additionally restricts results
+    /// to subscriptions targeting that one space.
+    #[command(after_help = "Examples:\n  google-chat subscription list --event-type google.workspace.chat.message.v1.created --select subscriptions.name,subscriptions.eventTypes\n\n  # Restrict to one space:\n  google-chat subscription list --event-type google.workspace.chat.message.v1.created --space [SPACE_ID] --select subscriptions.name,subscriptions.eventTypes\n\n--space accepts either the bare id or the full \"spaces/...\" resource name.\nValid event types: google.workspace.chat.message.v1.created, .updated, .deleted.")]
+    List {
+        /// Chat event type to filter by (repeatable, OR'd together) — required, at least one
+        #[arg(long, required = true)]
+        event_type: Vec<String>,
+        /// Restrict to subscriptions targeting this space — bare id or full "spaces/{id}" resource name
+        #[arg(long)]
+        space: Option<String>,
+        /// Maximum number of subscriptions to return (default: 50; the server may return fewer, and its own max is 100)
+        #[arg(long, default_value = "50")]
+        page_size: u32,
+        /// Cursor token for the next page, from the nextPageToken field of a previous response
+        #[arg(long)]
+        page_token: Option<String>,
     },
 }
 

@@ -18,6 +18,8 @@ CLI for Google Chat (Google Workspace), designed to be driven by an LLM agent (o
   - [`google-chat messages delete --name <name> --confirm`](#google-chat-messages-delete---name-name---confirm)
   - [`google-chat subscription create`](#google-chat-subscription-create)
   - [`google-chat subscription delete --name <name>`](#google-chat-subscription-delete---name-name)
+  - [`google-chat subscription get --name <name>`](#google-chat-subscription-get---name-name)
+  - [`google-chat subscription list --event-type <type>`](#google-chat-subscription-list---event-type-type)
   - [`google-chat listen --pubsub-subscription <name> --workspace-events-subscription <name>`](#google-chat-listen---pubsub-subscription-name---workspace-events-subscription-name)
   - [`google-chat users get --user <id>`](#google-chat-users-get---user-id)
   - [`--select <PATHS>` (global flag)](#--select-paths-global-flag)
@@ -457,6 +459,47 @@ Deleting an already-deleted (or nonexistent) subscription returns a `403
 PERMISSION_DENIED` with `reason: SUBSCRIPTION_ACCESS_DENIED` — Workspace
 Events conflates "doesn't exist" with "no permission" in this error, so it's
 not distinguishable from this CLI's output alone.
+
+### `google-chat subscription get --name <name>`
+
+Fetches a single Workspace Events subscription by name. Useful for checking
+its current state (e.g. `expireTime`, to decide whether `listen` needs to
+renew it) without waiting for `listen` to do so implicitly.
+
+```sh
+cargo run -p google-chat -- subscription get --name subscriptions/chat-spaces-abc123
+```
+
+**Flags:**
+- `--name <NAME>` (required) — the `name` field from `subscription create`'s or `subscription list`'s output: `subscriptions/{id}`
+
+Always prints its full result regardless of `--select` — a single
+subscription object, fixed shape. Requires the same scopes as `spaces list`
+(`chat.spaces.readonly` or broader) — no new scope needed.
+
+### `google-chat subscription list --event-type <type>`
+
+Lists Workspace Events subscriptions currently registered for this identity.
+Useful for discovering subscriptions already registered — e.g. before
+creating a new one, to check whether one already covers the space and event
+types needed, avoiding a redundant `subscription create` call.
+
+```sh
+cargo run -p google-chat -- subscription list --event-type google.workspace.chat.message.v1.created --select subscriptions.name,subscriptions.eventTypes
+
+# Restrict to one space:
+cargo run -p google-chat -- subscription list --event-type google.workspace.chat.message.v1.created --space spaces/AAQA-_d58OQ --select subscriptions.name,subscriptions.eventTypes
+```
+
+**Flags:**
+- `--event-type <TYPE>` (required, repeatable) — the Workspace Events API requires at least one event type in every list query; pass this flag more than once to OR multiple event types together
+- `--space <SPACE>` (optional) — bare id or full `spaces/{id}` resource name; restricts results to subscriptions targeting that one space
+- `--page-size <N>` (default: `50`, server max: `100`)
+- `--page-token <TOKEN>` (optional) — from a previous response's `nextPageToken`
+
+Requires `--select` or `--select-all` like other list commands — the result
+set is unbounded. Requires the same scopes as `spaces list`
+(`chat.spaces.readonly` or broader) — no new scope needed.
 
 ### `google-chat listen --pubsub-subscription <name> --workspace-events-subscription <name>`
 

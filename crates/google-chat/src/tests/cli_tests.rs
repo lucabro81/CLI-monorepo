@@ -628,6 +628,119 @@ fn rejects_subscription_delete_without_name_flag() {
 }
 
 #[test]
+fn parses_subscription_get_with_name() {
+    let cli = Cli::parse_from([
+        "google-chat",
+        "subscription",
+        "get",
+        "--name",
+        "subscriptions/chat-spaces-abc",
+    ]);
+
+    assert!(matches!(
+        cli.command,
+        Command::Subscription {
+            command: SubscriptionCommand::Get { ref name }
+        } if name == "subscriptions/chat-spaces-abc"
+    ));
+}
+
+#[test]
+fn rejects_subscription_get_without_name_flag() {
+    let result = Cli::try_parse_from(["google-chat", "subscription", "get"]);
+
+    assert!(result.is_err());
+}
+
+#[test]
+fn parses_subscription_list_with_required_event_type_only() {
+    let cli = Cli::parse_from([
+        "google-chat",
+        "subscription",
+        "list",
+        "--event-type",
+        "google.workspace.chat.message.v1.created",
+    ]);
+
+    assert!(matches!(
+        cli.command,
+        Command::Subscription {
+            command: SubscriptionCommand::List {
+                ref event_type,
+                ref space,
+                page_size,
+                ref page_token,
+            }
+        } if event_type == &["google.workspace.chat.message.v1.created".to_string()]
+            && space.is_none()
+            && page_size == 50
+            && page_token.is_none()
+    ));
+}
+
+#[test]
+fn parses_subscription_list_with_repeated_event_type() {
+    let cli = Cli::parse_from([
+        "google-chat",
+        "subscription",
+        "list",
+        "--event-type",
+        "google.workspace.chat.message.v1.created",
+        "--event-type",
+        "google.workspace.chat.message.v1.updated",
+    ]);
+
+    assert!(matches!(
+        cli.command,
+        Command::Subscription {
+            command: SubscriptionCommand::List { ref event_type, .. }
+        } if event_type
+            == &[
+                "google.workspace.chat.message.v1.created".to_string(),
+                "google.workspace.chat.message.v1.updated".to_string(),
+            ]
+    ));
+}
+
+#[test]
+fn parses_subscription_list_with_all_flags() {
+    let cli = Cli::parse_from([
+        "google-chat",
+        "subscription",
+        "list",
+        "--event-type",
+        "google.workspace.chat.message.v1.created",
+        "--space",
+        "spaces/AAQA-_d58OQ",
+        "--page-size",
+        "10",
+        "--page-token",
+        "tok123",
+    ]);
+
+    assert!(matches!(
+        cli.command,
+        Command::Subscription {
+            command: SubscriptionCommand::List {
+                ref space,
+                page_size,
+                ref page_token,
+                ..
+            }
+        } if space.as_deref() == Some("spaces/AAQA-_d58OQ")
+            && page_size == 10
+            && page_token.as_deref() == Some("tok123")
+    ));
+}
+
+#[test]
+fn rejects_subscription_list_without_event_type() {
+    let result = Cli::try_parse_from(["google-chat", "subscription", "list"]);
+
+    assert!(result.is_err());
+}
+
+#[test]
 fn parses_listen_with_only_required_flags() {
     let cli = Cli::parse_from([
         "google-chat",

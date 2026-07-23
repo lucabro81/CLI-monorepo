@@ -1,5 +1,5 @@
 //! Handler for the `subscription` command group (`subscription create`,
-//! `subscription delete`).
+//! `subscription delete`, `subscription get`, `subscription list`).
 //!
 //! Delegates to `events_client::EventsClient`, reusing the same OAuth access
 //! token as `GoogleChatClient` (different scopes, same identity). Maps any
@@ -42,6 +42,23 @@ pub fn run(command: SubscriptionCommand, select: cli_fields::Select<'_>) -> Resu
                 .map_err(EventsClientError::into_workspace_events_error)?;
             // Exempt: a small confirmation object, fixed shape.
             print_json(&value, select.or_all())
+        }
+        SubscriptionCommand::Get { name } => {
+            let credentials = authenticated_credentials()?;
+            let client = EventsClient::new(&credentials.access_token);
+            let value = client
+                .get_subscription(&name)
+                .map_err(EventsClientError::into_workspace_events_error)?;
+            // Exempt: a single subscription object, fixed shape.
+            print_json(&value, select.or_all())
+        }
+        SubscriptionCommand::List { event_type, space, page_size, page_token } => {
+            let credentials = authenticated_credentials()?;
+            let client = EventsClient::new(&credentials.access_token);
+            let value = client
+                .list_subscriptions(&event_type, space.as_deref(), page_size, page_token.as_deref())
+                .map_err(EventsClientError::into_workspace_events_error)?;
+            print_json(&value, select)
         }
     }
 }

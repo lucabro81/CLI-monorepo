@@ -31,6 +31,7 @@
 use crate::auth;
 use crate::client::GoogleChatClient;
 use crate::context;
+use crate::events_client::EventsClient;
 use crate::people_client::PeopleClient;
 
 /// Loads `.env` from the workspace root first (if present) so
@@ -55,6 +56,12 @@ fn setup() -> GoogleChatClient {
 /// `setup()` would use for `GoogleChatClient` (different scope, same identity).
 fn setup_people_client() -> PeopleClient {
     PeopleClient::new(&authenticated_credentials_for_e2e().access_token)
+}
+
+/// Builds an authenticated `EventsClient`, sharing the same access token
+/// `setup()` would use for `GoogleChatClient` (different scopes, same identity).
+fn setup_events_client() -> EventsClient {
+    EventsClient::new(&authenticated_credentials_for_e2e().access_token)
 }
 
 /// Returns the designated e2e test space from the environment, panicking
@@ -108,6 +115,46 @@ fn e2e_messages_list_on_first_space_succeeds() {
         response.get("messages").is_none_or(serde_json::Value::is_array),
         "if present, \"messages\" must be an array"
     );
+}
+
+#[test]
+#[ignore = "e2e: requires credentials"]
+fn e2e_subscription_list_returns_well_formed_response() {
+    let client = setup_events_client();
+
+    // Read-only smoke check: the call must succeed and return a well-formed
+    // response, whether or not any subscriptions are currently registered
+    // for this account (subscriptions have a ~4h TTL, so there may be none).
+    let response = client
+        .list_subscriptions(&["google.workspace.chat.message.v1.created".to_string()], None, 50, None)
+        .expect("subscriptions.list should succeed");
+
+    assert!(
+        response.get("subscriptions").is_none_or(serde_json::Value::is_array),
+        "if present, \"subscriptions\" must be an array"
+    );
+}
+
+#[test]
+#[ignore = "e2e: requires credentials"]
+fn e2e_subscription_get_resolves_a_subscription_returned_by_list() {
+    let client = setup_events_client();
+
+    let list_response = client
+        .list_subscriptions(&["google.workspace.chat.message.v1.created".to_string()], None, 1, None)
+        .expect("subscriptions.list should succeed");
+    let Some(name) = list_response["subscriptions"][0]["name"].as_str() else {
+        // No subscriptions currently registered — nothing to fetch. Not a
+        // failure: unlike spaces/messages, subscriptions are ephemeral
+        // (~4h TTL unless renewed) and this account may have none live.
+        return;
+    };
+
+    let get_response = client
+        .get_subscription(name)
+        .unwrap_or_else(|e| panic!("subscriptions.get should succeed for {name}: {e}"));
+
+    assert_eq!(get_response["name"], name);
 }
 
 #[test]

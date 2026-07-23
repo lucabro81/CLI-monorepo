@@ -1,6 +1,6 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use super::{build_pubsub_subscription_body, build_subscription_body, subscription_config_mismatch};
+use super::{build_list_filter, build_pubsub_subscription_body, build_subscription_body, subscription_config_mismatch};
 
 #[test]
 fn build_subscription_body_has_expected_shape() {
@@ -150,4 +150,69 @@ fn subscription_config_mismatch_reports_different_filters_on_both_sides() {
     .expect("expected a mismatch reason");
 
     assert!(reason.contains("filter"), "reason should mention filter: {reason}");
+}
+
+#[test]
+fn build_list_filter_single_event_type_no_space() {
+    let filter = build_list_filter(&["google.workspace.chat.message.v1.created".to_string()], None);
+
+    assert_eq!(filter, "event_types:\"google.workspace.chat.message.v1.created\"");
+}
+
+#[test]
+fn build_list_filter_multiple_event_types_no_space_ors_them() {
+    let filter = build_list_filter(
+        &[
+            "google.workspace.chat.message.v1.created".to_string(),
+            "google.workspace.chat.message.v1.updated".to_string(),
+        ],
+        None,
+    );
+
+    assert_eq!(
+        filter,
+        "event_types:\"google.workspace.chat.message.v1.created\" OR event_types:\"google.workspace.chat.message.v1.updated\""
+    );
+}
+
+#[test]
+fn build_list_filter_single_event_type_with_space_ands_target_resource() {
+    let filter = build_list_filter(
+        &["google.workspace.chat.message.v1.created".to_string()],
+        Some("spaces/AAQA-_d58OQ"),
+    );
+
+    assert_eq!(
+        filter,
+        "event_types:\"google.workspace.chat.message.v1.created\" AND target_resource=\"//chat.googleapis.com/spaces/AAQA-_d58OQ\""
+    );
+}
+
+#[test]
+fn build_list_filter_multiple_event_types_with_space_parenthesizes_or_clause() {
+    let filter = build_list_filter(
+        &[
+            "google.workspace.chat.message.v1.created".to_string(),
+            "google.workspace.chat.message.v1.updated".to_string(),
+        ],
+        Some("spaces/AAQA-_d58OQ"),
+    );
+
+    assert_eq!(
+        filter,
+        "(event_types:\"google.workspace.chat.message.v1.created\" OR event_types:\"google.workspace.chat.message.v1.updated\") AND target_resource=\"//chat.googleapis.com/spaces/AAQA-_d58OQ\""
+    );
+}
+
+#[test]
+fn build_list_filter_normalizes_bare_space_id() {
+    let filter = build_list_filter(
+        &["google.workspace.chat.message.v1.created".to_string()],
+        Some("AAQA-_d58OQ"),
+    );
+
+    assert_eq!(
+        filter,
+        "event_types:\"google.workspace.chat.message.v1.created\" AND target_resource=\"//chat.googleapis.com/spaces/AAQA-_d58OQ\""
+    );
 }
