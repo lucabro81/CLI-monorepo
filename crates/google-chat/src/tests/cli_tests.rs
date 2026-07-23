@@ -383,6 +383,49 @@ fn rejects_messages_delete_without_name_flag() {
 }
 
 #[test]
+fn parses_messages_update_with_name_and_text() {
+    let cli = Cli::parse_from([
+        "google-chat",
+        "messages",
+        "update",
+        "--name",
+        "spaces/AAQA-_d58OQ/messages/abc123",
+        "--text",
+        "corrected text",
+    ]);
+
+    assert!(matches!(
+        cli.command,
+        Command::Messages {
+            command: MessagesCommand::Update {
+                ref name,
+                ref text,
+            }
+        } if name == "spaces/AAQA-_d58OQ/messages/abc123" && text == "corrected text"
+    ));
+}
+
+#[test]
+fn rejects_messages_update_without_name_flag() {
+    let result = Cli::try_parse_from(["google-chat", "messages", "update", "--text", "hi"]);
+
+    assert!(result.is_err());
+}
+
+#[test]
+fn rejects_messages_update_without_text_flag() {
+    let result = Cli::try_parse_from([
+        "google-chat",
+        "messages",
+        "update",
+        "--name",
+        "spaces/AAQA-_d58OQ/messages/abc123",
+    ]);
+
+    assert!(result.is_err());
+}
+
+#[test]
 fn parses_global_select_flag_before_subcommand() {
     let cli = Cli::parse_from(["google-chat", "--select", "foo,bar", "auth", "login"]);
 
