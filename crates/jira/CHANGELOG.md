@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - *(jira)* drop misleading --select example, point to per-command examples
+
+### Other
+- Release
+- Merge pull request #39 from lucabro81/release/jira ([#39](https://github.com/lucabro81/CLI-monorepo/pull/39))
+## [0.3.2](https://github.com/lucabro81/CLI-monorepo/compare/jira-v0.3.1...jira-v0.3.2) - 2026-07-23
+
+### Fixed
+- *(jira)* drop misleading --select example, point to per-command examples
 ## [0.3.1](https://github.com/lucabro81/CLI-monorepo/compare/jira-v0.3.0...jira-v0.3.1) - 2026-07-23
 
 ### Fixed
