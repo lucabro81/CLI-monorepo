@@ -22,8 +22,10 @@ pub struct Cli {
     /// commands whose output is always small and fixed-shape (doctor, auth whoami,
     /// issue create/delete/transitions/transition/comment add/comment remove) are
     /// exempt and print in full regardless — see that command's own --help.
-    /// Example: --select fields.summary,fields.status.name,fields.assignee.displayName
-    /// Example: --select transitions.id,transitions.name
+    /// This description is shared across every command and has no single
+    /// correct path syntax. IMPORTANT: do NOT guess a path from this text —
+    /// **scroll down to the "Examples" section of THIS command's own --help
+    /// output below** for the exact paths that work with it.
     #[arg(long, global = true, value_name = "PATHS", conflicts_with = "select_all")]
     pub select: Option<String>,
 
