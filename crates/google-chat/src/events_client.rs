@@ -237,6 +237,74 @@ impl EventsClient {
             .map_err(|e| EventsClientError::Request(e.to_string()))
     }
 
+    /// Fetches a Workspace Events subscription by resource name
+    /// (`subscriptions/{id}`). Returns the subscription resource as raw JSON.
+    pub fn get_subscription(&self, name: &str) -> Result<serde_json::Value, EventsClientError> {
+        let url = format!("{}/{name}", endpoints::WORKSPACE_EVENTS_API_BASE_URL);
+
+        let response = self
+            .http
+            .get(&url)
+            .bearer_auth(&self.access_token)
+            .header("Accept", "application/json")
+            .send()
+            .map_err(|e| EventsClientError::Request(e.to_string()))?;
+
+        let status = response.status();
+        if !status.is_success() {
+            return Err(EventsClientError::Status {
+                status: status.as_u16(),
+                body: response.text().unwrap_or_default(),
+            });
+        }
+
+        response
+            .json::<serde_json::Value>()
+            .map_err(|e| EventsClientError::Request(e.to_string()))
+    }
+
+    /// Lists Workspace Events subscriptions matching `event_types` (OR'd
+    /// together — the API requires at least one) and, if `space` is given,
+    /// additionally restricted to that space's `target_resource` (see
+    /// `build_list_filter`). Returns raw JSON (`{"subscriptions": [...],
+    /// "nextPageToken": "..."}`).
+    pub fn list_subscriptions(
+        &self,
+        event_types: &[String],
+        space: Option<&str>,
+        page_size: u32,
+        page_token: Option<&str>,
+    ) -> Result<serde_json::Value, EventsClientError> {
+        let filter = build_list_filter(event_types, space);
+        let mut pairs: Vec<(&str, String)> = vec![("filter", filter), ("pageSize", page_size.to_string())];
+        if let Some(token) = page_token {
+            pairs.push(("pageToken", token.to_string()));
+        }
+        let params = serde_urlencoded::to_string(&pairs)
+            .map_err(|e| EventsClientError::Request(format!("failed to encode query params: {e}")))?;
+        let url = format!("{}/subscriptions?{params}", endpoints::WORKSPACE_EVENTS_API_BASE_URL);
+
+        let response = self
+            .http
+            .get(&url)
+            .bearer_auth(&self.access_token)
+            .header("Accept", "application/json")
+            .send()
+            .map_err(|e| EventsClientError::Request(e.to_string()))?;
+
+        let status = response.status();
+        if !status.is_success() {
+            return Err(EventsClientError::Status {
+                status: status.as_u16(),
+                body: response.text().unwrap_or_default(),
+            });
+        }
+
+        response
+            .json::<serde_json::Value>()
+            .map_err(|e| EventsClientError::Request(e.to_string()))
+    }
+
     /// Deletes `subscription` (a Workspace Events subscription resource
     /// name, `subscriptions/{id}`), so no further events are delivered for
     /// it. Returns the operation resource as raw JSON.
@@ -289,6 +357,33 @@ fn build_pubsub_subscription_body(topic: &str, filter: Option<&str>) -> serde_js
         Some(filter) => serde_json::json!({ "topic": topic, "filter": filter }),
         None => serde_json::json!({ "topic": topic }),
     }
+}
+
+/// Builds the `subscriptions.list` filter string from typed CLI flags: event
+/// types combined with `OR`, optionally `AND`'d with a `target_resource`
+/// clause scoping to one space. Parenthesizes the `OR` clause when there is
+/// more than one event type and a `target_resource` clause follows it, since
+/// `AND` binds tighter than a bare `OR` in the filter grammar. Mirrors the
+/// syntax documented at
+/// <https://developers.google.com/workspace/events/guides/list-subscriptions>.
+fn build_list_filter(event_types: &[String], space: Option<&str>) -> String {
+    let event_clause = event_types
+        .iter()
+        .map(|t| format!("event_types:\"{t}\""))
+        .collect::<Vec<_>>()
+        .join(" OR ");
+
+    let Some(space) = space else {
+        return event_clause;
+    };
+
+    let target_resource = format!("//chat.googleapis.com/{}", normalize_space_name(space));
+    let event_clause = if event_types.len() > 1 {
+        format!("({event_clause})")
+    } else {
+        event_clause
+    };
+    format!("{event_clause} AND target_resource=\"{target_resource}\"")
 }
 
 /// Compares an existing Pub/Sub subscription resource (as returned by
