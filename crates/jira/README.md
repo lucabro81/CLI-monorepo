@@ -285,7 +285,7 @@ All commands that return JSON support a `--select` flag for client-side field pr
 cargo run -p jira -- issue transitions KAN-4 --select transitions.id,transitions.name
 
 # just the key fields of an issue
-cargo run -p jira -- issue get KAN-4 --select summary,status.name,assignee.displayName
+cargo run -p jira -- issue get KAN-4 --select fields.summary,fields.status.name,fields.assignee.displayName
 
 # only your account details
 cargo run -p jira -- auth whoami --select accountId,displayName,emailAddress

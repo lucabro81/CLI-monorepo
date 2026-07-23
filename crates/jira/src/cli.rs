@@ -22,7 +22,7 @@ pub struct Cli {
     /// commands whose output is always small and fixed-shape (doctor, auth whoami,
     /// issue create/delete/transitions/transition/comment add/comment remove) are
     /// exempt and print in full regardless — see that command's own --help.
-    /// Example: --select summary,status.name,assignee.displayName
+    /// Example: --select fields.summary,fields.status.name,fields.assignee.displayName
     /// Example: --select transitions.id,transitions.name
     #[arg(long, global = true, value_name = "PATHS", conflicts_with = "select_all")]
     pub select: Option<String>,
@@ -105,7 +105,7 @@ pub enum AuthCommand {
 #[derive(Debug, Subcommand)]
 pub enum IssueCommand {
     /// Fetch a single issue by key (e.g. PROJ-123) and print it as JSON
-    #[command(after_help = "Examples:\n  jira issue get PROJ-123\n  jira issue get PROJ-123 --select summary,status.name,assignee.displayName,priority.name")]
+    #[command(after_help = "Examples:\n  jira issue get PROJ-123\n  jira issue get PROJ-123 --select fields.summary,fields.status.name,fields.assignee.displayName,fields.priority.name")]
     Get {
         /// Issue key, e.g. PROJ-123
         key: String,
@@ -125,7 +125,7 @@ pub enum IssueCommand {
         key: String,
     },
     /// Search issues using JQL (Jira Query Language) and return matching issues as JSON
-    #[command(after_help = "Examples:\n  jira issue search --jql \"project=KAN AND status=\\\"In Progress\\\"\"\n  jira issue search --jql \"assignee=currentUser() ORDER BY created DESC\" --max-results 10\n  jira issue search --jql \"project=KAN\" --fields summary,status,priority\n  jira issue search --jql \"project=KAN AND status!=Done\" --stale-days 14\n\nPagination: the response includes a nextPageToken field when more results exist.\nPass its value to --page-token on the next call to fetch the following page.\n\n--stale-days N adds \"AND updated <= -Nd\" to --jql (inserted before ORDER BY, if present) to\nfind issues that have not been updated in at least N days.")]
+    #[command(after_help = "Examples:\n  jira issue search --jql \"project=KAN AND status=\\\"In Progress\\\"\"\n  jira issue search --jql \"assignee=currentUser() ORDER BY created DESC\" --max-results 10\n  jira issue search --jql \"project=KAN\" --fields summary,status,priority\n  jira issue search --jql \"project=KAN AND status!=Done\" --stale-days 14\n  jira issue search --jql \"project=KAN\" --select issues.fields.summary,issues.fields.status.name\n\nPagination: the response includes a nextPageToken field when more results exist.\nPass its value to --page-token on the next call to fetch the following page.\n\n--stale-days N adds \"AND updated <= -Nd\" to --jql (inserted before ORDER BY, if present) to\nfind issues that have not been updated in at least N days.")]
     Search {
         /// JQL query string, e.g. "project=KAN AND status=\"Done\""
         #[arg(long)]
