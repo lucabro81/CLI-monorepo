@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - *(google-chat)* add messages update command (#41) ([#41](https://github.com/lucabro81/CLI-monorepo/pull/41))
+
+### Other
+- Release
+- Merge pull request #38 from lucabro81/release/google-chat ([#38](https://github.com/lucabro81/CLI-monorepo/pull/38))
+## [0.12.0](https://github.com/lucabro81/CLI-monorepo/compare/google-chat-v0.11.0...google-chat-v0.12.0) - 2026-07-23
+
+### Added
+- *(google-chat)* add messages update command (#41) ([#41](https://github.com/lucabro81/CLI-monorepo/pull/41))
 ## [0.11.0](https://github.com/lucabro81/CLI-monorepo/compare/google-chat-v0.10.0...google-chat-v0.11.0) - 2026-07-23
 
 ### Added
