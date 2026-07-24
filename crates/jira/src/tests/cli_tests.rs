@@ -1,7 +1,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use crate::error;
-use super::{AuthCommand, Cli, Command, CommentCommand, IssueCommand};
+use super::{AuthCommand, Cli, Command, CommentCommand, IssueCommand, UserCommand};
 use clap::Parser;
 
 #[test]
@@ -76,7 +76,7 @@ fn parses_issue_comment_add() {
         Command::Issue {
             command:
                 IssueCommand::Comment {
-                    command: CommentCommand::Add { key, body },
+                    command: CommentCommand::Add { key, body, .. },
                 },
         } => {
             assert_eq!(key, "KAN-1");
@@ -102,6 +102,67 @@ fn parses_issue_comment_remove() {
             assert_eq!(key, "KAN-1");
             assert_eq!(id, "comment-42");
         }
+        other => panic!("unexpected command: {other:?}"),
+    }
+}
+
+#[test]
+fn parses_issue_comment_add_with_mention_flag() {
+    let cli = Cli::try_parse_from([
+        "jira", "issue", "comment", "add", "KAN-1", "--body", "can you check?", "--mention",
+        "5b10ac8d82e05b22cc7d4ef5",
+    ])
+    .expect("should parse");
+
+    match cli.command {
+        Command::Issue {
+            command:
+                IssueCommand::Comment {
+                    command: CommentCommand::Add { key, body, mention },
+                },
+        } => {
+            assert_eq!(key, "KAN-1");
+            assert_eq!(body, "can you check?");
+            assert_eq!(mention.as_deref(), Some("5b10ac8d82e05b22cc7d4ef5"));
+        }
+        other => panic!("unexpected command: {other:?}"),
+    }
+}
+
+#[test]
+fn parses_issue_comment_add_without_mention_flag_defaults_to_none() {
+    let cli =
+        Cli::try_parse_from(["jira", "issue", "comment", "add", "KAN-1", "--body", "hello"])
+            .expect("should parse");
+
+    match cli.command {
+        Command::Issue {
+            command:
+                IssueCommand::Comment {
+                    command: CommentCommand::Add { mention, .. },
+                },
+        } => assert_eq!(mention, None),
+        other => panic!("unexpected command: {other:?}"),
+    }
+}
+
+#[test]
+fn parses_issue_comment_add_with_inline_mention_placeholder_in_body() {
+    // The {{mention:ACCOUNT_ID}} placeholder is just part of the --body string at the
+    // clap-parsing level; it is parsed into an ADF mention node later by the handler.
+    let cli = Cli::try_parse_from([
+        "jira", "issue", "comment", "add", "KAN-1", "--body",
+        "Thanks {{mention:5b10ac8d82e05b22cc7d4ef5}} for the fix",
+    ])
+    .expect("should parse");
+
+    match cli.command {
+        Command::Issue {
+            command:
+                IssueCommand::Comment {
+                    command: CommentCommand::Add { body, .. },
+                },
+        } => assert_eq!(body, "Thanks {{mention:5b10ac8d82e05b22cc7d4ef5}} for the fix"),
         other => panic!("unexpected command: {other:?}"),
     }
 }
@@ -594,6 +655,25 @@ fn parses_issue_search_with_fields() {
 #[test]
 fn rejects_issue_search_missing_jql() {
     let result = Cli::try_parse_from(["jira", "issue", "search"]);
+    assert!(result.is_err());
+}
+
+#[test]
+fn parses_user_search_with_query() {
+    let cli = Cli::try_parse_from(["jira", "user", "search", "--query", "Jane Doe"])
+        .expect("should parse");
+
+    match cli.command {
+        Command::User { command: UserCommand::Search { query } } => {
+            assert_eq!(query, "Jane Doe");
+        }
+        other => panic!("unexpected command: {other:?}"),
+    }
+}
+
+#[test]
+fn rejects_user_search_missing_query() {
+    let result = Cli::try_parse_from(["jira", "user", "search"]);
     assert!(result.is_err());
 }
 

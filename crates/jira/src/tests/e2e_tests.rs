@@ -247,7 +247,7 @@ fn e2e_comment_lifecycle() {
 
     // Add comment
     let comment = client
-        .add_comment(&key, &comment_body)
+        .add_comment(&key, &[serde_json::json!({"type": "text", "text": comment_body})])
         .expect("add_comment should succeed");
     let comment_id = comment["id"].as_str().expect("comment id missing").to_string();
 

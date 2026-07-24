@@ -19,6 +19,7 @@ CLI for Jira Cloud, designed to be driven by an LLM agent (output is JSON, error
   - [`jira issue comment add <KEY> --body <TEXT>`](#jira-issue-comment-add-key---body-text)
   - [`jira issue comment remove <KEY> <COMMENT_ID>`](#jira-issue-comment-remove-key-comment_id)
   - [`jira issue search --jql <QUERY>`](#jira-issue-search---jql-query)
+  - [`jira user search --query <TEXT>`](#jira-user-search---query-text)
   - [`--select <PATHS>` (global flag)](#--select-paths-global-flag)
 - [Testing](#testing)
 - [Error design](#error-design)
@@ -244,6 +245,18 @@ Adds a plain-text comment to an issue (converted to Jira's document format inter
 cargo run -p jira -- issue comment add KAN-4 --body "Blocked by network issue, retrying tomorrow"
 ```
 
+Two ways to tag/mention a user in the comment, which can be combined:
+
+```sh
+# --mention tags a user at the start of the comment
+cargo run -p jira -- issue comment add KAN-4 --mention 5b10ac8d82e05b22cc7d4ef5 --body "can you take a look?"
+
+# {{mention:ACCOUNT_ID}} inside --body tags a user at that exact position in the text
+cargo run -p jira -- issue comment add KAN-4 --body "Thanks {{mention:5b10ac8d82e05b22cc7d4ef5}} for the fix"
+```
+
+Use [`jira user search`](#jira-user-search---query-text) to find the account ID to mention. Both forms resolve the user's current display name via a `GET /rest/api/3/user` lookup before building the comment, so a failure to resolve the account ID (e.g. it doesn't exist) surfaces as the same Jira API error as any other request.
+
 ### `jira issue comment remove <KEY> <COMMENT_ID>`
 
 Deletes a comment by ID (the `id` field in the comment JSON from `comment add` or `issue get`). Prints `{"deleted": true, "id": "..."}` on success.
@@ -275,6 +288,17 @@ cargo run -p jira -- issue search --jql "project=KAN" \
   --fields summary,status \
   --select issues.key,issues.fields.summary,issues.fields.status.name,isLast
 ```
+
+### `jira user search --query <TEXT>`
+
+Searches for Jira users by name or email fragment. Returns the raw JSON array of matches (up to Jira's own limit of the first 1000 users).
+
+```sh
+cargo run -p jira -- user search --query "Jane Doe"
+cargo run -p jira -- user search --query jane.doe@example.com --select accountId,displayName,emailAddress
+```
+
+Requires the "Browse users and groups" global permission. Without it, Jira does not return an error — it silently returns an empty match list. Check `jira doctor`'s permissions report (the `USER_PICKER` key) if searches unexpectedly return nothing.
 
 ### `--select <PATHS>` (global flag)
 

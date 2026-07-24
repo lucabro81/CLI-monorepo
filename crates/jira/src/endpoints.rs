@@ -28,6 +28,8 @@ pub const PATH_MY_PERMISSIONS: &str = "/rest/api/3/mypermissions";
 pub const PATH_SEARCH_JQL: &str = "/rest/api/3/search/jql";
 pub const PATH_ISSUE: &str = "/rest/api/3/issue";
 pub const PATH_PROJECT_SEARCH: &str = "/rest/api/3/project/search";
+pub const PATH_USER: &str = "/rest/api/3/user";
+pub const PATH_USER_SEARCH: &str = "/rest/api/3/user/search";
 
 /// `/rest/api/3/project/<key>/role`
 pub fn project_roles_path(key: &str) -> String {
