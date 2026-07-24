@@ -21,7 +21,9 @@ pub struct Cli {
     pub select: Option<String>,
 
     /// Explicitly print the full, unfiltered JSON response instead of specifying --select.
-    /// Use when you already know the response is small; otherwise prefer --select.
+    /// Use when you already know the response is small; otherwise prefer --select. Still
+    /// refused if the response exceeds a fixed byte cap (currently 30000 bytes) — the error
+    /// reports the actual size and top-level fields so you can retry with --select instead.
     #[arg(long, global = true, conflicts_with = "select")]
     pub select_all: bool,
 

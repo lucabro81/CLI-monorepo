@@ -14,7 +14,7 @@ fn required_without_select_returns_select_required_error() {
             assert!(size > 0);
             assert_eq!(available_fields, "top-level fields: status, summary");
         }
-        other @ RenderError::Serialize(_) => panic!("expected SelectRequired, got {other:?}"),
+        other => panic!("expected SelectRequired, got {other:?}"),
     }
 }
 
@@ -26,7 +26,7 @@ fn select_required_error_reports_actual_pretty_printed_byte_size() {
     let err = render_json(&value, Select::Required).expect_err("should require --select");
     match err {
         RenderError::SelectRequired { size, .. } => assert_eq!(size, expected_size),
-        other @ RenderError::Serialize(_) => panic!("expected SelectRequired, got {other:?}"),
+        other => panic!("expected SelectRequired, got {other:?}"),
     }
 }
 
@@ -35,6 +35,39 @@ fn all_prints_full_response_unfiltered() {
     let value = json!({"summary": "x", "status": "open", "noise": "kept too"});
 
     let output = render_json(&value, Select::All).expect("should print everything");
+    assert_eq!(output, serde_json::to_string_pretty(&value).expect("serializes"));
+}
+
+#[test]
+fn all_refuses_when_response_exceeds_size_cap() {
+    // "a": "aaa...a" alone pretty-prints well past MAX_ALL_BYTES.
+    let value = json!({"a": "a".repeat(super::MAX_ALL_BYTES)});
+    let expected_size = serde_json::to_string_pretty(&value).expect("serializes").len();
+
+    let err = render_json(&value, Select::All).expect_err("should refuse even with --select-all");
+    match err {
+        RenderError::AllTooLarge { size, max, available_fields } => {
+            assert_eq!(size, expected_size);
+            assert_eq!(max, super::MAX_ALL_BYTES);
+            assert_eq!(available_fields, "top-level fields: a");
+        }
+        other => panic!("expected AllTooLarge, got {other:?}"),
+    }
+}
+
+#[test]
+fn all_prints_full_response_at_exactly_the_cap() {
+    // Pretty-printed size must be <= MAX_ALL_BYTES, not just < it.
+    let mut value = json!({"a": ""});
+    let overhead = serde_json::to_string_pretty(&value).expect("serializes").len();
+    let padding = super::MAX_ALL_BYTES - overhead;
+    value["a"] = json!("a".repeat(padding));
+    assert_eq!(
+        serde_json::to_string_pretty(&value).expect("serializes").len(),
+        super::MAX_ALL_BYTES
+    );
+
+    let output = render_json(&value, Select::All).expect("should print at exactly the cap");
     assert_eq!(output, serde_json::to_string_pretty(&value).expect("serializes"));
 }
 

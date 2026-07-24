@@ -7,4 +7,4 @@ mod fields;
 mod select;
 
 pub use fields::{describe_top_level_shape, filter_fields};
-pub use select::{render_json, RenderError, Select};
+pub use select::{render_json, RenderError, Select, MAX_ALL_BYTES};

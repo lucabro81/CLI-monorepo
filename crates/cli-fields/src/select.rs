@@ -9,9 +9,20 @@
 //! `--select-all` is the explicit, stateless opt-out — passing it is itself
 //! the caller's confirmation that printing the full response is fine,
 //! mirroring the `--confirm` pattern already used for destructive commands.
+//! That confirmation isn't unconditional, though: even `--select-all` refuses
+//! to print a response over `MAX_ALL_BYTES`, since a caller can't have
+//! meaningfully confirmed "fine to flood my own context window" — the error
+//! pushes them back to `--select` once the response is clearly too large.
 
 use crate::fields::{describe_top_level_shape, filter_fields};
 use serde_json::Value;
+
+/// Byte cap (pretty-printed) enforced on `Select::All`, even though it's an
+/// explicit opt-out. A caller who reaches for --select-all without knowing
+/// the response size can otherwise flood their own context window; this
+/// forces a fallback to --select once the response is clearly too large for
+/// that to have been a reasonable choice.
+pub const MAX_ALL_BYTES: usize = 30_000;
 
 /// What the caller decided about field selection, resolved once from CLI flags.
 #[derive(Debug, Clone, Copy)]
@@ -52,6 +63,19 @@ pub enum RenderError {
         available_fields: String,
     },
 
+    #[error(
+        "refusing to print the full {size}-byte JSON response even with --select-all — it \
+        exceeds the {max}-byte cap and would likely flood the caller's context window. \
+        {available_fields}. Retry with --select and one or more dot-notation paths built from \
+        the fields above (e.g. --select fieldName or --select fieldName.nestedField) to narrow \
+        the response instead."
+    )]
+    AllTooLarge {
+        size: usize,
+        max: usize,
+        available_fields: String,
+    },
+
     #[error("failed to serialize response to JSON: {0}")]
     Serialize(String),
 }
@@ -67,8 +91,18 @@ pub fn render_json(value: &Value, select: Select<'_>) -> Result<String, RenderEr
                 available_fields: describe_top_level_shape(value),
             })
         }
-        Select::All => serde_json::to_string_pretty(value)
-            .map_err(|e| RenderError::Serialize(e.to_string())),
+        Select::All => {
+            let pretty = serde_json::to_string_pretty(value)
+                .map_err(|e| RenderError::Serialize(e.to_string()))?;
+            if pretty.len() > MAX_ALL_BYTES {
+                return Err(RenderError::AllTooLarge {
+                    size: pretty.len(),
+                    max: MAX_ALL_BYTES,
+                    available_fields: describe_top_level_shape(value),
+                });
+            }
+            Ok(pretty)
+        }
         Select::Fields(fields) => {
             let filtered = filter_fields(value.clone(), fields);
             serde_json::to_string_pretty(&filtered)
