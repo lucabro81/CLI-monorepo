@@ -99,6 +99,16 @@ there, not just jira.
 
 ---
 
+#### DELETE-3 — `JIRA_E2E_PROJECT` moved from KAN to MER; MER has the same missing-`DELETE_ISSUES` gap DELETE-2 fixed for KAN
+**Found:** 2026-07-24, while live-smoke-testing the `user search`/comment-mentions feature — `jira doctor --select-all` showed the service account can no longer see a project called KAN at all (renamed/archived, or access revoked). The user confirmed MER is now the reference project; `.env` was updated.  
+**Trigger:** `jira issue create --project MER ...` then `jira issue delete <created-key> --confirm` (verified live: created `MER-1`, delete returned 403).  
+**Current behaviour:** service account has `CREATE_ISSUES`/`EDIT_ISSUES`/`ADD_COMMENTS`/`TRANSITION_ISSUES`/`USER_PICKER` on MER per `jira doctor`, but not `DELETE_ISSUES` — same root cause as the original DELETE-2 (permission granted per project role, not automatically present just because other permissions are). `IssueGuard`/`e2e_cleanup` will fail to clean up on MER exactly as they did on KAN before the fix.  
+**Acceptable?** No — blocks running the e2e suite without leaking orphaned `[jira-cli-e2e]` issues on every run.  
+**Known orphans needing manual cleanup:** `SUP-2483` (also missing `DELETE_ISSUES`, used for a one-off manual smoke test), `MER-1`.  
+**Future fix:** repeat DELETE-2's fix — an org admin adds the service account to a project role with `DELETE_ISSUES` in MER (Project settings → People), then re-run `e2e_cleanup` to confirm.
+
+---
+
 #### AUTH-2 — `OAuthConfig` does not validate non-empty client_id / client_secret
 **Found:** review session 2026-06-09  
 **Trigger:** `app.json` with `{"client_id": "", "client_secret": ""}` — parses successfully  
