@@ -334,7 +334,7 @@ E2e tests call the real Jira API. They are all marked `#[ignore]` and never run 
 **Prerequisites:**
 
 1. `jira auth login` must have been completed on this machine.
-2. A writable Jira project must exist. Set its key via the `JIRA_E2E_PROJECT` environment variable (e.g. `KAN`). The project must allow creating and deleting Task issues.
+2. A writable Jira project must exist. Set its key via the `JIRA_E2E_PROJECT` environment variable (e.g. `MER`). The project must allow creating and deleting Task issues.
 
 `JIRA_E2E_PROJECT` can be exported inline per run (as below), or set once in a
 workspace-root `.env` file (copy `.env.example`, gitignored) — it's loaded
@@ -345,10 +345,10 @@ takes precedence over `.env`.
 
 ```sh
 # Run all e2e tests (sequentially — see note below)
-JIRA_E2E_PROJECT=KAN cargo test -p jira -- --ignored --test-threads=1
+JIRA_E2E_PROJECT=MER cargo test -p jira -- --ignored --test-threads=1
 
 # Run a single test
-JIRA_E2E_PROJECT=KAN cargo test -p jira e2e_smoke_doctor -- --ignored
+JIRA_E2E_PROJECT=MER cargo test -p jira e2e_smoke_doctor -- --ignored
 
 # Same, relying on JIRA_E2E_PROJECT from a workspace-root .env instead:
 cargo test -p jira e2e_smoke_doctor -- --ignored
@@ -359,7 +359,7 @@ cargo test -p jira e2e_smoke_doctor -- --ignored
 **Isolation:** every issue created by the tests has the `[jira-cli-e2e]` prefix in its summary. An `IssueGuard` (RAII) deletes each issue on drop, so cleanup happens even when a test panics. If a test is interrupted before the guard is set up, run the recovery command:
 
 ```sh
-JIRA_E2E_PROJECT=KAN cargo test -p jira e2e_cleanup -- --ignored
+JIRA_E2E_PROJECT=MER cargo test -p jira e2e_cleanup -- --ignored
 ```
 
 This searches for all `[jira-cli-e2e]` issues in the project and deletes them.

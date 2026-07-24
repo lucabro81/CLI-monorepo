@@ -48,10 +48,10 @@ src/
 cargo test -p jira
 
 # E2e tests (requires login + a writable Jira project) — sequential, see README
-JIRA_E2E_PROJECT=KAN cargo test -p jira -- --ignored --test-threads=1
+JIRA_E2E_PROJECT=MER cargo test -p jira -- --ignored --test-threads=1
 
 # Recovery: delete all [jira-cli-e2e] orphaned issues
-JIRA_E2E_PROJECT=KAN cargo test -p jira e2e_cleanup -- --ignored
+JIRA_E2E_PROJECT=MER cargo test -p jira e2e_cleanup -- --ignored
 ```
 
 `JIRA_E2E_PROJECT` can also be set once in a workspace-root `.env` (see

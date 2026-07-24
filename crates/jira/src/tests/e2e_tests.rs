@@ -3,19 +3,19 @@
 //! # Prerequisites
 //!
 //! - `jira auth login` must have been run on this machine.
-//! - The env var `JIRA_E2E_PROJECT` must be set to a writable Jira project key (e.g. `KAN`) —
+//! - The env var `JIRA_E2E_PROJECT` must be set to a writable Jira project key (e.g. `MER`) —
 //!   either exported inline per run, or via a workspace-root `.env` file (see `.env.example`;
 //!   loaded automatically by `setup()` below, an already-exported value always wins over `.env`).
 //!
 //! # Running
 //!
 //! ```sh
-//! JIRA_E2E_PROJECT=KAN cargo test -p jira -- --ignored
+//! JIRA_E2E_PROJECT=MER cargo test -p jira -- --ignored
 //! ```
 //!
 //! Run a single test:
 //! ```sh
-//! JIRA_E2E_PROJECT=KAN cargo test -p jira e2e_cleanup -- --ignored
+//! JIRA_E2E_PROJECT=MER cargo test -p jira e2e_cleanup -- --ignored
 //! ```
 //!
 //! # Isolation
@@ -447,7 +447,7 @@ fn e2e_search_pagination() {
 /// set up, or to clean up any issues left over from a previous interrupted session:
 ///
 /// ```sh
-/// JIRA_E2E_PROJECT=KAN cargo test -p jira e2e_cleanup -- --ignored
+/// JIRA_E2E_PROJECT=MER cargo test -p jira e2e_cleanup -- --ignored
 /// ```
 #[test]
 #[ignore = "e2e: recovery — deletes all [jira-cli-e2e] issues in JIRA_E2E_PROJECT"]

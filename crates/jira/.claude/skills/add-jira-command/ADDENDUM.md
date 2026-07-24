@@ -40,9 +40,9 @@ Docs: `https://developer.atlassian.com/cloud/jira/platform/rest/v3/`
   too.
 - **Running**:
   ```sh
-  JIRA_E2E_PROJECT=KAN cargo test -p jira -- --ignored --test-threads=1
+  JIRA_E2E_PROJECT=MER cargo test -p jira -- --ignored --test-threads=1
   # recovery
-  JIRA_E2E_PROJECT=KAN cargo test -p jira e2e_cleanup -- --ignored
+  JIRA_E2E_PROJECT=MER cargo test -p jira e2e_cleanup -- --ignored
   ```
 - **Extending**: add a new `#[ignore]` test following the `IssueGuard`
   pattern, or extend an existing lifecycle test if the new command fits
