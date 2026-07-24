@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - *(cli-fields)* cap --select-all response size to prevent context flooding
+
+### Other
+- Release
+- Merge pull request #40 from lucabro81/release/jira ([#40](https://github.com/lucabro81/CLI-monorepo/pull/40))
+## [0.3.3](https://github.com/lucabro81/CLI-monorepo/compare/jira-v0.3.2...jira-v0.3.3) - 2026-07-24
+
+### Fixed
+- *(cli-fields)* cap --select-all response size to prevent context flooding
 ## [0.3.2](https://github.com/lucabro81/CLI-monorepo/compare/jira-v0.3.1...jira-v0.3.2) - 2026-07-23
 
 ### Fixed
