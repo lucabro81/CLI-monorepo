@@ -99,13 +99,12 @@ there, not just jira.
 
 ---
 
-#### DELETE-3 — `JIRA_E2E_PROJECT` moved from KAN to MER; MER has the same missing-`DELETE_ISSUES` gap DELETE-2 fixed for KAN
+#### DELETE-3 — RESOLVED: `JIRA_E2E_PROJECT` moved from KAN to MER; MER had the same missing-`DELETE_ISSUES` gap DELETE-2 fixed for KAN
 **Found:** 2026-07-24, while live-smoke-testing the `user search`/comment-mentions feature — `jira doctor --select-all` showed the service account can no longer see a project called KAN at all (renamed/archived, or access revoked). The user confirmed MER is now the reference project; `.env` was updated.  
 **Trigger:** `jira issue create --project MER ...` then `jira issue delete <created-key> --confirm` (verified live: created `MER-1`, delete returned 403).  
-**Current behaviour:** service account has `CREATE_ISSUES`/`EDIT_ISSUES`/`ADD_COMMENTS`/`TRANSITION_ISSUES`/`USER_PICKER` on MER per `jira doctor`, but not `DELETE_ISSUES` — same root cause as the original DELETE-2 (permission granted per project role, not automatically present just because other permissions are). `IssueGuard`/`e2e_cleanup` will fail to clean up on MER exactly as they did on KAN before the fix.  
-**Acceptable?** No — blocks running the e2e suite without leaking orphaned `[jira-cli-e2e]` issues on every run.  
-**Known orphans needing manual cleanup:** `SUP-2483` (also missing `DELETE_ISSUES`, used for a one-off manual smoke test), `MER-1`.  
-**Future fix:** repeat DELETE-2's fix — an org admin adds the service account to a project role with `DELETE_ISSUES` in MER (Project settings → People), then re-run `e2e_cleanup` to confirm.
+**Current behaviour (before fix):** service account had `CREATE_ISSUES`/`EDIT_ISSUES`/`ADD_COMMENTS`/`TRANSITION_ISSUES`/`USER_PICKER` on MER per `jira doctor`, but not `DELETE_ISSUES` — same root cause as the original DELETE-2. `IssueGuard`/`e2e_cleanup` would have failed to clean up on MER exactly as they did on KAN before that fix.  
+**Resolved:** 2026-07-24 — MER is a **team-managed** project, not company-managed like KAN was, so the fix path differs from DELETE-2: no Permissions/People tabs, just **Project settings → Access**, where the service account (`mercury-9wn2uvu8rg@serviceaccount.atlassian.com` — not listed by default; team-managed projects only show explicitly-added members) was added via **Aggiungi persone** and assigned the **Administrator** role (the role that includes issue deletion in team-managed projects; Member does not). Verified live: `jira doctor --select projects.MER.service_user_permissions` now includes `DELETE_ISSUES`, and `jira issue delete MER-1 --confirm` succeeded.  
+**Still open:** `SUP-2483` (used for a one-off manual smoke test, not the configured e2e project) remains undeletable — same gap, never fixed there since it's not needed for e2e. Fix identically (Access → Aggiungi persone → Administrator) on `SUP` if it needs cleaning up.
 
 ---
 
