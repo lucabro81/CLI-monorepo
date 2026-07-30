@@ -489,6 +489,60 @@ fn issue_create_accepts_empty_summary() {
     }
 }
 
+// --- issue assign ---
+
+#[test]
+fn parses_issue_assign_with_assignee() {
+    let cli = Cli::try_parse_from([
+        "jira", "issue", "assign", "KAN-5", "--assignee", "account-id-123",
+    ])
+    .expect("should parse");
+
+    match cli.command {
+        Command::Issue {
+            command: IssueCommand::Assign { key, assignee, unassign },
+        } => {
+            assert_eq!(key, "KAN-5");
+            assert_eq!(assignee.as_deref(), Some("account-id-123"));
+            assert!(!unassign);
+        }
+        other => panic!("unexpected: {other:?}"),
+    }
+}
+
+#[test]
+fn parses_issue_assign_with_unassign_flag() {
+    let cli = Cli::try_parse_from(["jira", "issue", "assign", "KAN-5", "--unassign"])
+        .expect("should parse");
+
+    match cli.command {
+        Command::Issue {
+            command: IssueCommand::Assign { key, assignee, unassign },
+        } => {
+            assert_eq!(key, "KAN-5");
+            assert_eq!(assignee, None);
+            assert!(unassign);
+        }
+        other => panic!("unexpected: {other:?}"),
+    }
+}
+
+#[test]
+fn rejects_issue_assign_with_both_assignee_and_unassign() {
+    // --assignee and --unassign are mutually exclusive (clap `conflicts_with`) —
+    // passing both is ambiguous about which action the caller actually wants.
+    let result = Cli::try_parse_from([
+        "jira", "issue", "assign", "KAN-5", "--assignee", "account-id-123", "--unassign",
+    ]);
+    assert!(result.is_err());
+}
+
+#[test]
+fn rejects_issue_assign_missing_key() {
+    let result = Cli::try_parse_from(["jira", "issue", "assign", "--assignee", "account-id-123"]);
+    assert!(result.is_err());
+}
+
 // --- init ---
 
 #[test]
@@ -690,5 +744,22 @@ fn delete_not_confirmed_error_message_contains_key_and_corrective_command() {
     assert!(
         msg.contains("jira issue delete KAN-99 --confirm"),
         "error must include the exact command to run"
+    );
+}
+
+#[test]
+fn assign_missing_target_error_message_contains_key_and_both_retry_flags() {
+    // Regression guard: an LLM must be able to self-correct from this message alone —
+    // it should learn both valid retries (--assignee or --unassign) for the same key.
+    use error::CliError;
+    let err = CliError::AssignMissingTarget { key: "KAN-99".to_string() };
+    let msg = err.to_string();
+
+    assert!(msg.contains("KAN-99"), "error must name the key");
+    assert!(msg.contains("--assignee"), "error must mention the --assignee flag");
+    assert!(msg.contains("--unassign"), "error must mention the --unassign flag");
+    assert!(
+        msg.contains("jira issue assign KAN-99 --assignee") && msg.contains("jira issue assign KAN-99 --unassign"),
+        "error must include both exact retry commands"
     );
 }

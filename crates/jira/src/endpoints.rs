@@ -55,3 +55,8 @@ pub fn issue_comment_id_path(key: &str, comment_id: &str) -> String {
 pub fn issue_transitions_path(key: &str) -> String {
     format!("{PATH_ISSUE}/{key}/transitions")
 }
+
+/// `/rest/api/3/issue/<key>/assignee`
+pub fn issue_assignee_path(key: &str) -> String {
+    format!("{PATH_ISSUE}/{key}/assignee")
+}

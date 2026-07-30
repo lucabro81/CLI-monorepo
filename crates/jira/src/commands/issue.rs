@@ -23,6 +23,11 @@ use crate::error::CliError;
 /// the network round-trip a token refresh may require — a caller who forgot
 /// `--confirm` finds out immediately instead of waiting on (and possibly
 /// being confused by) an unrelated auth failure.
+// A flat dispatch match over every IssueCommand variant; each arm is a few lines
+// that delegate straight to a client method. Splitting it up would add indirection
+// without reducing complexity, so the line-count lint is allowed here rather than
+// worked around structurally.
+#[allow(clippy::too_many_lines)]
 pub fn run(command: IssueCommand, select: cli_fields::Select<'_>) -> Result<(), CliError> {
     match command {
         IssueCommand::Search { jql, max_results, page_token, fields, stale_days } => {
@@ -83,6 +88,16 @@ pub fn run(command: IssueCommand, select: cli_fields::Select<'_>) -> Result<(), 
                 .map_err(client_error_to_cli)?;
             // Exempt: bounded workflow-transition list, no `expand` requested.
             print_json(&value, select.or_all())
+        }
+        IssueCommand::Assign { key, assignee, unassign } => {
+            validate_assign_target(&key, assignee.as_deref(), unassign)?;
+            let client = authenticated_client()?;
+            client
+                .assign_issue(&key, assignee.as_deref())
+                .map_err(client_error_to_cli)?;
+            let result = serde_json::json!({"assigned": true, "key": key, "assignee": assignee});
+            // Exempt: synthesized by us, always small.
+            print_json(&result, select.or_all())
         }
         IssueCommand::Transition { key, to } => {
             let client = authenticated_client()?;
@@ -145,6 +160,16 @@ fn apply_stale_filter(jql: &str, stale_days: Option<u32>) -> String {
         Some(index) => format!("{} AND {} {}", jql[..index].trim_end(), clause, &jql[index..]),
         None => format!("{} AND {clause}", jql.trim_end()),
     }
+}
+
+/// Validates that `issue assign` was given exactly one target. `clap`'s
+/// `conflicts_with` on `--assignee`/`--unassign` already rules out both being
+/// passed together; this covers the remaining case where neither is passed.
+fn validate_assign_target(key: &str, assignee: Option<&str>, unassign: bool) -> Result<(), CliError> {
+    if assignee.is_none() && !unassign {
+        return Err(CliError::AssignMissingTarget { key: key.to_string() });
+    }
+    Ok(())
 }
 
 /// A single piece of a comment `--body`: literal text, or a `{{mention:ACCOUNT_ID}}`
