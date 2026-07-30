@@ -19,6 +19,7 @@ CLI for Jira Cloud, designed to be driven by an LLM agent (output is JSON, error
   - [`jira issue comment add <KEY> --body <TEXT>`](#jira-issue-comment-add-key---body-text)
   - [`jira issue comment remove <KEY> <COMMENT_ID>`](#jira-issue-comment-remove-key-comment_id)
   - [`jira issue search --jql <QUERY>`](#jira-issue-search---jql-query)
+  - [`jira user search --query <TEXT>`](#jira-user-search---query-text)
   - [`--select <PATHS>` (global flag)](#--select-paths-global-flag)
 - [Testing](#testing)
 - [Error design](#error-design)
@@ -244,6 +245,18 @@ Adds a plain-text comment to an issue (converted to Jira's document format inter
 cargo run -p jira -- issue comment add KAN-4 --body "Blocked by network issue, retrying tomorrow"
 ```
 
+Two ways to tag/mention a user in the comment, which can be combined:
+
+```sh
+# --mention tags a user at the start of the comment
+cargo run -p jira -- issue comment add KAN-4 --mention 5b10ac8d82e05b22cc7d4ef5 --body "can you take a look?"
+
+# {{mention:ACCOUNT_ID}} inside --body tags a user at that exact position in the text
+cargo run -p jira -- issue comment add KAN-4 --body "Thanks {{mention:5b10ac8d82e05b22cc7d4ef5}} for the fix"
+```
+
+Use [`jira user search`](#jira-user-search---query-text) to find the account ID to mention. Both forms resolve the user's current display name via a `GET /rest/api/3/user` lookup before building the comment, so a failure to resolve the account ID (e.g. it doesn't exist) surfaces as the same Jira API error as any other request.
+
 ### `jira issue comment remove <KEY> <COMMENT_ID>`
 
 Deletes a comment by ID (the `id` field in the comment JSON from `comment add` or `issue get`). Prints `{"deleted": true, "id": "..."}` on success.
@@ -275,6 +288,17 @@ cargo run -p jira -- issue search --jql "project=KAN" \
   --fields summary,status \
   --select issues.key,issues.fields.summary,issues.fields.status.name,isLast
 ```
+
+### `jira user search --query <TEXT>`
+
+Searches for Jira users by name or email fragment. Returns the raw JSON array of matches (up to Jira's own limit of the first 1000 users).
+
+```sh
+cargo run -p jira -- user search --query "Jane Doe"
+cargo run -p jira -- user search --query jane.doe@example.com --select accountId,displayName,emailAddress
+```
+
+Requires the "Browse users and groups" global permission. Without it, Jira does not return an error — it silently returns an empty match list. Check `jira doctor`'s permissions report (the `USER_PICKER` key) if searches unexpectedly return nothing.
 
 ### `--select <PATHS>` (global flag)
 
@@ -310,7 +334,7 @@ E2e tests call the real Jira API. They are all marked `#[ignore]` and never run 
 **Prerequisites:**
 
 1. `jira auth login` must have been completed on this machine.
-2. A writable Jira project must exist. Set its key via the `JIRA_E2E_PROJECT` environment variable (e.g. `KAN`). The project must allow creating and deleting Task issues.
+2. A writable Jira project must exist. Set its key via the `JIRA_E2E_PROJECT` environment variable (e.g. `MER`). The project must allow creating and deleting Task issues.
 
 `JIRA_E2E_PROJECT` can be exported inline per run (as below), or set once in a
 workspace-root `.env` file (copy `.env.example`, gitignored) — it's loaded
@@ -321,10 +345,10 @@ takes precedence over `.env`.
 
 ```sh
 # Run all e2e tests (sequentially — see note below)
-JIRA_E2E_PROJECT=KAN cargo test -p jira -- --ignored --test-threads=1
+JIRA_E2E_PROJECT=MER cargo test -p jira -- --ignored --test-threads=1
 
 # Run a single test
-JIRA_E2E_PROJECT=KAN cargo test -p jira e2e_smoke_doctor -- --ignored
+JIRA_E2E_PROJECT=MER cargo test -p jira e2e_smoke_doctor -- --ignored
 
 # Same, relying on JIRA_E2E_PROJECT from a workspace-root .env instead:
 cargo test -p jira e2e_smoke_doctor -- --ignored
@@ -335,7 +359,7 @@ cargo test -p jira e2e_smoke_doctor -- --ignored
 **Isolation:** every issue created by the tests has the `[jira-cli-e2e]` prefix in its summary. An `IssueGuard` (RAII) deletes each issue on drop, so cleanup happens even when a test panics. If a test is interrupted before the guard is set up, run the recovery command:
 
 ```sh
-JIRA_E2E_PROJECT=KAN cargo test -p jira e2e_cleanup -- --ignored
+JIRA_E2E_PROJECT=MER cargo test -p jira e2e_cleanup -- --ignored
 ```
 
 This searches for all `[jira-cli-e2e]` issues in the project and deletes them.

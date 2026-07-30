@@ -11,18 +11,23 @@ src/
     auth.rs       — run_login(), run_whoami()
     doctor.rs     — run_doctor(); also called by init as final verification
     init.rs       — run_init(), write_app_config(); human onboarding flow
-    issue.rs      — run(IssueCommand); dispatches all issue subcommands
+    issue.rs      — run(IssueCommand); dispatches all issue subcommands; also
+                    holds comment-add's mention-building logic (see below)
+    user.rs       — run(UserCommand); dispatches user subcommands (search)
   auth.rs         — OAuth infrastructure: OAuthConfig, Credentials, login(),
                     login_client_credentials(), refresh(), renew(),
                     save_credentials(), load_credentials(), path helpers
   client.rs       — JiraClient (blocking reqwest); get_json/post_json helpers;
                     all Jira API methods: get_issue, get_myself, get_my_permissions,
-                    add_comment, delete_comment, get_transitions, list_transitions_json,
-                    apply_transition, create_issue, delete_issue, search_issues
+                    add_comment (takes pre-built ADF content nodes), delete_comment,
+                    get_transitions, list_transitions_json, apply_transition,
+                    create_issue, delete_issue, search_issues, search_users, get_user
   cli.rs          — clap structs: Cli (--select global), Command, AuthCommand,
-                    IssueCommand, CommentCommand. No logic.
+                    IssueCommand, CommentCommand, UserCommand. No logic.
   context.rs      — config_dir(), load_oauth_config(), authenticated_client(),
-                    print_json(value, select). Shared by all command handlers.
+                    print_json(value, select), client_error_to_cli(e) (shared
+                    ClientError -> CliError mapping used by every command handler
+                    that calls JiraClient). Shared by all command handlers.
   endpoints.rs    — URL/path constants for Atlassian OAuth and Jira REST API v3,
                     used by auth.rs and client.rs. No logic.
   error.rs        — CliError (top-level, thiserror-derived). Includes IoError
@@ -43,10 +48,10 @@ src/
 cargo test -p jira
 
 # E2e tests (requires login + a writable Jira project) — sequential, see README
-JIRA_E2E_PROJECT=KAN cargo test -p jira -- --ignored --test-threads=1
+JIRA_E2E_PROJECT=MER cargo test -p jira -- --ignored --test-threads=1
 
 # Recovery: delete all [jira-cli-e2e] orphaned issues
-JIRA_E2E_PROJECT=KAN cargo test -p jira e2e_cleanup -- --ignored
+JIRA_E2E_PROJECT=MER cargo test -p jira e2e_cleanup -- --ignored
 ```
 
 `JIRA_E2E_PROJECT` can also be set once in a workspace-root `.env` (see
@@ -59,9 +64,12 @@ already-exported value still takes precedence. See `BACKLOG.md`'s
 
 See root `CLAUDE.md` for the general `src/tests/` convention and the
 cli_tests/commands split. `issue.rs` has a dedicated `tests/commands/issue_tests.rs`
-covering `apply_stale_filter` (the `--stale-days` JQL builder, the only
-non-HTTP logic in the module besides `issue transition`'s case-insensitive
-status matching, which stays covered end-to-end via `cli_tests.rs` instead).
+covering `apply_stale_filter` (the `--stale-days` JQL builder) and
+`parse_body_segments` (the `{{mention:ACCOUNT_ID}}` placeholder parser used by
+`comment add`) — the non-HTTP logic in the module, besides `issue transition`'s
+case-insensitive status matching, which stays covered end-to-end via
+`cli_tests.rs` instead. `user.rs` has no dedicated unit-test file: its one
+command is a thin passthrough, covered entirely by `cli_tests.rs`.
 
 ## OAuth / auth design
 
@@ -113,9 +121,11 @@ Kept separate so automatic token writes never clobber the app identity.
   | `issue transition` | yes | synthesized by us: `{"transitioned": true, ...}` |
   | `issue comment add` | yes | single comment object, fixed shape |
   | `issue comment remove` | yes | synthesized by us: `{"deleted": true, "id": ...}` |
+  | `user search` | **no** | list endpoint, same unbounded-response risk as `issue search` |
 - **`--fields`** (issue search only): server-side Jira field selection. Defaults to `*navigable`. Reduces payload at the source; orthogonal to `--select`.
 - **`--stale-days`** (issue search only): client-side JQL rewriting, not a separate API call — Jira's JQL grammar supports relative-date literals (`-Nd`) directly in a comparison (`updated <= -Nd`), evaluated server-side by Jira's own query engine. `apply_stale_filter` (`commands/issue.rs`) appends `AND updated <= -Nd` to `--jql`, inserting it immediately before an existing `ORDER BY` clause (found case-insensitively) since JQL requires `ORDER BY` to be the final clause — appending unconditionally would produce invalid JQL for any `--jql` that already sorts results.
-- **ADF**: comment bodies and issue descriptions are wrapped in Atlassian Document Format by the client methods; callers pass plain text.
+- **ADF**: comment bodies and issue descriptions are wrapped in Atlassian Document Format by the client methods. `client::add_comment` takes pre-built ADF content nodes (`Vec<Value>`) rather than raw text, since `comment add` may need to mix plain `text` nodes with `mention` nodes — `commands/issue.rs` builds that list (`build_comment_content`, `parse_body_segments`, `build_text_node`, `build_mention_node`) before calling it.
+- **Mentions in comments** (`issue comment add --mention <ACCOUNT_ID>` and/or `{{mention:ACCOUNT_ID}}` inside `--body`): both forms build an ADF `mention` node (`{"type": "mention", "attrs": {"id": ..., "text": "@..."}}`). The `text` attrs value is resolved to the user's real current display name via `client::get_user` (`GET /rest/api/3/user?accountId=...`) before the comment is posted — one extra API call per mention — rather than a generic placeholder, since Jira's fallback `text` is what's shown in contexts where the ADF isn't fully re-rendered (some notification digests). A lookup failure (e.g. unknown account ID) surfaces as the same `ApiError`/`ApiRequestFailed` as any other Jira API call — no special-cased error handling. `jira user search` is the way to discover an account ID for a name/email.
 - **Destructive commands**: no interactive prompts (an LLM cannot respond). `issue delete` requires explicit `--confirm`; error message includes the exact command to retry. `commands/issue.rs::run` calls `authenticated_client()` **per match arm** rather than once up front, so the `--confirm` check (free, local) runs before the network round-trip a token refresh may require — otherwise a caller who forgot `--confirm` with expired credentials would see a confusing auth error instead of the actionable `DeleteNotConfirmed` one (spotted and fixed alongside `google-chat`'s `messages delete`, which had the same hoisted-auth structure).
 
 ## `doctor` permission checks
@@ -142,6 +152,13 @@ conceptual background):
   the account may not have everywhere. Zero visible projects is itself an
   `error` — an account that can't see any project can't do anything useful.
 
+`PERMISSION_KEYS` includes `USER_PICKER` ("Browse users and groups"), needed by
+`jira user search` and comment mentions. Unlike the other keys it's a
+global-only permission (not part of any project's permission scheme), so it
+reads identically in every project's `projects` entry — included anyway
+because `user search` fails silently (empty match list, not an error) without
+it, which is otherwise invisible to the caller.
+
 ## Implemented commands
 
 | Command | Notes |
@@ -156,8 +173,9 @@ conceptual background):
 | `issue transitions <KEY>` | List available workflow transitions |
 | `issue transition <KEY> --to <STATUS>` | Case-insensitive match; lists valid options on mismatch |
 | `issue search --jql [--stale-days N]` | Paginated JQL search. `--stale-days N` adds `AND updated <= -Nd` to `--jql` (inserted before `ORDER BY` if present) — JQL's own relative-date syntax, no separate staleness API needed |
-| `issue comment add <KEY> --body` | POST with ADF body |
+| `issue comment add <KEY> --body [--mention ACCOUNT_ID]` | POST with ADF body; `--mention` and/or `{{mention:ACCOUNT_ID}}` inside `--body` add ADF mention nodes |
 | `issue comment remove <KEY> <ID>` | DELETE |
+| `user search --query <TEXT>` | GET /user/search; requires "Browse users and groups" (`USER_PICKER`), fails silently (empty list) without it |
 
 ## Known edge cases (see BACKLOG.md)
 

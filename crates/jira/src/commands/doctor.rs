@@ -101,7 +101,12 @@ pub fn run_doctor() -> Result<(Value, bool), CliError> {
 }
 
 /// Jira permission keys checked by the `service_user` and `projects` doctor
-/// checks. These are the permissions the CLI's `issue` commands rely on.
+/// checks. These are the permissions the CLI's `issue` and `user` commands rely
+/// on. `USER_PICKER` ("Browse users and groups") is a global-only permission —
+/// unlike the others it isn't part of any project's permission scheme, so it
+/// reads the same in every project's report — but it's included here rather
+/// than in a separate check because `jira user search` fails silently (an empty
+/// match list, not an error) when it's missing, making it worth surfacing.
 const PERMISSION_KEYS: &[&str] = &[
     "BROWSE_PROJECTS",
     "CREATE_ISSUES",
@@ -109,6 +114,7 @@ const PERMISSION_KEYS: &[&str] = &[
     "DELETE_ISSUES",
     "ADD_COMMENTS",
     "TRANSITION_ISSUES",
+    "USER_PICKER",
 ];
 
 fn check_app_config(config_dir: &std::path::Path) -> (Value, Option<OAuthConfig>) {

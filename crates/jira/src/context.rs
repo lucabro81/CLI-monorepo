@@ -12,7 +12,7 @@
 //!   (see that crate for the `--select`/`--select-all` contract) and prints it.
 
 use crate::auth::{self, OAuthConfig, OAuthConfigError};
-use crate::client::JiraClient;
+use crate::client::{ClientError, JiraClient};
 use crate::error::CliError;
 
 /// XDG-style config directory (`$XDG_CONFIG_HOME` or `~/.config`), used on every platform
@@ -65,6 +65,15 @@ pub fn print_json(value: &serde_json::Value, select: cli_fields::Select<'_>) -> 
     let output = cli_fields::render_json(value, select)?;
     println!("{output}");
     Ok(())
+}
+
+/// Maps a [`ClientError`] (HTTP/network layer) to the user-facing [`CliError`].
+/// Shared by every command handler that calls a `JiraClient` method.
+pub fn client_error_to_cli(e: ClientError) -> CliError {
+    match e {
+        ClientError::Request(reason) => CliError::ApiRequestFailed { reason },
+        ClientError::Status { status, body } => CliError::ApiError { status, body },
+    }
 }
 
 #[cfg(test)]

@@ -6,7 +6,7 @@ A Cargo workspace of CLI tools, one per external service, designed to be driven 
 
 | Crate | Service |
 |-------|---------|
-| [jira](crates/jira/README.md) | Jira Cloud (issues, comments, transitions, search) |
+| [jira](crates/jira/README.md) | Jira Cloud (issues, comments, transitions, search, users) |
 | [bitbucket](crates/bitbucket/README.md) | Bitbucket Cloud (PRs, repos) |
 | [google-chat](crates/google-chat/README.md) | Google Chat (Workspace) |
 | [atlassian-admin](crates/atlassian-admin/README.md) | Atlassian Organization Admin API (account_id → email/profile lookup) |

@@ -75,6 +75,11 @@ pub enum Command {
         #[command(subcommand)]
         command: IssueCommand,
     },
+    /// Work with Jira users
+    User {
+        #[command(subcommand)]
+        command: UserCommand,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -210,13 +215,25 @@ pub enum CommentCommand {
     ///
     /// Always prints its full result regardless of --select — a single comment
     /// object, small and fixed-shape.
-    #[command(after_help = "Example: jira issue comment add KAN-4 --body \"Blocked by network issue, retrying tomorrow\"")]
+    ///
+    /// Two ways to tag/mention a user in the comment, which can be combined:
+    /// --mention tags a user at the start of the comment; embedding
+    /// `{{mention:ACCOUNT_ID}}` anywhere inside --body tags a user at that exact
+    /// position in the text. Use `jira user search --query <name>` first to find
+    /// the account ID to mention.
+    #[command(after_help = "Examples:\n  jira issue comment add KAN-4 --body \"Blocked by network issue, retrying tomorrow\"\n  jira issue comment add KAN-4 --mention 5b10ac8d82e05b22cc7d4ef5 --body \"can you take a look?\"\n  jira issue comment add KAN-4 --body \"Thanks {{mention:5b10ac8d82e05b22cc7d4ef5}} for the fix\"")]
     Add {
         /// Issue key, e.g. PROJ-123
         key: String,
-        /// Comment text (plain text; the CLI converts it to Jira's document format)
+        /// Comment text (plain text; the CLI converts it to Jira's document format).
+        /// Embed `{{mention:ACCOUNT_ID}}` anywhere in this text to tag a user at that
+        /// exact position, in addition to or instead of --mention.
         #[arg(long)]
         body: String,
+        /// Account ID of a user to tag/mention at the start of the comment.
+        /// Find an account ID with `jira user search --query <name>`.
+        #[arg(long)]
+        mention: Option<String>,
     },
     /// Delete a comment from an issue by its ID
     ///
@@ -228,6 +245,21 @@ pub enum CommentCommand {
         key: String,
         /// Comment ID to delete
         id: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum UserCommand {
+    /// Search for Jira users by name or email fragment and print matches as JSON
+    ///
+    /// Requires the "Browse users and groups" global permission. Without it, Jira
+    /// does not return an error — it silently returns an empty match list. Check
+    /// `jira doctor`'s permissions report if searches unexpectedly return nothing.
+    #[command(after_help = "Examples:\n  jira user search --query \"Jane Doe\"\n  jira user search --query jane.doe@example.com --select accountId,displayName,emailAddress\n\nUse the accountId from the result as the ID for --mention on `issue comment add`.")]
+    Search {
+        /// Name or email fragment to search for
+        #[arg(long)]
+        query: String,
     },
 }
 

@@ -150,23 +150,45 @@ impl JiraClient {
             .collect())
     }
 
-    /// Adds a plain-text comment to an issue and returns the created comment as JSON.
-    /// The text is wrapped in Jira's Atlassian Document Format (ADF) automatically.
-    pub fn add_comment(&self, key: &str, text: &str) -> Result<serde_json::Value, ClientError> {
+    /// Adds a comment to an issue and returns the created comment as JSON.
+    /// `content` is a list of pre-built Atlassian Document Format inline nodes
+    /// (e.g. `{"type": "text", ...}` or `{"type": "mention", ...}`), wrapped here
+    /// in the surrounding doc/paragraph envelope. Callers build `content` — see
+    /// `commands::issue::parse_body_segments` for plain text + mention handling.
+    pub fn add_comment(
+        &self,
+        key: &str,
+        content: &[serde_json::Value],
+    ) -> Result<serde_json::Value, ClientError> {
         let body = serde_json::json!({
             "body": {
                 "type": "doc",
                 "version": 1,
                 "content": [{
                     "type": "paragraph",
-                    "content": [{
-                        "type": "text",
-                        "text": text
-                    }]
+                    "content": content
                 }]
             }
         });
         self.post_json(&endpoints::issue_comment_path(key), &body)
+    }
+
+    /// Searches for users by name or email fragment via `GET /rest/api/3/user/search`
+    /// and returns the raw JSON array of matches. Requires the "Browse users and
+    /// groups" global permission — without it Jira returns an empty array rather
+    /// than an error.
+    pub fn search_users(&self, query: &str) -> Result<serde_json::Value, ClientError> {
+        let params = serde_urlencoded::to_string([("query", query)])
+            .map_err(|e| ClientError::Request(format!("failed to encode query params: {e}")))?;
+        self.get_json(&format!("{}?{params}", endpoints::PATH_USER_SEARCH))
+    }
+
+    /// Fetches a single user's profile by account ID via `GET /rest/api/3/user`.
+    /// Used to resolve a display name when building an ADF mention node.
+    pub fn get_user(&self, account_id: &str) -> Result<serde_json::Value, ClientError> {
+        let params = serde_urlencoded::to_string([("accountId", account_id)])
+            .map_err(|e| ClientError::Request(format!("failed to encode query params: {e}")))?;
+        self.get_json(&format!("{}?{params}", endpoints::PATH_USER))
     }
 
     /// Searches issues using JQL and returns the raw Jira response.

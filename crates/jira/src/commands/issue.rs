@@ -11,9 +11,9 @@
 //! options if no match is found; `issue search` builds its `--stale-days`
 //! JQL clause via `apply_stale_filter`.
 
-use crate::client::{self, ClientError};
 use crate::cli::{CommentCommand, IssueCommand};
-use crate::context::{authenticated_client, print_json};
+use crate::client::{ClientError, JiraClient};
+use crate::context::{authenticated_client, client_error_to_cli, print_json};
 use crate::error::CliError;
 
 /// Dispatches an `IssueCommand` variant to the appropriate Jira API call.
@@ -108,10 +108,12 @@ pub fn run(command: IssueCommand, select: cli_fields::Select<'_>) -> Result<(), 
             print_json(&result, select.or_all())
         }
         IssueCommand::Comment {
-            command: CommentCommand::Add { key, body },
+            command: CommentCommand::Add { key, body, mention },
         } => {
             let client = authenticated_client()?;
-            let value = client.add_comment(&key, &body).map_err(client_error_to_cli)?;
+            let content = build_comment_content(&client, &body, mention.as_deref())
+                .map_err(client_error_to_cli)?;
+            let value = client.add_comment(&key, &content).map_err(client_error_to_cli)?;
             // Exempt: a single comment object, fixed shape.
             print_json(&value, select.or_all())
         }
@@ -145,11 +147,86 @@ fn apply_stale_filter(jql: &str, stale_days: Option<u32>) -> String {
     }
 }
 
-fn client_error_to_cli(e: ClientError) -> CliError {
-    match e {
-        client::ClientError::Request(r) => CliError::ApiRequestFailed { reason: r },
-        client::ClientError::Status { status, body } => CliError::ApiError { status, body },
+/// A single piece of a comment `--body`: literal text, or a `{{mention:ACCOUNT_ID}}`
+/// placeholder resolved to that account ID.
+#[derive(Debug, PartialEq)]
+enum BodySegment {
+    Text(String),
+    Mention(String),
+}
+
+/// Splits `body` on the `{{mention:ACCOUNT_ID}}` placeholder syntax into an ordered
+/// sequence of text and mention segments. An unterminated placeholder (missing the
+/// closing `}}`) is kept as literal text rather than silently dropped, since an
+/// LLM-generated malformed placeholder shouldn't eat the rest of the comment.
+fn parse_body_segments(body: &str) -> Vec<BodySegment> {
+    const MARKER: &str = "{{mention:";
+    let mut segments = Vec::new();
+    let mut rest = body;
+
+    while let Some(marker_start) = rest.find(MARKER) {
+        let after_marker_start = &rest[marker_start + MARKER.len()..];
+        let Some(end) = after_marker_start.find("}}") else {
+            break;
+        };
+        let before = &rest[..marker_start];
+        if !before.is_empty() {
+            segments.push(BodySegment::Text(before.to_string()));
+        }
+        segments.push(BodySegment::Mention(after_marker_start[..end].to_string()));
+        rest = &after_marker_start[end + 2..];
     }
+    if !rest.is_empty() {
+        segments.push(BodySegment::Text(rest.to_string()));
+    }
+    segments
+}
+
+/// Builds the ADF content nodes for `issue comment add`: an optional leading mention
+/// node for `--mention`, followed by `body` parsed via [`parse_body_segments`] with
+/// any `{{mention:ACCOUNT_ID}}` placeholders resolved to mention nodes in place.
+fn build_comment_content(
+    client: &JiraClient,
+    body: &str,
+    mention: Option<&str>,
+) -> Result<Vec<serde_json::Value>, ClientError> {
+    let mut content = Vec::new();
+
+    if let Some(account_id) = mention {
+        let display_name = mention_display_name(client, account_id)?;
+        content.push(build_mention_node(account_id, &display_name));
+        content.push(build_text_node(" "));
+    }
+    for segment in parse_body_segments(body) {
+        match segment {
+            BodySegment::Text(text) => content.push(build_text_node(&text)),
+            BodySegment::Mention(account_id) => {
+                let display_name = mention_display_name(client, &account_id)?;
+                content.push(build_mention_node(&account_id, &display_name));
+            }
+        }
+    }
+    Ok(content)
+}
+
+/// Resolves `account_id` to its current display name via `GET /rest/api/3/user`, for
+/// use as the fallback label on an ADF mention node. Falls back to the account ID
+/// itself if the response is missing `displayName` (malformed-but-200 response) —
+/// a genuine lookup failure (e.g. unknown account ID) still surfaces as a `ClientError`.
+fn mention_display_name(client: &JiraClient, account_id: &str) -> Result<String, ClientError> {
+    let user = client.get_user(account_id)?;
+    Ok(user["displayName"].as_str().unwrap_or(account_id).to_string())
+}
+
+fn build_text_node(text: &str) -> serde_json::Value {
+    serde_json::json!({"type": "text", "text": text})
+}
+
+fn build_mention_node(account_id: &str, display_name: &str) -> serde_json::Value {
+    serde_json::json!({
+        "type": "mention",
+        "attrs": {"id": account_id, "text": format!("@{display_name}")}
+    })
 }
 
 #[cfg(test)]

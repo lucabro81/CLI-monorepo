@@ -3,19 +3,19 @@
 //! # Prerequisites
 //!
 //! - `jira auth login` must have been run on this machine.
-//! - The env var `JIRA_E2E_PROJECT` must be set to a writable Jira project key (e.g. `KAN`) —
+//! - The env var `JIRA_E2E_PROJECT` must be set to a writable Jira project key (e.g. `MER`) —
 //!   either exported inline per run, or via a workspace-root `.env` file (see `.env.example`;
 //!   loaded automatically by `setup()` below, an already-exported value always wins over `.env`).
 //!
 //! # Running
 //!
 //! ```sh
-//! JIRA_E2E_PROJECT=KAN cargo test -p jira -- --ignored
+//! JIRA_E2E_PROJECT=MER cargo test -p jira -- --ignored
 //! ```
 //!
 //! Run a single test:
 //! ```sh
-//! JIRA_E2E_PROJECT=KAN cargo test -p jira e2e_cleanup -- --ignored
+//! JIRA_E2E_PROJECT=MER cargo test -p jira e2e_cleanup -- --ignored
 //! ```
 //!
 //! # Isolation
@@ -82,6 +82,34 @@ fn e2e_summary(label: &str) -> String {
 fn select(value: Value, paths: &str) -> Value {
     let parts: Vec<&str> = paths.split(',').collect();
     filter_fields(value, &parts)
+}
+
+/// Regression guard: `GET /rest/api/3/search/jql` is index-backed, so a freshly
+/// created issue can be briefly invisible to search — even for an exact `issue =
+/// KEY` match, which does not require text-search indexing and was assumed
+/// immediate. Observed live: `issue = KEY` returned zero results immediately
+/// after `create_issue`, then the same query found it ~5s later. Retries up to
+/// ~10s (polling every 500ms) until at least `min_issues` are returned, so
+/// search tests aren't flaky right after creating their own fixture issue.
+fn search_expecting(
+    client: &JiraClient,
+    jql: &str,
+    max_results: u32,
+    fields: Option<&str>,
+    min_issues: usize,
+) -> Value {
+    let timeout = std::time::Duration::from_secs(10);
+    let start = std::time::Instant::now();
+    loop {
+        let result = client
+            .search_issues(jql, max_results, None, fields)
+            .expect("search should succeed");
+        let count = result["issues"].as_array().map_or(0, Vec::len);
+        if count >= min_issues || start.elapsed() >= timeout {
+            return result;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(500));
+    }
 }
 
 // ── IssueGuard ──────────────────────────────────────────────────────────────
@@ -247,7 +275,7 @@ fn e2e_comment_lifecycle() {
 
     // Add comment
     let comment = client
-        .add_comment(&key, &comment_body)
+        .add_comment(&key, &[serde_json::json!({"type": "text", "text": comment_body})])
         .expect("add_comment should succeed");
     let comment_id = comment["id"].as_str().expect("comment id missing").to_string();
 
@@ -343,9 +371,7 @@ fn e2e_search_simple() {
 
     // Search by exact key
     let jql = format!("issue = {key}");
-    let results = client
-        .search_issues(&jql, 10, None, Some("summary,status"))
-        .expect("search should succeed");
+    let results = search_expecting(&client, &jql, 10, Some("summary,status"), 1);
 
     let issues = results["issues"].as_array().expect("issues must be array");
     assert_eq!(issues.len(), 1, "should find exactly one issue");
@@ -366,9 +392,9 @@ fn e2e_search_complex() {
     let key = created["key"].as_str().expect("key missing").to_string();
     let _guard = IssueGuard::new(&key, creds);
 
-    // Multi-condition JQL: exact key + type + status + ORDER BY.
-    // Deliberately avoids `summary ~` (text search) which requires Jira indexing
-    // and would make the test flaky on freshly created issues.
+    // Multi-condition JQL: exact key + type + status + ORDER BY. Uses
+    // search_expecting (see its doc comment) rather than raw text `summary ~`,
+    // since even this exact-match form needs the search index to catch up.
     let issue = client.get_issue(&key).expect("get_issue should succeed");
     let status_name = issue["fields"]["status"]["name"]
         .as_str()
@@ -378,9 +404,7 @@ fn e2e_search_complex() {
     let jql = format!(
         "issue = {key} AND issuetype = Task AND status = \"{status_name}\" ORDER BY created DESC"
     );
-    let results = client
-        .search_issues(&jql, 50, None, Some("summary,status,issuetype"))
-        .expect("search should succeed");
+    let results = search_expecting(&client, &jql, 50, Some("summary,status,issuetype"), 1);
 
     let issues = results["issues"].as_array().expect("issues must be array");
     assert_eq!(issues.len(), 1, "complex search should return exactly our issue");
@@ -411,10 +435,10 @@ fn e2e_search_pagination() {
 
     let jql = format!("issue in ({key1}, {key2}) ORDER BY id ASC");
 
-    // Page 1 — must return 1 issue and a nextPageToken
-    let page1 = client
-        .search_issues(&jql, 1, None, Some("summary"))
-        .expect("page 1 search should succeed");
+    // Page 1 — must return 1 issue and a nextPageToken. Uses search_expecting
+    // (see its doc comment) since both fixture issues were just created and may
+    // not be indexed for search yet.
+    let page1 = search_expecting(&client, &jql, 1, Some("summary"), 1);
 
     let issues_p1 = page1["issues"].as_array().expect("issues must be array");
     assert_eq!(issues_p1.len(), 1, "page 1 should return exactly 1 issue");
@@ -447,7 +471,7 @@ fn e2e_search_pagination() {
 /// set up, or to clean up any issues left over from a previous interrupted session:
 ///
 /// ```sh
-/// JIRA_E2E_PROJECT=KAN cargo test -p jira e2e_cleanup -- --ignored
+/// JIRA_E2E_PROJECT=MER cargo test -p jira e2e_cleanup -- --ignored
 /// ```
 #[test]
 #[ignore = "e2e: recovery — deletes all [jira-cli-e2e] issues in JIRA_E2E_PROJECT"]
