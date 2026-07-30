@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - *(jira)* add user search and comment mentions (#47) ([#47](https://github.com/lucabro81/CLI-monorepo/pull/47))
 - *(jira)* add issue assign/unassign command (#50) ([#50](https://github.com/lucabro81/CLI-monorepo/pull/50))
+
+### Other
+- Release
+- Merge pull request #49 from lucabro81/release/jira ([#49](https://github.com/lucabro81/CLI-monorepo/pull/49))
+## [0.4.0](https://github.com/lucabro81/CLI-monorepo/compare/jira-v0.3.3...jira-v0.4.0) - 2026-07-30
+
+### Added
+- *(jira)* add user search and comment mentions (#47) ([#47](https://github.com/lucabro81/CLI-monorepo/pull/47))
+- *(jira)* add issue assign/unassign command (#50) ([#50](https://github.com/lucabro81/CLI-monorepo/pull/50))
 ## [0.3.3](https://github.com/lucabro81/CLI-monorepo/compare/jira-v0.3.2...jira-v0.3.3) - 2026-07-24
 
 ### Fixed
