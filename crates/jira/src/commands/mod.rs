@@ -8,4 +8,5 @@ pub mod auth;
 pub mod doctor;
 pub mod init;
 pub mod issue;
+pub mod project;
 pub mod user;

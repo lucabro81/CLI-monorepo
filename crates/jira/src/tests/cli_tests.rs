@@ -1,7 +1,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use crate::error;
-use super::{AuthCommand, Cli, Command, CommentCommand, IssueCommand, UserCommand};
+use super::{AuthCommand, Cli, Command, CommentCommand, IssueCommand, ProjectCommand, UserCommand};
 use clap::Parser;
 
 #[test]
@@ -728,6 +728,25 @@ fn parses_user_search_with_query() {
 #[test]
 fn rejects_user_search_missing_query() {
     let result = Cli::try_parse_from(["jira", "user", "search"]);
+    assert!(result.is_err());
+}
+
+#[test]
+fn parses_project_search_with_query() {
+    let cli = Cli::try_parse_from(["jira", "project", "search", "--query", "Mercury"])
+        .expect("should parse");
+
+    match cli.command {
+        Command::Project { command: ProjectCommand::Search { query } } => {
+            assert_eq!(query, "Mercury");
+        }
+        other => panic!("unexpected command: {other:?}"),
+    }
+}
+
+#[test]
+fn rejects_project_search_missing_query() {
+    let result = Cli::try_parse_from(["jira", "project", "search"]);
     assert!(result.is_err());
 }
 
