@@ -20,7 +20,7 @@ pub struct Cli {
     /// command fails with an error reporting the byte size of the full response and
     /// its top-level field names, so you can retry with an informed --select. A few
     /// commands whose output is always small and fixed-shape (doctor, auth whoami,
-    /// issue create/delete/transitions/transition/comment add/comment remove) are
+    /// issue create/delete/assign/transitions/transition/comment add/comment remove) are
     /// exempt and print in full regardless — see that command's own --help.
     /// This description is shared across every command and has no single
     /// correct path syntax. IMPORTANT: do NOT guess a path from this text —
@@ -194,6 +194,21 @@ pub enum IssueCommand {
         /// Also delete subtasks; required if the issue has any
         #[arg(long)]
         delete_subtasks: bool,
+    },
+    /// Assign or unassign an issue
+    ///
+    /// Always prints its full result regardless of --select — a small, synthesized
+    /// confirmation object.
+    #[command(after_help = "Examples:\n  jira issue assign KAN-4 --assignee 5b10ac8d82e05b22cc7d4ef5\n  jira issue assign KAN-4 --unassign\n\nExactly one of --assignee or --unassign must be passed.\nUse `jira user search --query <name>` to find an account ID.")]
+    Assign {
+        /// Issue key, e.g. PROJ-123
+        key: String,
+        /// Account ID of the user to assign. Find one with `jira user search --query <name>`.
+        #[arg(long, conflicts_with = "unassign")]
+        assignee: Option<String>,
+        /// Remove the current assignee instead of assigning a new one
+        #[arg(long)]
+        unassign: bool,
     },
     /// Move an issue to a different status via a workflow transition
     ///

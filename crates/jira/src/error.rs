@@ -80,6 +80,13 @@ pub enum CliError {
     )]
     DeleteNotConfirmed { key: String },
 
+    #[error(
+        "issue assign requires exactly one of --assignee or --unassign. \
+        Retry with either: jira issue assign {key} --assignee <ACCOUNT_ID>  \
+        or: jira issue assign {key} --unassign"
+    )]
+    AssignMissingTarget { key: String },
+
     #[error("one or more doctor checks failed. See JSON output above for details.")]
     DoctorCheckFailed,
 

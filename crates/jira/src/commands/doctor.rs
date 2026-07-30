@@ -115,6 +115,7 @@ const PERMISSION_KEYS: &[&str] = &[
     "ADD_COMMENTS",
     "TRANSITION_ISSUES",
     "USER_PICKER",
+    "ASSIGN_ISSUES",
 ];
 
 fn check_app_config(config_dir: &std::path::Path) -> (Value, Option<OAuthConfig>) {
