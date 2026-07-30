@@ -21,6 +21,7 @@ CLI for Jira Cloud, designed to be driven by an LLM agent (output is JSON, error
   - [`jira issue comment remove <KEY> <COMMENT_ID>`](#jira-issue-comment-remove-key-comment_id)
   - [`jira issue search --jql <QUERY>`](#jira-issue-search---jql-query)
   - [`jira user search --query <TEXT>`](#jira-user-search---query-text)
+  - [`jira project search --query <TEXT>`](#jira-project-search---query-text)
   - [`--select <PATHS>` (global flag)](#--select-paths-global-flag)
 - [Testing](#testing)
 - [Error design](#error-design)
@@ -311,6 +312,17 @@ cargo run -p jira -- user search --query jane.doe@example.com --select accountId
 ```
 
 Requires the "Browse users and groups" global permission. Without it, Jira does not return an error — it silently returns an empty match list. Check `jira doctor`'s permissions report (the `USER_PICKER` key) if searches unexpectedly return nothing.
+
+### `jira project search --query <TEXT>`
+
+Searches for Jira projects by name or key fragment — use this to find a project's key when you only know (part of) its name. `--query` is a literal substring/prefix filter (case-insensitive) against both key and name, not a query language; JQL's `project = <value>` clause can also resolve a project's *exact, full* name to its key, but does not do fragment/substring matching (verified live: `project = Mercury` resolves, `project = mercur` returns zero results).
+
+```sh
+cargo run -p jira -- project search --query Mercury
+cargo run -p jira -- project search --query mercur --select values.key,values.name
+```
+
+Use the `key` from the result as the `--project` value for `issue create` or in JQL.
 
 ### `--select <PATHS>` (global flag)
 

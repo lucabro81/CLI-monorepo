@@ -183,6 +183,18 @@ impl JiraClient {
         self.get_json(&format!("{}?{params}", endpoints::PATH_USER_SEARCH))
     }
 
+    /// Searches projects by name/key fragment via `GET /rest/api/3/project/search?query=`
+    /// and returns the raw Jira response (single page, unpaginated — matches
+    /// `search_users`'s shape). `query` is a literal substring/prefix filter, not a
+    /// query language: it matches against both project key and name, case-insensitive.
+    /// Distinct from `list_projects` (used internally by `doctor`), which paginates
+    /// through the same endpoint but only extracts keys, discarding names.
+    pub fn search_projects(&self, query: &str) -> Result<serde_json::Value, ClientError> {
+        let params = serde_urlencoded::to_string([("query", query)])
+            .map_err(|e| ClientError::Request(format!("failed to encode query params: {e}")))?;
+        self.get_json(&format!("{}?{params}", endpoints::PATH_PROJECT_SEARCH))
+    }
+
     /// Fetches a single user's profile by account ID via `GET /rest/api/3/user`.
     /// Used to resolve a display name when building an ADF mention node.
     pub fn get_user(&self, account_id: &str) -> Result<serde_json::Value, ClientError> {

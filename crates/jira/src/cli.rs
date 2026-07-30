@@ -80,6 +80,11 @@ pub enum Command {
         #[command(subcommand)]
         command: UserCommand,
     },
+    /// Work with Jira projects
+    Project {
+        #[command(subcommand)]
+        command: ProjectCommand,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -273,6 +278,21 @@ pub enum UserCommand {
     #[command(after_help = "Examples:\n  jira user search --query \"Jane Doe\"\n  jira user search --query jane.doe@example.com --select accountId,displayName,emailAddress\n\nUse the accountId from the result as the ID for --mention on `issue comment add`.")]
     Search {
         /// Name or email fragment to search for
+        #[arg(long)]
+        query: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum ProjectCommand {
+    /// Search for Jira projects by name or key fragment and print matches as JSON
+    ///
+    /// `--query` is a literal substring/prefix filter (case-insensitive) against
+    /// both the project key and name — not a query language. Use this to find a
+    /// project's key when you only know (part of) its name.
+    #[command(after_help = "Examples:\n  jira project search --query Mercury\n  jira project search --query mercur --select values.key,values.name\n\nUse the key from the result as the --project value for `issue create` or in JQL.")]
+    Search {
+        /// Name or key fragment to search for
         #[arg(long)]
         query: String,
     },
