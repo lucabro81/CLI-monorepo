@@ -354,6 +354,47 @@ fn e2e_transition() {
     );
 }
 
+// ── Assign ───────────────────────────────────────────────────────────────────
+
+#[test]
+#[ignore = "e2e: requires credentials and JIRA_E2E_PROJECT"]
+fn e2e_assign_lifecycle() {
+    let (client, creds) = setup();
+    let project = project_key();
+    let summary = e2e_summary("assign-lifecycle");
+
+    // Create issue, unassigned by default
+    let created = client
+        .create_issue(&project, "Task", &summary, None, None, None)
+        .expect("create_issue should succeed");
+    let key = created["key"].as_str().expect("key missing").to_string();
+    let _guard = IssueGuard::new(&key, creds);
+
+    let account_id = client
+        .get_myself()
+        .expect("get_myself should succeed")["accountId"]
+        .as_str()
+        .expect("accountId missing")
+        .to_string();
+
+    // Assign to self
+    client
+        .assign_issue(&key, Some(&account_id))
+        .expect("assign_issue should succeed");
+    let issue = client.get_issue(&key).expect("get_issue should succeed");
+    assert_eq!(issue["fields"]["assignee"]["accountId"], account_id);
+
+    // Unassign
+    client
+        .assign_issue(&key, None)
+        .expect("assign_issue(None) should succeed");
+    let issue_after = client.get_issue(&key).expect("get_issue after unassign should succeed");
+    assert!(
+        issue_after["fields"]["assignee"].is_null(),
+        "assignee should be null after unassigning"
+    );
+}
+
 // ── Search ───────────────────────────────────────────────────────────────────
 
 #[test]

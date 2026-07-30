@@ -61,7 +61,7 @@ there, not just jira.
 
 ---
 
-### issue create / issue delete
+### issue create / issue delete / issue assign
 
 #### CREATE-1 — Empty `--summary` accepted by CLI, rejected by Jira with opaque 400
 **Found:** review session 2026-06-09  
@@ -105,6 +105,15 @@ there, not just jira.
 **Current behaviour (before fix):** service account had `CREATE_ISSUES`/`EDIT_ISSUES`/`ADD_COMMENTS`/`TRANSITION_ISSUES`/`USER_PICKER` on MER per `jira doctor`, but not `DELETE_ISSUES` — same root cause as the original DELETE-2. `IssueGuard`/`e2e_cleanup` would have failed to clean up on MER exactly as they did on KAN before that fix.  
 **Resolved:** 2026-07-24 — MER is a **team-managed** project, not company-managed like KAN was, so the fix path differs from DELETE-2: no Permissions/People tabs, just **Project settings → Access**, where the service account (`mercury-9wn2uvu8rg@serviceaccount.atlassian.com` — not listed by default; team-managed projects only show explicitly-added members) was added via **Aggiungi persone** and assigned the **Administrator** role (the role that includes issue deletion in team-managed projects; Member does not). Verified live: `jira doctor --select projects.MER.service_user_permissions` now includes `DELETE_ISSUES`, and `jira issue delete MER-1 --confirm` succeeded.  
 **Still open:** `SUP-2483` (used for a one-off manual smoke test, not the configured e2e project) remains undeletable — same gap, never fixed there since it's not needed for e2e. Fix identically (Access → Aggiungi persone → Administrator) on `SUP` if it needs cleaning up.
+
+---
+
+#### ASSIGN-1 — Assigning to a non-assignable account ID gives Jira's raw 400, not surfaced specially
+**Found:** 2026-07-30, while implementing `issue assign`.  
+**Trigger:** `jira issue assign KEY --assignee <ACCOUNT_ID>` where the account ID does not have the `ASSIGNABLE_USER` permission on the issue's project (e.g. a user with no role in that project).  
+**Current behaviour:** not verified live — the service account used for e2e/manual testing only ever assigned to itself, which trivially has the permission. Expected (per Jira's documented behavior) is a 400 with a body naming the assignee as invalid; this would surface as the generic `ApiError { status: 400, body: ... }`, same as CREATE-1/CREATE-2.  
+**Acceptable?** Yes for now — same shape as other unverified-edge-case entries below; the raw Jira error body does explain the problem.  
+**Future fix:** if this proves confusing in practice, catch a 400 on this specific endpoint and surface a tailored error suggesting `jira user search` to find an assignable user.
 
 ---
 

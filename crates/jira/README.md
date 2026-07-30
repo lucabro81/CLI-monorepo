@@ -16,6 +16,7 @@ CLI for Jira Cloud, designed to be driven by an LLM agent (output is JSON, error
   - [`jira issue delete <KEY>`](#jira-issue-delete-key)
   - [`jira issue transitions <KEY>`](#jira-issue-transitions-key)
   - [`jira issue transition <KEY> --to <STATUS>`](#jira-issue-transition-key---to-status)
+  - [`jira issue assign <KEY>`](#jira-issue-assign-key)
   - [`jira issue comment add <KEY> --body <TEXT>`](#jira-issue-comment-add-key---body-text)
   - [`jira issue comment remove <KEY> <COMMENT_ID>`](#jira-issue-comment-remove-key-comment_id)
   - [`jira issue search --jql <QUERY>`](#jira-issue-search---jql-query)
@@ -236,6 +237,17 @@ cargo run -p jira -- issue transition KAN-4 --to done
 ```
 
 Prints `{"transitioned": true, "key": "KAN-4", "to": "In Progress"}` on success.
+
+### `jira issue assign <KEY>`
+
+Assigns an issue to a user, or unassigns it. Exactly one of `--assignee` or `--unassign` must be passed — passing both is rejected at parse time, passing neither is rejected at runtime with an error listing both retry commands. Requires the "Assign Issues" project permission (`ASSIGN_ISSUES`, checked by `jira doctor`).
+
+```sh
+cargo run -p jira -- issue assign KAN-4 --assignee 5b10ac8d82e05b22cc7d4ef5
+cargo run -p jira -- issue assign KAN-4 --unassign
+```
+
+Use [`jira user search`](#jira-user-search---query-text) to find an account ID. Prints `{"assigned": true, "key": "KAN-4", "assignee": "5b10ac8d82e05b22cc7d4ef5"}` (or `"assignee": null` after `--unassign`) on success.
 
 ### `jira issue comment add <KEY> --body <TEXT>`
 

@@ -326,6 +326,36 @@ impl JiraClient {
         Ok(())
     }
 
+    /// Assigns an issue to `account_id`, or unassigns it if `account_id` is `None`
+    /// (Jira accepts a `null` accountId in the request body to clear the assignee —
+    /// verified live against a Jira Cloud site, since the docs are ambiguous between
+    /// the older server-only `name: null` form and this one).
+    /// Returns `()` on success (Jira responds with 204 No Content).
+    pub fn assign_issue(&self, key: &str, account_id: Option<&str>) -> Result<(), ClientError> {
+        let body = serde_json::json!({"accountId": account_id});
+        let url = format!("{}{}", self.base_url, endpoints::issue_assignee_path(key));
+
+        let response = self
+            .http
+            .put(&url)
+            .bearer_auth(&self.access_token)
+            .header("Accept", "application/json")
+            .json(&body)
+            .send()
+            .map_err(|e| ClientError::Request(e.to_string()))?;
+
+        let status = response.status();
+        if !status.is_success() {
+            let body = response.text().unwrap_or_default();
+            return Err(ClientError::Status {
+                status: status.as_u16(),
+                body,
+            });
+        }
+
+        Ok(())
+    }
+
     /// Deletes a comment from an issue by its ID.
     /// Returns `()` on success (Jira responds with 204 No Content).
     pub fn delete_comment(&self, key: &str, comment_id: &str) -> Result<(), ClientError> {

@@ -1,6 +1,6 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use super::{apply_stale_filter, parse_body_segments, BodySegment};
+use super::{apply_stale_filter, parse_body_segments, validate_assign_target, BodySegment};
 
 #[test]
 fn apply_stale_filter_returns_jql_unchanged_when_stale_days_is_none() {
@@ -137,4 +137,23 @@ fn parse_body_segments_treats_unterminated_placeholder_as_literal_text() {
         parse_body_segments("hello {{mention:no-closing-brace"),
         vec![BodySegment::Text("hello {{mention:no-closing-brace".to_string())]
     );
+}
+
+#[test]
+fn validate_assign_target_ok_with_assignee_only() {
+    assert!(validate_assign_target("KAN-5", Some("account-id-123"), false).is_ok());
+}
+
+#[test]
+fn validate_assign_target_ok_with_unassign_only() {
+    assert!(validate_assign_target("KAN-5", None, true).is_ok());
+}
+
+#[test]
+fn validate_assign_target_err_with_neither_assignee_nor_unassign() {
+    // clap's `conflicts_with` rules out passing both --assignee and --unassign
+    // together, but does not require at least one of them — this runtime check
+    // covers the "neither" case, e.g. `jira issue assign KAN-5` alone.
+    let result = validate_assign_target("KAN-5", None, false);
+    assert!(result.is_err());
 }
