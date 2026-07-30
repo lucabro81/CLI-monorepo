@@ -21,7 +21,8 @@ src/
                     all Jira API methods: get_issue, get_myself, get_my_permissions,
                     add_comment (takes pre-built ADF content nodes), delete_comment,
                     get_transitions, list_transitions_json, apply_transition,
-                    create_issue, delete_issue, search_issues, search_users, get_user
+                    create_issue, delete_issue, assign_issue, search_issues,
+                    search_users, get_user
   cli.rs          — clap structs: Cli (--select global), Command, AuthCommand,
                     IssueCommand, CommentCommand, UserCommand. No logic.
   context.rs      — config_dir(), load_oauth_config(), authenticated_client(),
@@ -64,12 +65,15 @@ already-exported value still takes precedence. See `BACKLOG.md`'s
 
 See root `CLAUDE.md` for the general `src/tests/` convention and the
 cli_tests/commands split. `issue.rs` has a dedicated `tests/commands/issue_tests.rs`
-covering `apply_stale_filter` (the `--stale-days` JQL builder) and
+covering `apply_stale_filter` (the `--stale-days` JQL builder),
 `parse_body_segments` (the `{{mention:ACCOUNT_ID}}` placeholder parser used by
-`comment add`) — the non-HTTP logic in the module, besides `issue transition`'s
-case-insensitive status matching, which stays covered end-to-end via
-`cli_tests.rs` instead. `user.rs` has no dedicated unit-test file: its one
-command is a thin passthrough, covered entirely by `cli_tests.rs`.
+`comment add`), and `validate_assign_target` (the "exactly one of --assignee/
+--unassign" runtime check for `issue assign` — `clap`'s `conflicts_with` only
+rules out passing both, not passing neither) — the non-HTTP logic in the
+module, besides `issue transition`'s case-insensitive status matching, which
+stays covered end-to-end via `cli_tests.rs` instead. `user.rs` has no
+dedicated unit-test file: its one command is a thin passthrough, covered
+entirely by `cli_tests.rs`.
 
 ## OAuth / auth design
 
@@ -119,6 +123,7 @@ Kept separate so automatic token writes never clobber the app identity.
   | `issue delete` | yes | synthesized by us: `{"deleted": true, "key": ...}` |
   | `issue transitions` | yes | bounded workflow-state list, no `expand` requested |
   | `issue transition` | yes | synthesized by us: `{"transitioned": true, ...}` |
+  | `issue assign` | yes | synthesized by us: `{"assigned": true, "key": ..., "assignee": ...}` — the underlying `PUT /issue/{key}/assignee` returns 204 No Content |
   | `issue comment add` | yes | single comment object, fixed shape |
   | `issue comment remove` | yes | synthesized by us: `{"deleted": true, "id": ...}` |
   | `user search` | **no** | list endpoint, same unbounded-response risk as `issue search` |
@@ -127,6 +132,7 @@ Kept separate so automatic token writes never clobber the app identity.
 - **ADF**: comment bodies and issue descriptions are wrapped in Atlassian Document Format by the client methods. `client::add_comment` takes pre-built ADF content nodes (`Vec<Value>`) rather than raw text, since `comment add` may need to mix plain `text` nodes with `mention` nodes — `commands/issue.rs` builds that list (`build_comment_content`, `parse_body_segments`, `build_text_node`, `build_mention_node`) before calling it.
 - **Mentions in comments** (`issue comment add --mention <ACCOUNT_ID>` and/or `{{mention:ACCOUNT_ID}}` inside `--body`): both forms build an ADF `mention` node (`{"type": "mention", "attrs": {"id": ..., "text": "@..."}}`). The `text` attrs value is resolved to the user's real current display name via `client::get_user` (`GET /rest/api/3/user?accountId=...`) before the comment is posted — one extra API call per mention — rather than a generic placeholder, since Jira's fallback `text` is what's shown in contexts where the ADF isn't fully re-rendered (some notification digests). A lookup failure (e.g. unknown account ID) surfaces as the same `ApiError`/`ApiRequestFailed` as any other Jira API call — no special-cased error handling. `jira user search` is the way to discover an account ID for a name/email.
 - **Destructive commands**: no interactive prompts (an LLM cannot respond). `issue delete` requires explicit `--confirm`; error message includes the exact command to retry. `commands/issue.rs::run` calls `authenticated_client()` **per match arm** rather than once up front, so the `--confirm` check (free, local) runs before the network round-trip a token refresh may require — otherwise a caller who forgot `--confirm` with expired credentials would see a confusing auth error instead of the actionable `DeleteNotConfirmed` one (spotted and fixed alongside `google-chat`'s `messages delete`, which had the same hoisted-auth structure).
+- **Assignee endpoint**: `PUT /rest/api/3/issue/{key}/assignee` takes `{"accountId": "..."}` to assign, or `{"accountId": null}` to unassign — verified live against a real Jira Cloud site rather than trusted from docs, since Atlassian's own docs/community answers are ambiguous between this and the older Jira Server `{"name": null}` form. `issue assign`'s `--assignee`/`--unassign` flags are mutually exclusive (`clap`'s `conflicts_with`); `validate_assign_target` (`commands/issue.rs`) is the runtime check that at least one was passed, since `conflicts_with` alone doesn't enforce that.
 
 ## `doctor` permission checks
 
@@ -157,7 +163,8 @@ conceptual background):
 global-only permission (not part of any project's permission scheme), so it
 reads identically in every project's `projects` entry — included anyway
 because `user search` fails silently (empty match list, not an error) without
-it, which is otherwise invisible to the caller.
+it, which is otherwise invisible to the caller. `ASSIGN_ISSUES` ("Assign
+Issues") is needed by `jira issue assign`.
 
 ## Implemented commands
 
@@ -172,6 +179,7 @@ it, which is otherwise invisible to the caller.
 | `issue delete <KEY> --confirm` | Requires explicit confirmation flag |
 | `issue transitions <KEY>` | List available workflow transitions |
 | `issue transition <KEY> --to <STATUS>` | Case-insensitive match; lists valid options on mismatch |
+| `issue assign <KEY> --assignee <ACCOUNT_ID> \| --unassign` | PUT with `{accountId}` (or `null` to unassign); exactly one of the two flags required |
 | `issue search --jql [--stale-days N]` | Paginated JQL search. `--stale-days N` adds `AND updated <= -Nd` to `--jql` (inserted before `ORDER BY` if present) — JQL's own relative-date syntax, no separate staleness API needed |
 | `issue comment add <KEY> --body [--mention ACCOUNT_ID]` | POST with ADF body; `--mention` and/or `{{mention:ACCOUNT_ID}}` inside `--body` add ADF mention nodes |
 | `issue comment remove <KEY> <ID>` | DELETE |
