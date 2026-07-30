@@ -188,6 +188,15 @@ there, not just jira.
 
 ## Cross-crate
 
+### RELEASE-1 — `release-pr.yml` can re-trigger a spurious no-op release PR right after a release PR merges
+**Found:** 2026-07-30, releasing jira v0.4.0.  
+**Trigger:** merging a `release/<crate>` PR is itself a push to `main`, which re-runs `release-pr.yml`. Observed live: merging jira's `chore(jira): release v0.4.0` PR (#49) produced a second `release/jira` PR (#51) moments later, also titled "release v0.4.0" — but with an unchanged `Cargo.toml`/`Cargo.lock` (no real version bump) and a `CHANGELOG.md` diff that duplicated the just-added 0.4.0 section (plus "Other: Release / Merge pull request #49..." noise from the merge commit itself being picked up as a "commit since last tag").  
+**Current behaviour:** the PR is harmless if ignored (`release-tag.yml` wouldn't create a duplicate tag since the version didn't change), but merging it would corrupt `CHANGELOG.md` with a duplicate section. Closed manually (`gh pr close 51 --delete-branch`) rather than merged.  
+**Acceptable?** Yes for now — happens once per release, easy to spot (no `Cargo.toml` diff) and cheap to close.  
+**Future fix:** the pre-git-cliff `grep` gate (see root CLAUDE.md's CI/CD section) could additionally check whether the crate's `Cargo.toml` version already matches what git-cliff would compute, and skip opening/updating the PR if so — rather than relying on a human to notice the diff is a no-op.
+
+---
+
 ### AUTH-3 (bitbucket) — 3LO/PKCE "human" auth flow not needed, deferred
 **Found:** 2026-06-11, design discussion  
 **Context:** considered mirroring jira's `auth login --user` (3LO + PKCE) for bitbucket.  
