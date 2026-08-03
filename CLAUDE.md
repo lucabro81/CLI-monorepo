@@ -43,7 +43,7 @@ Applies to work driven by the `new-cli-crate` and `add-cli-command` skills (see 
 
 ## Tracking known issues and design notes
 
-Known edge cases, deferred fixes, and design notes (documented tradeoffs that aren't scheduled) are tracked as GitHub issues, not in a `BACKLOG.md` file (retired 2026-08-03 in favor of this). Use labels instead of an ID prefix per crate:
+Known edge cases, deferred fixes, and design notes (documented tradeoffs that aren't scheduled) are tracked as GitHub issues, labeled instead of using an ID prefix per crate:
 
 - **Type** (pick one): `bug`, `enhancement`, `tech-debt` (internal robustness/coverage improvement, not user-facing), `design-note` (a decision already made and documented, not scheduled to change), `needs-verification` (implemented but not confirmed live).
 - **Scope** (pick one): the crate name (`jira`, `bitbucket`, `google-chat`, `cli-fields`, `atlassian-auth`, `atlassian-admin`, `confluence`) or `cross-crate` for anything spanning multiple crates or repo-wide tooling/CI.

@@ -219,7 +219,7 @@ correct it, and re-run the full loop — don't patch around it locally.
   style, new HTTP method helper, etc.).
 - Open a GitHub issue for any edge case discovered but not handled, labeled
   `<type>,<crate>` (per root `CLAUDE.md`'s "Tracking known issues and design
-  notes") — not a `BACKLOG.md` note.
+  notes").
 - Commit in small atomic units per root CLAUDE.md (e.g. one commit for
   client+endpoints+cli+handler+unit tests+docs if it's genuinely one logical
   unit, separate commits for unrelated refactors or backlog notes). Each
