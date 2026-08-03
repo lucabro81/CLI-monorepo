@@ -338,6 +338,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "confluence"
+version = "0.1.0"
+dependencies = [
+ "atlassian-auth",
+ "clap",
+ "cli-fields",
+ "dirs",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "serde_urlencoded",
+ "tempfile",
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "core-foundation"
 version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"

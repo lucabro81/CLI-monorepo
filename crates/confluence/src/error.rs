@@ -1,0 +1,100 @@
+//! Top-level error type for the `confluence` CLI.
+//!
+//! `CliError` is the single error type that surfaces to the user. Every
+//! variant carries a self-contained message — what went wrong and what the
+//! caller (human or LLM) should do to fix it. Messages are plain text with
+//! no colors, symbols, or formatting.
+//!
+//! Internal module errors (`LoginError`, `ClientError`, `OAuthConfigError`)
+//! are mapped to `CliError` at the `run()` boundary in `main.rs` or in the
+//! relevant command handler. They are never exposed directly to the user.
+
+use thiserror::Error;
+
+/// Top-level CLI error. Every variant carries a self-contained message:
+/// what went wrong and what the caller should do to fix it.
+/// No colors, symbols, or formatting — output is designed to be read by an LLM.
+#[derive(Debug, Error)]
+pub enum CliError {
+    #[error(
+        "app credentials file not found at {path}. \
+        Create it manually with your Atlassian OAuth 2.0 app credentials: \
+        {{\"client_id\": \"...\", \"client_secret\": \"...\"}}"
+    )]
+    AppConfigNotFound { path: String },
+
+    #[error(
+        "app credentials file at {path} is not valid JSON: {reason}. \
+        Expected format: {{\"client_id\": \"...\", \"client_secret\": \"...\"}}"
+    )]
+    AppConfigInvalid { path: String, reason: String },
+
+    #[error(
+        "no home directory found — cannot resolve config path. \
+        Set the XDG_CONFIG_HOME environment variable explicitly."
+    )]
+    NoHomeDirectory,
+
+    #[error(
+        "not authenticated. \
+        Run: confluence auth login"
+    )]
+    NotAuthenticated,
+
+    #[error(
+        "failed to refresh authentication token: {reason}. \
+        The session may have been revoked. Run: confluence auth login"
+    )]
+    TokenRefreshFailed { reason: String },
+
+    #[error("OAuth login failed: {reason}")]
+    LoginFailed { reason: String },
+
+    #[error(
+        "failed to save credentials to {path}: {reason}. \
+        Check that the directory exists and is writable."
+    )]
+    SaveCredentialsFailed { path: String, reason: String },
+
+    #[error("Confluence API request failed: {reason}")]
+    ApiRequestFailed { reason: String },
+
+    #[error("Confluence API returned status {status}: {body}")]
+    ApiError { status: u16, body: String },
+
+    #[error("failed to serialize response to JSON: {reason}")]
+    JsonSerialize { reason: String },
+
+    #[error(transparent)]
+    Select(#[from] cli_fields::RenderError),
+
+    #[error("one or more doctor checks failed. See JSON output above for details.")]
+    DoctorCheckFailed,
+
+    #[error("I/O error: {reason}")]
+    IoError { reason: String },
+
+    #[error(
+        "page create requires exactly one of --body, --template-file, or --template-id \
+        to supply the page content. Retry with one of them set."
+    )]
+    PageCreateMissingBodySource,
+
+    #[error(
+        "page update requires at least one of --title or --body — otherwise there is \
+        nothing to update. Retry with one of them set."
+    )]
+    PageUpdateMissingTarget,
+
+    #[error(
+        "Confluence returned a template response with no body.storage.value field: {reason}. \
+        The template may be empty, or this is an unexpected response shape."
+    )]
+    TemplateBodyMissing { reason: String },
+
+    /// A condition that should be unreachable given valid inputs (e.g. clap's
+    /// `conflicts_with` should have already ruled it out). If this surfaces it
+    /// indicates a bug in the CLI itself.
+    #[error("internal error: {0}")]
+    Internal(String),
+}
