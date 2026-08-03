@@ -1,4 +1,4 @@
-//! Handlers for the `page` command group (`get`, `create`, `update`, `search`).
+//! Handlers for the `page` command group (`get`, `create`, `update`, `search`, `delete`).
 //!
 //! `run_create`'s body content comes from exactly one of three sources —
 //! `--body` (raw text), `--body-file` (the same kind of content, read from a
@@ -16,6 +16,9 @@
 //! endpoint: it fetches the page's current title/body/version first, so a
 //! caller can override just `--title` or just `--body` without needing to
 //! resupply the other.
+//!
+//! `run_delete` moves a page to the trash by default; `--purge` permanently
+//! removes it, but only works on a page that's already trashed.
 
 use serde_json::json;
 
@@ -48,6 +51,7 @@ pub fn run(command: PageCommand, select: cli_fields::Select<'_>) -> Result<(), C
                 .map_err(client_error_to_cli)?;
             print_json(&value, select)
         }
+        PageCommand::Delete { id, confirm, purge } => run_delete(&id, confirm, purge, select),
     }
 }
 
@@ -167,6 +171,29 @@ fn run_update(
         .update_page(id, &request_body)
         .map_err(client_error_to_cli)?;
     print_json(&value, select)
+}
+
+/// Deletes (or, with `purge`, permanently removes) a page. The `--confirm`
+/// check runs before `authenticated_client()` — free and local, so a caller
+/// who forgot `--confirm` sees the actionable error immediately rather than
+/// after a network round-trip a token refresh might require (same reasoning
+/// as jira's `issue delete`).
+fn run_delete(
+    id: &str,
+    confirm: bool,
+    purge: bool,
+    select: cli_fields::Select<'_>,
+) -> Result<(), CliError> {
+    if !confirm {
+        return Err(CliError::PageDeleteNotConfirmed { id: id.to_string() });
+    }
+
+    authenticated_client()?
+        .delete_page(id, purge)
+        .map_err(client_error_to_cli)?;
+
+    let value = json!({"deleted": true, "id": id, "purged": purge});
+    print_json(&value, select.or_all())
 }
 
 #[cfg(test)]

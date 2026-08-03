@@ -155,6 +155,63 @@ impl ConfluenceClient {
         self.get_json(&format!("{}?{query}", endpoints::PATH_SPACES))
     }
 
+    /// Updates a template from a pre-built request body (`templateId`, `name`,
+    /// `templateType`, `body`, optional `description`/`space`) and returns
+    /// the updated template as raw JSON (v1 — no v2 equivalent). Unlike
+    /// `update_page`, the template ID goes in the request *body*
+    /// (`templateId`), not the URL path — `PUT /wiki/rest/api/template` is
+    /// not itself ID-scoped.
+    pub fn update_template(
+        &self,
+        body: &serde_json::Value,
+    ) -> Result<serde_json::Value, ClientError> {
+        self.put_json(endpoints::PATH_TEMPLATE, body)
+    }
+
+    /// Deletes a page by ID. `purge = false` (default) moves it to the trash
+    /// (recoverable); `purge = true` permanently removes it, but only works
+    /// on a page that is already trashed — not yet live-verified what
+    /// happens if `purge = true` is passed for a page that isn't already
+    /// trashed. Confluence returns 204 No Content on success, hence `Ok(())`
+    /// rather than a response value.
+    pub fn delete_page(&self, id: &str, purge: bool) -> Result<(), ClientError> {
+        let path = endpoints::page_path(id);
+        if purge {
+            self.delete(&format!("{path}?purge=true"))
+        } else {
+            self.delete(&path)
+        }
+    }
+
+    /// Permanently deletes a template by ID (204 No Content on success, no
+    /// trash/recovery step unlike `delete_page` — Confluence's own docs
+    /// describe content template deletion as immediate and permanent).
+    pub fn delete_template(&self, id: &str) -> Result<(), ClientError> {
+        self.delete(&endpoints::template_path(id))
+    }
+
+    fn delete(&self, path: &str) -> Result<(), ClientError> {
+        let url = format!("{}{path}", self.base_url);
+
+        let response = self
+            .http
+            .delete(&url)
+            .bearer_auth(&self.access_token)
+            .send()
+            .map_err(|e| ClientError::Request(e.to_string()))?;
+
+        let status = response.status();
+        if !status.is_success() {
+            let body = response.text().unwrap_or_default();
+            return Err(ClientError::Status {
+                status: status.as_u16(),
+                body,
+            });
+        }
+
+        Ok(())
+    }
+
     fn get_json(&self, path: &str) -> Result<serde_json::Value, ClientError> {
         let url = format!("{}{path}", self.base_url);
 

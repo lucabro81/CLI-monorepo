@@ -15,9 +15,12 @@ CLI for Confluence Cloud, designed to be driven by an LLM agent (output is JSON,
   - [`confluence page create`](#confluence-page-create)
   - [`confluence page update <ID>`](#confluence-page-update-id)
   - [`confluence page search --cql <QUERY>`](#confluence-page-search---cql-query)
+  - [`confluence page delete <ID>`](#confluence-page-delete-id)
   - [`confluence space list`](#confluence-space-list)
   - [`confluence template create`](#confluence-template-create)
   - [`confluence template list`](#confluence-template-list)
+  - [`confluence template update <ID>`](#confluence-template-update-id)
+  - [`confluence template delete <ID>`](#confluence-template-delete-id)
   - [`--select <PATHS>` (global flag)](#--select-paths-global-flag)
 - [Testing](#testing)
 - [Error design](#error-design)
@@ -104,6 +107,8 @@ Fetches a single page by its numeric ID, including its body in storage format, a
 cargo run -p confluence -- page get 123456 --select title,body.storage.value,version.number
 ```
 
+The response includes a read-only `position` field (a page's order among its siblings). Confluence Cloud has **no public API to change it** — only the UI's drag-and-drop can reorder pages (this is a longstanding, still-open Atlassian feature request: [CONFCLOUD-40101](https://jira.atlassian.com/browse/CONFCLOUD-40101)). This crate has no `page move`/reorder command as a result — there's nothing for it to call.
+
 ### `confluence page create`
 
 Creates a page in a space. Requires `--space-id` and `--title`, plus exactly one of `--body`, `--body-file`, or `--template-id` to supply the content — see this crate's `CLAUDE.md` "API design notes" for why `--template-id` works this way (Confluence has no API to create a page "from" a template directly).
@@ -136,6 +141,17 @@ cargo run -p confluence -- page search --cql "type=page AND space=ENG" --limit 1
 
 **Flags:** `--limit <N>` (default 25), `--start <N>` (offset for pagination, default 0).
 
+### `confluence page delete <ID>`
+
+Deletes a page. Requires `--confirm`. By default this **moves the page to the trash** — recoverable, not permanent. Pass `--purge` to permanently remove it instead, but this only works on a page that's already trashed: to fully delete a page, call this command twice — once without `--purge`, then again with it.
+
+```sh
+cargo run -p confluence -- page delete 123456 --confirm
+cargo run -p confluence -- page delete 123456 --confirm --purge
+```
+
+Prints `{"deleted": true, "id": "123456", "purged": false}` on success (synthesized by the CLI — Confluence itself returns 204 No Content).
+
 ### `confluence space list`
 
 Lists Confluence spaces, cursor-paginated.
@@ -166,6 +182,25 @@ cargo run -p confluence -- template list
 cargo run -p confluence -- template list --space-key ENG
 cargo run -p confluence -- template list --limit 10 --start 10
 ```
+
+### `confluence template update <ID>`
+
+Updates a template's name, description, and/or body. At least one of `--name`/`--description`/`--body`/`--body-file` is required. Fetches the current template first to fill in whichever fields you didn't override (Confluence's template API has no partial-patch endpoint, same as `page update`).
+
+```sh
+cargo run -p confluence -- template update 4321 --name "Runbook (v2)"
+cargo run -p confluence -- template update 4321 --body-file ./runbook-v2.html
+```
+
+### `confluence template delete <ID>`
+
+Permanently deletes a template. Requires `--confirm` — unlike page delete, this is not a soft delete; there's no trash for templates.
+
+```sh
+cargo run -p confluence -- template delete 4321 --confirm
+```
+
+Prints `{"deleted": true, "id": "4321"}` on success.
 
 ### `--select <PATHS>` (global flag)
 

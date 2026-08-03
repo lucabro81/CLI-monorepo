@@ -98,6 +98,25 @@ pub enum CliError {
     )]
     TemplateCreateMissingBodySource,
 
+    #[error(
+        "template update requires at least one of --name, --description, --body, or \
+        --body-file — otherwise there is nothing to update. Retry with one of them set."
+    )]
+    TemplateUpdateMissingTarget,
+
+    #[error(
+        "deleting page {id} moves it to the trash (recoverable) unless --purge is also \
+        passed, which permanently removes it — but only works on a page that is already \
+        trashed. Pass --confirm to execute: confluence page delete {id} --confirm"
+    )]
+    PageDeleteNotConfirmed { id: String },
+
+    #[error(
+        "deleting template {id} is permanent and cannot be undone. \
+        Pass --confirm to execute: confluence template delete {id} --confirm"
+    )]
+    TemplateDeleteNotConfirmed { id: String },
+
     /// A condition that should be unreachable given valid inputs (e.g. clap's
     /// `conflicts_with` should have already ruled it out). If this surfaces it
     /// indicates a bug in the CLI itself.

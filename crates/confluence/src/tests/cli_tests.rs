@@ -341,6 +341,60 @@ fn rejects_page_update_without_id() {
     assert!(result.is_err());
 }
 
+// --- page delete ---
+
+#[test]
+fn parses_page_delete_with_confirm() {
+    let cli = Cli::try_parse_from(["confluence", "page", "delete", "123456", "--confirm"])
+        .expect("should parse");
+
+    match cli.command {
+        Command::Page {
+            command: PageCommand::Delete { id, confirm, purge },
+        } => {
+            assert_eq!(id, "123456");
+            assert!(confirm);
+            assert!(!purge, "default should not purge");
+        }
+        other => panic!("unexpected command: {other:?}"),
+    }
+}
+
+#[test]
+fn parses_page_delete_without_confirm_defaults_false() {
+    let cli =
+        Cli::try_parse_from(["confluence", "page", "delete", "123456"]).expect("should parse");
+
+    match cli.command {
+        Command::Page {
+            command: PageCommand::Delete { confirm, .. },
+        } => assert!(!confirm),
+        other => panic!("unexpected command: {other:?}"),
+    }
+}
+
+#[test]
+fn parses_page_delete_with_purge() {
+    let cli = Cli::try_parse_from([
+        "confluence", "page", "delete", "123456", "--confirm", "--purge",
+    ])
+    .expect("should parse");
+
+    match cli.command {
+        Command::Page {
+            command: PageCommand::Delete { purge, .. },
+        } => assert!(purge),
+        other => panic!("unexpected command: {other:?}"),
+    }
+}
+
+#[test]
+fn rejects_page_delete_without_id() {
+    let result = Cli::try_parse_from(["confluence", "page", "delete"]);
+
+    assert!(result.is_err());
+}
+
 // --- page search ---
 
 #[test]
@@ -529,4 +583,117 @@ fn parses_template_list_with_space_key_limit_and_start() {
         }
         other => panic!("unexpected command: {other:?}"),
     }
+}
+
+// --- template update ---
+
+#[test]
+fn parses_template_update_with_name_only() {
+    let cli =
+        Cli::try_parse_from(["confluence", "template", "update", "4321", "--name", "New name"])
+            .expect("should parse");
+
+    match cli.command {
+        Command::Template {
+            command:
+                TemplateCommand::Update {
+                    id,
+                    name,
+                    description,
+                    body,
+                    body_file,
+                },
+        } => {
+            assert_eq!(id, "4321");
+            assert_eq!(name.as_deref(), Some("New name"));
+            assert!(description.is_none());
+            assert!(body.is_none());
+            assert!(body_file.is_none());
+        }
+        other => panic!("unexpected command: {other:?}"),
+    }
+}
+
+#[test]
+fn parses_template_update_with_body_file_and_description() {
+    let cli = Cli::try_parse_from([
+        "confluence", "template", "update", "4321",
+        "--description", "New description", "--body-file", "./new.html",
+    ])
+    .expect("should parse");
+
+    match cli.command {
+        Command::Template {
+            command: TemplateCommand::Update { description, body_file, body, .. },
+        } => {
+            assert_eq!(description.as_deref(), Some("New description"));
+            assert_eq!(body_file.as_deref(), Some("./new.html"));
+            assert!(body.is_none());
+        }
+        other => panic!("unexpected command: {other:?}"),
+    }
+}
+
+#[test]
+fn rejects_template_update_with_body_and_body_file_together() {
+    let result = Cli::try_parse_from([
+        "confluence", "template", "update", "4321",
+        "--body", "<p>a</p>", "--body-file", "./t.html",
+    ]);
+
+    assert!(result.is_err(), "--body and --body-file should conflict");
+}
+
+#[test]
+fn parses_template_update_with_no_flags() {
+    // Parsing allows this; run_update's runtime check rejects it (nothing to update).
+    let cli =
+        Cli::try_parse_from(["confluence", "template", "update", "4321"]).expect("should parse");
+
+    assert!(matches!(cli.command, Command::Template { command: TemplateCommand::Update { .. } }));
+}
+
+#[test]
+fn rejects_template_update_without_id() {
+    let result = Cli::try_parse_from(["confluence", "template", "update"]);
+
+    assert!(result.is_err());
+}
+
+// --- template delete ---
+
+#[test]
+fn parses_template_delete_with_confirm() {
+    let cli = Cli::try_parse_from(["confluence", "template", "delete", "4321", "--confirm"])
+        .expect("should parse");
+
+    match cli.command {
+        Command::Template {
+            command: TemplateCommand::Delete { id, confirm },
+        } => {
+            assert_eq!(id, "4321");
+            assert!(confirm);
+        }
+        other => panic!("unexpected command: {other:?}"),
+    }
+}
+
+#[test]
+fn parses_template_delete_without_confirm_defaults_false() {
+    let cli = Cli::try_parse_from(["confluence", "template", "delete", "4321"])
+        .expect("should parse");
+
+    match cli.command {
+        Command::Template {
+            command: TemplateCommand::Delete { confirm, .. },
+        } => assert!(!confirm),
+        other => panic!("unexpected command: {other:?}"),
+    }
+}
+
+#[test]
+fn rejects_template_delete_without_id() {
+    let result = Cli::try_parse_from(["confluence", "template", "delete"]);
+
+    assert!(result.is_err());
 }
