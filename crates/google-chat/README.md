@@ -456,7 +456,7 @@ Neither is enforced by the CLI; pick based on how disruptive a brief
 API's own default TTL) — confirmed live, not configurable by this command
 yet. Pass its `name` field (printed in the output) to `google-chat listen
 --workspace-events-subscription` below, which renews it automatically so
-you don't have to re-run `subscription create` (see `BACKLOG.md` GCHAT-4).
+you don't have to re-run `subscription create`.
 
 ### `google-chat subscription delete --name <name>`
 
@@ -613,7 +613,7 @@ real messages, so both are covered only by manual `cargo run` testing during
 development, not by an automated test (see `BACKLOG.md` GCHAT-2).
 `subscription create` (creates real GCP subscriptions) and `listen` (a
 long-running process) are likewise only covered by manual testing, not
-automated e2e tests (see `BACKLOG.md` GCHAT-3).
+automated e2e tests.
 
 **Prerequisites:** `google-chat auth login --user` (or `init`) must have been
 completed on this machine. One test additionally needs `GOOGLE_CHAT_E2E_SPACE`

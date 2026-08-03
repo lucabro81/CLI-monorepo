@@ -28,7 +28,7 @@ src/
                     client_credentials) implementation, PKCE helpers, callback
                     parsing, and cloud_id resolution live in `atlassian_auth`
                     (workspace-local, shared with `jira` — see root CLAUDE.md's
-                    "Shared library: crates/atlassian-auth" and BACKLOG.md's LIB-1)
+                    "Shared library: crates/atlassian-auth")
   client.rs       — ConfluenceClient (blocking reqwest); get_json/post_json/put_json/delete
                     helpers; Confluence REST API methods spanning both API
                     generations [get_current_user, get_page, create_page,
@@ -80,7 +80,7 @@ correct status-string logic, nothing pure enough to isolate.
 
 ## OAuth / auth design
 
-**Implementation lives in `atlassian-auth`** (workspace-local crate, `crates/atlassian-auth`), not in this crate — `auth.rs` here is a thin wrapper fixing the `confluence-cli` config dir name and this crate's `SCOPES` constant. `jira` uses the exact same underlying flows (same `auth.atlassian.com`/`api.atlassian.com` endpoints, same `cloud_id` resolution), just with its own scopes — see `BACKLOG.md`'s `LIB-1` for why this was extracted and `jira`'s own CLAUDE.md for the two grant types (`client_credentials` default, 3LO+PKCE via `--user`) and the Service Account vs 3LO-app tradeoffs, which apply identically here.
+**Implementation lives in `atlassian-auth`** (workspace-local crate, `crates/atlassian-auth`), not in this crate — `auth.rs` here is a thin wrapper fixing the `confluence-cli` config dir name and this crate's `SCOPES` constant. `jira` uses the exact same underlying flows (same `auth.atlassian.com`/`api.atlassian.com` endpoints, same `cloud_id` resolution), just with its own scopes — see `jira`'s own CLAUDE.md for the two grant types (`client_credentials` default, 3LO+PKCE via `--user`) and the Service Account vs 3LO-app tradeoffs, which apply identically here.
 
 **`confluence init` is 3LO-app-only** (`commands/init.rs`), same as `jira init` — it always ends by launching the interactive browser consent flow, since that's what grants a 3LO app access to a site at all. A Service Account has no such step (access is assigned directly in admin.atlassian.com when the credential is created), so running `init` against one just hangs waiting for a browser flow that doesn't apply. Service Account setup skips `init` entirely: write `app.json` by hand, then `confluence auth login` directly. This is stated in `init`'s own `--help` text (`cli.rs`) and README Setup, not only here — it's the kind of thing worth surfacing at the point of use, not just in docs a caller has to already know to read.
 
@@ -95,7 +95,7 @@ correct status-string logic, nothing pure enough to isolate.
 
 The v2 endpoints have **no classic-scope equivalent at all** per Atlassian's own docs — a classic-only scope grant cannot authorize them, regardless of how broad. If `doctor`'s `oauth_scopes` check passes but a specific command still 403s, the first thing to check is whether that command's scope (table above) was actually granted — not just "some scopes were granted."
 
-**A Service Account credential shared with `jira`** (same `client_id`/`client_secret` in both `jira-cli/app.json` and `confluence-cli/app.json`, scoped to both products) works correctly — confirmed live. This exposed a real bug in the shared `atlassian-auth` crate, not specific to this setup: Atlassian's accessible-resources endpoint returns **multiple entries with the same site `id`** when a token's scopes span multiple products (one entry per product's scope subset, not their union), and `get_granted_scopes` originally only read the first matching entry — see `BACKLOG.md`'s `SCOPE-1` for the full story and fix. Fixed at the `atlassian-auth` level, so it's not something to work around per-crate.
+**A Service Account credential shared with `jira`** (same `client_id`/`client_secret` in both `jira-cli/app.json` and `confluence-cli/app.json`, scoped to both products) works correctly — confirmed live. This exposed a real bug in the shared `atlassian-auth` crate, not specific to this setup: Atlassian's accessible-resources endpoint returns **multiple entries with the same site `id`** when a token's scopes span multiple products (one entry per product's scope subset, not their union), and `get_granted_scopes` originally only read the first matching entry. Fixed at the `atlassian-auth` level, so it's not something to work around per-crate.
 
 ## Config layout (XDG-style)
 

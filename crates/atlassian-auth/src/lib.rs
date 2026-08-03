@@ -1,8 +1,7 @@
 //! Shared Atlassian Cloud OAuth 2.0 infrastructure, used by every crate in
 //! this workspace that authenticates against `auth.atlassian.com` /
 //! `api.atlassian.com` (currently `jira` and `confluence` — see this crate's
-//! own module docs and root `CLAUDE.md`'s "Shared library" sections, and
-//! `BACKLOG.md`'s `LIB-1` for why this was extracted).
+//! own module docs and root `CLAUDE.md`'s "Shared library" sections).
 //!
 //! Deliberately **not** used by `bitbucket` (a different OAuth provider
 //! entirely — its own native `client_credentials`-only consumer, no PKCE, no
