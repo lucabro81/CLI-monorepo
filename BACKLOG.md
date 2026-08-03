@@ -258,6 +258,20 @@ there, not just jira.
 
 ---
 
+### SCOPE-2 — design note: prefer one OAuth 2.0 credential per product, even on the same Service Account
+**Found:** 2026-08-03, same session as `SCOPE-1`
+**Context:** the operator currently points `jira-cli/app.json` and `confluence-cli/app.json` at the *same* `client_id`/`client_secret` — one Service Account, one OAuth 2.0 credential, scoped to both Jira and Confluence at once. This works correctly (see `SCOPE-1`) and isn't a bug, but it isn't the more-correct shape either.
+**Why separate credentials per product is the better default:**
+- **Blast radius** — a leaked/compromised `app.json` for one crate only exposes that one product's scopes, not every product the Service Account can touch.
+- **Independent rotation/revocation** — revoking Confluence access doesn't require touching (or re-authenticating) Jira, and vice versa.
+- **Clearer audit trail** — Atlassian-side logs attribute API calls to the credential that made them; a per-product credential makes "which integration did this" unambiguous.
+- **Matches this repo's own config layout** — every crate already gets its own `app.json` under its own `$XDG_CONFIG_HOME/<crate>-cli/` directory; that separation is designed for independent credentials, even though nothing currently enforces it.
+- Atlassian's own console supports exactly this: multiple OAuth 2.0 credentials on one Service Account, so the identity stays unified while access stays scoped per integration — "one Service Account, credentials-per-product" rather than "one Service Account, one do-everything credential" or "one Service Account per product."
+**Why not fixed now:** current setup has one operator, low blast-radius risk, and works correctly post-`SCOPE-1`. Not worth the console/config churn until this scales (more integrations sharing the account, multiple operators, or a move toward production/multi-tenant use).
+**Add when:** onboarding a new Atlassian-family crate (a candidate second `atlassian-auth` consumer beyond jira/confluence) — set up its own OAuth 2.0 credential on the Service Account from the start rather than reusing an existing one; or when revisiting the current jira/confluence setup for other reasons.
+
+---
+
 ## `crates/google-chat`
 
 ### GCHAT-1 — Service-account/domain-wide-delegation login not yet activated
