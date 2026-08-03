@@ -189,7 +189,7 @@ fn parses_page_create_with_body() {
                     title,
                     parent_id,
                     body,
-                    template_file,
+                    body_file,
                     template_id,
                 },
         } => {
@@ -197,7 +197,7 @@ fn parses_page_create_with_body() {
             assert_eq!(title, "Sprint Notes");
             assert!(parent_id.is_none());
             assert_eq!(body.as_deref(), Some("<p>hi</p>"));
-            assert!(template_file.is_none());
+            assert!(body_file.is_none());
             assert!(template_id.is_none());
         }
         other => panic!("unexpected command: {other:?}"),
@@ -205,18 +205,18 @@ fn parses_page_create_with_body() {
 }
 
 #[test]
-fn parses_page_create_with_template_file() {
+fn parses_page_create_with_body_file() {
     let cli = Cli::try_parse_from([
         "confluence", "page", "create", "--space-id", "98765", "--title", "Runbook",
-        "--template-file", "./runbook.html",
+        "--body-file", "./runbook.html",
     ])
     .expect("should parse");
 
     match cli.command {
         Command::Page {
-            command: PageCommand::Create { template_file, body, template_id, .. },
+            command: PageCommand::Create { body_file, body, template_id, .. },
         } => {
-            assert_eq!(template_file.as_deref(), Some("./runbook.html"));
+            assert_eq!(body_file.as_deref(), Some("./runbook.html"));
             assert!(body.is_none());
             assert!(template_id.is_none());
         }
@@ -244,23 +244,23 @@ fn parses_page_create_with_template_id_and_parent_id() {
 }
 
 #[test]
-fn rejects_page_create_with_body_and_template_file_together() {
+fn rejects_page_create_with_body_and_body_file_together() {
     let result = Cli::try_parse_from([
         "confluence", "page", "create", "--space-id", "98765", "--title", "X",
-        "--body", "<p>hi</p>", "--template-file", "./t.html",
+        "--body", "<p>hi</p>", "--body-file", "./t.html",
     ]);
 
-    assert!(result.is_err(), "--body and --template-file should conflict");
+    assert!(result.is_err(), "--body and --body-file should conflict");
 }
 
 #[test]
-fn rejects_page_create_with_template_file_and_template_id_together() {
+fn rejects_page_create_with_body_file_and_template_id_together() {
     let result = Cli::try_parse_from([
         "confluence", "page", "create", "--space-id", "98765", "--title", "X",
-        "--template-file", "./t.html", "--template-id", "4321",
+        "--body-file", "./t.html", "--template-id", "4321",
     ]);
 
-    assert!(result.is_err(), "--template-file and --template-id should conflict");
+    assert!(result.is_err(), "--body-file and --template-id should conflict");
 }
 
 #[test]

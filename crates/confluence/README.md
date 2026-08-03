@@ -104,15 +104,15 @@ cargo run -p confluence -- page get 123456 --select title,body.storage.value,ver
 
 ### `confluence page create`
 
-Creates a page in a space. Requires `--space-id` and `--title`, plus exactly one of `--body`, `--template-file`, or `--template-id` to supply the content — see this crate's `CLAUDE.md` "API design notes" for why templates work this way (Confluence has no API to create a page "from" a template directly).
+Creates a page in a space. Requires `--space-id` and `--title`, plus exactly one of `--body`, `--body-file`, or `--template-id` to supply the content — see this crate's `CLAUDE.md` "API design notes" for why `--template-id` works this way (Confluence has no API to create a page "from" a template directly).
 
 ```sh
 cargo run -p confluence -- page create --space-id 98765 --title "Sprint Notes" --body "<p>Agenda</p>"
-cargo run -p confluence -- page create --space-id 98765 --title "Runbook" --template-file ./runbook-template.html
+cargo run -p confluence -- page create --space-id 98765 --title "Runbook" --body-file ./runbook-content.html
 cargo run -p confluence -- page create --space-id 98765 --title "Retro" --template-id 4321 --parent-id 111222
 ```
 
-`--body`/`--template-file` are raw Confluence **storage format** (XHTML) — the same format `page get`'s `body.storage.value` returns. Plain text with no markup is also valid storage format.
+`--body`/`--body-file` are raw Confluence **storage format** (XHTML) — the same format `page get`'s `body.storage.value` returns. Plain text with no markup is also valid storage format. `--body-file` is just `--body` read from a local file instead of the command line (handy for longer content) — it has no relation to Confluence's own Template feature, unlike `--template-id`.
 
 ### `confluence page update <ID>`
 

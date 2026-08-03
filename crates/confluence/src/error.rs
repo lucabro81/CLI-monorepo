@@ -75,7 +75,7 @@ pub enum CliError {
     IoError { reason: String },
 
     #[error(
-        "page create requires exactly one of --body, --template-file, or --template-id \
+        "page create requires exactly one of --body, --body-file, or --template-id \
         to supply the page content. Retry with one of them set."
     )]
     PageCreateMissingBodySource,

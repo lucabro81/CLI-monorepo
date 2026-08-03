@@ -1,11 +1,14 @@
 //! Handlers for the `page` command group (`get`, `create`, `update`, `search`).
 //!
 //! `run_create`'s body content comes from exactly one of three sources —
-//! `--body` (raw text), `--template-file` (a local file's content), or
+//! `--body` (raw text), `--body-file` (the same kind of content, read from a
+//! local file — unrelated to Confluence's own Template feature), or
 //! `--template-id` (an existing Confluence template's body, fetched via the
 //! v1 template API) — resolved by [`parse_body_source`]. Confluence has no
-//! API to create a page "from" a template directly (confirmed via Atlassian
-//! Community threads, not officially documented); the only way is to fetch
+//! API to create a page "from" a template directly (there IS a documented
+//! `POST /wiki/rest/api/template` to create the template *object* itself,
+//! confirmed via developer.atlassian.com — the gap is specifically "create a
+//! page pre-filled from template X in one call"); the only way is to fetch
 //! the template's stored body and submit it as a normal page body, same as
 //! what this command does.
 //!
@@ -33,9 +36,9 @@ pub fn run(command: PageCommand, select: cli_fields::Select<'_>) -> Result<(), C
             title,
             parent_id,
             body,
-            template_file,
+            body_file,
             template_id,
-        } => run_create(&space_id, &title, parent_id, body, template_file, template_id, select),
+        } => run_create(&space_id, &title, parent_id, body, body_file, template_id, select),
         PageCommand::Update { id, title, body } => {
             run_update(&id, title.as_deref(), body.as_deref(), select)
         }
@@ -52,21 +55,21 @@ pub fn run(command: PageCommand, select: cli_fields::Select<'_>) -> Result<(), C
 #[derive(Debug, PartialEq, Eq)]
 enum BodySource {
     Body(String),
-    TemplateFile(String),
+    BodyFile(String),
     TemplateId(String),
 }
 
-/// Resolves `--body`/`--template-file`/`--template-id` into exactly one
+/// Resolves `--body`/`--body-file`/`--template-id` into exactly one
 /// [`BodySource`]. Clap's `conflicts_with_all` already rules out more than
 /// one being set; this only needs to check for none being set.
 fn parse_body_source(
     body: Option<String>,
-    template_file: Option<String>,
+    body_file: Option<String>,
     template_id: Option<String>,
 ) -> Result<BodySource, CliError> {
-    match (body, template_file, template_id) {
+    match (body, body_file, template_id) {
         (Some(b), None, None) => Ok(BodySource::Body(b)),
-        (None, Some(f), None) => Ok(BodySource::TemplateFile(f)),
+        (None, Some(f), None) => Ok(BodySource::BodyFile(f)),
         (None, None, Some(t)) => Ok(BodySource::TemplateId(t)),
         (None, None, None) => Err(CliError::PageCreateMissingBodySource),
         _ => Err(CliError::Internal(
@@ -82,18 +85,18 @@ fn run_create(
     title: &str,
     parent_id: Option<String>,
     body: Option<String>,
-    template_file: Option<String>,
+    body_file: Option<String>,
     template_id: Option<String>,
     select: cli_fields::Select<'_>,
 ) -> Result<(), CliError> {
-    let source = parse_body_source(body, template_file, template_id)?;
+    let source = parse_body_source(body, body_file, template_id)?;
     let client = authenticated_client()?;
 
     let resolved_body = match source {
         BodySource::Body(text) => text,
-        BodySource::TemplateFile(path) => {
+        BodySource::BodyFile(path) => {
             std::fs::read_to_string(&path).map_err(|e| CliError::IoError {
-                reason: format!("failed to read template file {path}: {e}"),
+                reason: format!("failed to read body file {path}: {e}"),
             })?
         }
         BodySource::TemplateId(template_id) => {
