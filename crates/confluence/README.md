@@ -26,10 +26,12 @@ This crate authenticates against the exact same Atlassian OAuth platform as `jir
 
 Whatever the source, the CLI ends up needing `client_id`/`client_secret` written to `app.json`, used by `confluence auth login` to get tokens (`credentials.json`). There are two ways to obtain that pair — see `jira`'s README "Setup" section for the full walkthrough of both (identical steps, just substitute "Confluence" for "Jira" in scope names and `confluence-cli` for `jira-cli` in paths):
 
-- **Option A — Service Account (recommended for agent-driven usage)**: generated in Atlassian's admin console (admin.atlassian.com → Directory → Service accounts → Create credentials → OAuth 2.0), with site access assigned by an org admin at generation time. No human consent step ever needed. Select scopes matching `confluence auth login`'s `SCOPES` constant (`crates/confluence/src/auth.rs`) — see this crate's `CLAUDE.md` "OAuth / auth design" for the exact list and why it mixes classic and granular scopes.
-- **Option B — 3LO app (human login)**: register an OAuth 2.0 app at developer.atlassian.com/console/myapps, **Resource-level** access, callback URL `http://localhost:8080/callback`, same scopes as above. Requires one human browser consent before first use (`confluence init` or `confluence auth login --user`).
+- **Option A — Service Account (recommended for agent-driven usage)**: generated in Atlassian's admin console (admin.atlassian.com → Directory → Service accounts → Create credentials → OAuth 2.0), with site access assigned by an org admin at generation time. No human consent step ever needed. Select scopes matching `confluence auth login`'s `SCOPES` constant (`crates/confluence/src/auth.rs`) — see this crate's `CLAUDE.md` "OAuth / auth design" for the exact list and why it mixes classic and granular scopes. **Do not run `confluence init`** for this option — see the warning below.
+- **Option B — 3LO app (human login)**: register an OAuth 2.0 app at developer.atlassian.com/console/myapps, **Resource-level** access, callback URL `http://localhost:8080/callback`, same scopes as above. Requires one human browser consent before first use — this is what `confluence init` (or `confluence auth login --user`) is for.
 
-Write `$XDG_CONFIG_HOME/confluence-cli/app.json` (typically `~/.config/confluence-cli/app.json`):
+> **If you already have a Service Account (Option A), skip `confluence init` entirely.** `init` always ends by launching the interactive 3LO browser-consent flow, which a Service Account doesn't have and doesn't need — running it will just sit there waiting for a browser step that isn't part of this flow. Write `app.json` by hand instead (below) and go straight to `confluence auth login`.
+
+Write `$XDG_CONFIG_HOME/confluence-cli/app.json` (typically `~/.config/confluence-cli/app.json`) yourself — this file holds a secret, so the CLI (and any agent driving it) should never be asked to read or type it in for you:
 
 ```json
 {
@@ -55,7 +57,9 @@ The one difference worth calling out: this crate's OAuth scopes are **not yet li
 
 ### `confluence init`
 
-Interactive onboarding — only for Option B (3LO app) from Setup, same caveat as `jira init`. Prints setup instructions, prompts for Client ID/Secret (or accepts `--client-id`/`--client-secret` flags), writes `app.json`, runs the OAuth login flow, and prints a `confluence doctor` JSON report as confirmation.
+Interactive onboarding — **only for Option B (3LO app) from Setup.** It always ends by running the interactive browser consent flow, because that flow is what "installs" a 3LO app's access to a Confluence site — there is no way to skip it. **If you're setting up a Service Account (Option A), don't run this command**: write `app.json` by hand (Setup, above) and run `confluence auth login` directly instead.
+
+Prints setup instructions, prompts for Client ID/Secret (or accepts `--client-id`/`--client-secret` flags), writes `app.json`, runs the OAuth login flow, and prints a `confluence doctor` JSON report as confirmation.
 
 ```sh
 cargo run -p confluence -- init

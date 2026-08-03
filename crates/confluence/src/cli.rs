@@ -42,10 +42,17 @@ pub struct Cli {
 pub enum Command {
     /// Interactive onboarding: create app.json, run auth login, verify with doctor
     ///
-    /// Guides a human through setting up the Atlassian OAuth 2.0 app, writes app.json,
-    /// runs the login flow, then prints a doctor JSON report as confirmation.
-    /// Pass --client-id and --client-secret to skip interactive prompts.
-    #[command(after_help = "Example (interactive):\n  confluence init\n\nExample (non-interactive):\n  confluence init --client-id <ID> --client-secret <SECRET>")]
+    /// Guides a human through setting up a 3LO OAuth 2.0 app, writes app.json,
+    /// runs the interactive browser login flow, then prints a doctor JSON report
+    /// as confirmation. Pass --client-id and --client-secret to skip interactive
+    /// prompts (the browser login step still happens either way).
+    ///
+    /// If you already have a Service Account instead of a 3LO app (no human
+    /// consent step, recommended for agent-driven usage), do NOT run this
+    /// command: write app.json by hand
+    /// (`{"client_id": "...", "client_secret": "..."}`) and run
+    /// `confluence auth login` directly. See README Setup, Option A.
+    #[command(after_help = "Example (interactive, 3LO app):\n  confluence init\n\nExample (non-interactive, 3LO app):\n  confluence init --client-id <ID> --client-secret <SECRET>\n\nService Account setup does not use this command — see README Setup, Option A.")]
     Init {
         /// Atlassian OAuth app client ID (skips interactive prompt if provided)
         #[arg(long)]
