@@ -16,6 +16,8 @@ CLI for Confluence Cloud, designed to be driven by an LLM agent (output is JSON,
   - [`confluence page update <ID>`](#confluence-page-update-id)
   - [`confluence page search --cql <QUERY>`](#confluence-page-search---cql-query)
   - [`confluence space list`](#confluence-space-list)
+  - [`confluence template create`](#confluence-template-create)
+  - [`confluence template list`](#confluence-template-list)
   - [`--select <PATHS>` (global flag)](#--select-paths-global-flag)
 - [Testing](#testing)
 - [Error design](#error-design)
@@ -142,6 +144,27 @@ Lists Confluence spaces, cursor-paginated.
 cargo run -p confluence -- space list
 cargo run -p confluence -- space list --limit 10
 cargo run -p confluence -- space list --cursor <cursor-from-previous-response>
+```
+
+### `confluence template create`
+
+Creates a content template. Requires `--name`, plus exactly one of `--body`/`--body-file` to supply the content (same storage-format XHTML as `page create` — see that command's section above). Omit `--space-key` for a global template (requires Confluence Administrator global permission); pass it for a space template (requires Admin permission on that space).
+
+```sh
+cargo run -p confluence -- template create --name "Runbook" --space-key ENG --body "<p>Steps</p>"
+cargo run -p confluence -- template create --name "Postmortem" --body-file ./postmortem.html --description "Standard postmortem layout"
+```
+
+The created template's `templateId` can be passed to [`page create --template-id`](#confluence-page-create) to build pages from it.
+
+### `confluence template list`
+
+Lists content templates, offset-paginated. Omit `--space-key` to list global templates; pass it to scope to one space.
+
+```sh
+cargo run -p confluence -- template list
+cargo run -p confluence -- template list --space-key ENG
+cargo run -p confluence -- template list --limit 10 --start 10
 ```
 
 ### `--select <PATHS>` (global flag)

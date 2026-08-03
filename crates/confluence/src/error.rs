@@ -92,6 +92,12 @@ pub enum CliError {
     )]
     TemplateBodyMissing { reason: String },
 
+    #[error(
+        "template create requires exactly one of --body or --body-file to supply the \
+        template content. Retry with one of them set."
+    )]
+    TemplateCreateMissingBodySource,
+
     /// A condition that should be unreachable given valid inputs (e.g. clap's
     /// `conflicts_with` should have already ruled it out). If this surfaces it
     /// indicates a bug in the CLI itself.

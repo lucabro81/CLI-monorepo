@@ -94,6 +94,33 @@ impl ConfluenceClient {
         self.get_json(&endpoints::template_path(id))
     }
 
+    /// Creates a content template from a pre-built request body (`name`,
+    /// `templateType`, `body`, optional `description`/`space`) and returns
+    /// the created template as raw JSON (v1 — no v2 equivalent).
+    pub fn create_template(
+        &self,
+        body: &serde_json::Value,
+    ) -> Result<serde_json::Value, ClientError> {
+        self.post_json(endpoints::PATH_TEMPLATE, body)
+    }
+
+    /// Lists page-type content templates, optionally scoped to `space_key`,
+    /// offset-paginated (v1 — no v2 equivalent).
+    pub fn list_templates(
+        &self,
+        space_key: Option<&str>,
+        limit: u32,
+        start: u32,
+    ) -> Result<serde_json::Value, ClientError> {
+        let mut params = vec![("limit".to_string(), limit.to_string()), ("start".to_string(), start.to_string())];
+        if let Some(space_key) = space_key {
+            params.push(("spaceKey".to_string(), space_key.to_string()));
+        }
+        let query = serde_urlencoded::to_string(&params)
+            .map_err(|e| ClientError::Request(format!("failed to encode query params: {e}")))?;
+        self.get_json(&format!("{}?{query}", endpoints::PATH_TEMPLATE_PAGE))
+    }
+
     /// Runs a CQL content search (v1 — no v2 equivalent yet) and returns the raw
     /// JSON response (`{"results": [...], "size": N, "_links": {...}}`).
     pub fn search_content(

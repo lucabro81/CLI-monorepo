@@ -15,6 +15,10 @@ src/
                     also holds the --template-id/--body-file body-source
                     resolution logic (see "API design notes" below)
     space.rs      — run(SpaceCommand); dispatches space list
+    template.rs   — run(TemplateCommand); dispatches template create/list;
+                    also holds the --body/--body-file resolution logic for
+                    template create (resolve_body — narrower than page.rs's
+                    parse_body_source, no --template-id equivalent)
   auth.rs         — thin wrapper over the shared `atlassian_auth` crate, fixing
                     this crate's config dir name and OAuth SCOPES: OAuthConfig,
                     Credentials, login(), login_client_credentials(), renew(),
@@ -27,9 +31,10 @@ src/
   client.rs       — ConfluenceClient (blocking reqwest); get_json/post_json/put_json
                     helpers; Confluence REST API methods spanning both API
                     generations [get_current_user, get_page, create_page,
-                    update_page, get_template, search_content, list_spaces]
+                    update_page, get_template, create_template, list_templates,
+                    search_content, list_spaces]
   cli.rs          — clap structs: Cli (--select global), Command, AuthCommand,
-                    PageCommand, SpaceCommand. No logic.
+                    PageCommand, SpaceCommand, TemplateCommand. No logic.
   context.rs      — config_dir(), load_oauth_config(), authenticated_client(),
                     print_json(value, select), client_error_to_cli(e). Shared
                     by all command handlers.
@@ -57,9 +62,12 @@ cli_tests/commands split. `page.rs` has a dedicated
 and `validate_update_target` (the "at least one of --title/--body" runtime
 check for `page update` — clap's `conflicts_with_all` only rules out passing
 more than one body source on `create`, and there's no way to declare "at
-least one of two optional flags" for `update` at all). `space.rs` has no
-dedicated unit-test file — its one command is a thin passthrough, covered
-entirely by `cli_tests.rs`. `auth.rs` is a thin wrapper over `atlassian_auth`
+least one of two optional flags" for `update` at all). `template.rs` has its
+own `tests/commands/template_tests.rs` covering `resolve_body` (same
+`--body`/`--body-file` resolution shape as `page.rs`'s, minus the
+`--template-id` branch). `space.rs` has no dedicated unit-test file — its one
+command is a thin passthrough, covered entirely by `cli_tests.rs`. `auth.rs`
+is a thin wrapper over `atlassian_auth`
 (see "OAuth / auth design" below) — its own test file only guards this
 crate's config-dir name and SCOPES constant, not OAuth logic (covered by
 `atlassian_auth`'s own tests). `doctor.rs` has no dedicated test file, same
@@ -96,9 +104,11 @@ Kept separate so automatic token writes never clobber the app identity — same 
 
 ## API design notes
 
-- **Two API generations, one client**: Confluence Cloud exposes v2 (`/wiki/api/v2/...`, the current actively-developed surface, cursor-based pagination) alongside v1 (`/wiki/rest/api/...`, offset-based pagination) under the same site. This crate uses v2 wherever a command has a v2 endpoint (`page get`/`create`/`update`, `space list`) and falls back to v1 only where v2 has no equivalent yet (`auth whoami`'s current-user check, `page search`'s CQL search, template lookup). `endpoints.rs` documents which constant belongs to which version.
+- **Two API generations, one client**: Confluence Cloud exposes v2 (`/wiki/api/v2/...`, the current actively-developed surface, cursor-based pagination) alongside v1 (`/wiki/rest/api/...`, offset-based pagination) under the same site. This crate uses v2 wherever a command has a v2 endpoint (`page get`/`create`/`update`, `space list`) and falls back to v1 only where v2 has no equivalent yet (`auth whoami`'s current-user check, `page search`'s CQL search, all of `template`). `endpoints.rs` documents which constant belongs to which version.
 - **`page get`** always requests `?body-format=storage` — v2's page GET omits the body entirely unless a `body-format` is explicitly requested, and every other command in this crate (create/update body resolution, `page get` itself) works in storage format, so there's no reason to expose a `--body-format` flag until a concrete need for `atlas_doc_format` or another representation comes up.
-- **`page create --template-id`/`--body`/`--body-file`**: Confluence has no API to create a page "from" a template in one call — that specific gap is confirmed (Atlassian Community threads; an undocumented `contentBlueprintSpec` workaround exists but is deliberately not used here, since undocumented APIs can change without notice). This is narrower than "no template API at all": `POST /wiki/rest/api/template` genuinely exists and creates a content template object (confirmed against developer.atlassian.com — requires space Admin permission or Confluence Administrator for a global template; not implemented by this crate, see "Planned commands" below). What's missing is specifically the shortcut from "template" to "populated page" — so `--template-id` fetches an *existing* template's stored body via `GET /wiki/rest/api/template/{id}` (`body.storage.value`) and submits it as the new page's initial content, functionally identical to duplicating the template by hand. `--body`/`--body-file` are the non-template path: raw content, either inline or read from a local file — `--body-file` is deliberately *not* named `--template-file`, since it has no relation to Confluence's Template feature at all, just a convenience for longer content. `--body`/`--body-file`/`--template-id` are mutually exclusive (clap `conflicts_with_all`) and exactly one is required (`parse_body_source`, `commands/page.rs`, runtime-checked and unit-tested since clap can't express "exactly one of three" declaratively for enum-variant fields). Deliberately **not** folded into `page create`: automatically also registering `--body-file`'s content as a reusable Confluence template would give one flag two distinct, non-obvious effects — see "Planned commands" for the separate `template create` command that composes with the existing `--template-id` instead.
+- **`page create --template-id`/`--body`/`--body-file`**: Confluence has no API to create a page "from" a template in one call — that specific gap is confirmed (Atlassian Community threads; an undocumented `contentBlueprintSpec` workaround exists but is deliberately not used here, since undocumented APIs can change without notice). This is narrower than "no template API at all": `POST /wiki/rest/api/template` genuinely exists and creates a content template object (confirmed against developer.atlassian.com — requires space Admin permission or Confluence Administrator for a global template; implemented as `template create`, see below). What's missing is specifically the shortcut from "template" to "populated page" — so `--template-id` fetches an *existing* template's stored body via `GET /wiki/rest/api/template/{id}` (`body.storage.value`) and submits it as the new page's initial content, functionally identical to duplicating the template by hand. `--body`/`--body-file` are the non-template path: raw content, either inline or read from a local file — `--body-file` is deliberately *not* named `--template-file`, since it has no relation to Confluence's Template feature at all, just a convenience for longer content. `--body`/`--body-file`/`--template-id` are mutually exclusive (clap `conflicts_with_all`) and exactly one is required (`parse_body_source`, `commands/page.rs`, runtime-checked and unit-tested since clap can't express "exactly one of three" declaratively for enum-variant fields).
+- **`template create`**: deliberately a separate command from `page create`, not a side effect of `page create --body-file` — giving one flag two distinct, non-obvious effects (create a page *and* silently register a template) was considered and rejected during design discussion 2026-08-03. `POST /wiki/rest/api/template` requires `name`, `templateType` (always `"page"` here — Confluence also has non-page template types this crate doesn't create), and `body` (same `{representation, value}` shape as page bodies); `space` is optional — omit it for a global template (Confluence Administrator permission), include `--space-key` for a space template (Admin permission on that space). Content resolution (`--body`/`--body-file`, exactly one required) is `resolve_body` in `commands/template.rs` — a narrower version of `page.rs`'s `parse_body_source` with no `--template-id`-equivalent third source, since a template referencing another template isn't a supported concept. The created template's `templateId` composes directly with `page create --template-id`.
+- **`template list`**: `GET /wiki/rest/api/template/page` (page-type templates specifically; Confluence also has a separate `/template/blueprint` listing not implemented here), offset pagination (`--start`/`--limit`, default 25), optional `--space-key` to scope to one space instead of listing global templates.
 - **`page update`**: Confluence v2 has no partial-patch endpoint — every `PUT /wiki/api/v2/pages/{id}` must submit the full page (title, body, version). This command fetches the current page first (reusing `get_page`) to learn its current title/body/version, then submits a full update with `--title`/`--body` overriding just those fields and `version.number` incremented by exactly one. At least one of `--title`/`--body` is required (`validate_update_target`) — otherwise the "update" would just resubmit unchanged content and bump the version number for no reason.
 - **`page search`**: `GET /wiki/rest/api/content/search` with a raw CQL string via `--cql`, offset pagination (`--start`/`--limit`, default 25). No CQL validation/building on the client side — same "pass the query language straight through" approach as `jira issue search --jql`.
 - **`space list`**: `GET /wiki/api/v2/spaces`, cursor pagination (`--cursor`, from the previous response's `_links.next`) — v2's pagination style, distinct from `page search`'s v1 offset style. No `space get` yet; add one when a concrete need for fetching a single space by ID/key arises (root CLAUDE.md's incremental-build rule).
@@ -112,14 +122,14 @@ Kept separate so automatic token writes never clobber the app identity — same 
   | `page update` | **no** | same reasoning as `page create` |
   | `page search` | **no** | list endpoint, unbounded |
   | `space list` | **no** | list endpoint, unbounded |
+  | `template create` | **no** | response echoes back the full created template including body — same reasoning as `page create` |
+  | `template list` | **no** | list endpoint, unbounded |
 
 ## Known gaps
 
-- **No e2e tests yet.** Login, `doctor`, and `auth whoami` have been verified live (see "OAuth / auth design" above), but `page get`/`create`/`update`/`search` and `space list` have only been verified against `--help` output, clap parsing, and unit-testable pure logic — not against a real Confluence site. Add `tests/e2e_tests.rs` (mirroring `jira`'s `IssueGuard`-style pattern: a `PageGuard` that deletes/trashes pages created during tests) the first time these commands are exercised live — see the `add-confluence-command` skill's `ADDENDUM.md` for the live-test target once one is chosen.
-- **No `doctor` permission-scheme layer** — unlike `jira`'s `service_user`/`projects` checks (which walk Jira's `mypermissions` API per-project), `confluence doctor` stops at `oauth_scopes`. Confluence's space-permission model is a different API surface; add a check here once a command actually needs to distinguish "token has the right OAuth scope" from "this account has permission in this specific space."
+- **No e2e tests yet.** Login, `doctor`, and `auth whoami` have been verified live (see "OAuth / auth design" above), but `page get`/`create`/`update`/`search`, `space list`, and `template create`/`list` have only been verified against `--help` output, clap parsing, and unit-testable pure logic — not against a real Confluence site. Add `tests/e2e_tests.rs` (mirroring `jira`'s `IssueGuard`-style pattern: a `PageGuard`/`TemplateGuard` that deletes/removes resources created during tests) the first time these commands are exercised live — see the `add-confluence-command` skill's `ADDENDUM.md` for the live-test target once one is chosen.
+- **No `doctor` permission-scheme layer** — unlike `jira`'s `service_user`/`projects` checks (which walk Jira's `mypermissions` API per-project), `confluence doctor` stops at `oauth_scopes`. Confluence's space-permission model is a different API surface; add a check here once a command actually needs to distinguish "token has the right OAuth scope" from "this account has permission in this specific space." This also applies to `template create`'s Admin/Confluence-Administrator permission requirement, distinct from any OAuth scope.
 
 ## Planned commands (build incrementally, smallest first)
 
-Candidates for the next concrete need, not committed yet: `space get <id-or-key>`, `page delete`, attachment upload/download, page label management. Follow root `CLAUDE.md`'s incremental-build rule — don't build these speculatively.
-
-- **`template create --space-id --name --body`/`--body-file`** (`POST /wiki/rest/api/template`) and **`template list`** (`GET /wiki/rest/api/template/page` or `/blueprint`): would let a caller build up a library of reusable templates and immediately consume them via the existing `page create --template-id`, without `page create` itself taking on a second responsibility. Raised during design discussion 2026-08-03 (see `--template-id`/`--body-file` note in "API design notes" above for why this wasn't folded into `page create`); add when there's a concrete need to create templates via this CLI rather than the Confluence UI.
+Candidates for the next concrete need, not committed yet: `space get <id-or-key>`, `page delete`, `template delete`, attachment upload/download, page label management. Follow root `CLAUDE.md`'s incremental-build rule — don't build these speculatively.

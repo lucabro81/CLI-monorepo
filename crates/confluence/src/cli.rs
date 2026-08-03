@@ -85,6 +85,11 @@ pub enum Command {
         #[command(subcommand)]
         command: SpaceCommand,
     },
+    /// Work with Confluence content templates
+    Template {
+        #[command(subcommand)]
+        command: TemplateCommand,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -204,6 +209,50 @@ pub enum SpaceCommand {
         /// Cursor token for the next page, from the _links.next field of a previous response
         #[arg(long)]
         cursor: Option<String>,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum TemplateCommand {
+    /// Create a new content template
+    ///
+    /// Exactly one of --body or --body-file supplies the template content
+    /// (same storage-format XHTML as `page create`'s --body/--body-file — see
+    /// that command's help). Omit --space-key to create a global template
+    /// (requires Confluence Administrator global permission); pass it to
+    /// create a space template instead (requires Admin permission on that
+    /// space). The created template's ID (`templateId` in the response) can
+    /// then be passed to `page create --template-id` to build pages from it.
+    #[command(after_help = "Examples:\n  confluence template create --name \"Runbook\" --space-key ENG --body \"<p>Steps</p>\"\n  confluence template create --name \"Postmortem\" --body-file ./postmortem.html --description \"Standard postmortem layout\"")]
+    Create {
+        /// Space key to create a space-scoped template in; omit for a global template
+        #[arg(long)]
+        space_key: Option<String>,
+        /// Template name
+        #[arg(long)]
+        name: String,
+        /// Optional template description
+        #[arg(long)]
+        description: Option<String>,
+        /// Template body as raw Confluence storage-format XHTML
+        #[arg(long, conflicts_with = "body_file")]
+        body: Option<String>,
+        /// Path to a local file whose content becomes the template body
+        #[arg(long, conflicts_with = "body")]
+        body_file: Option<String>,
+    },
+    /// List content templates and print them as JSON
+    #[command(after_help = "Examples:\n  confluence template list\n  confluence template list --space-key ENG\n  confluence template list --limit 10 --start 10\n\nOffset pagination: pass --start <previous start + limit> to fetch the next page.")]
+    List {
+        /// Only list templates in this space; omit to list global templates
+        #[arg(long)]
+        space_key: Option<String>,
+        /// Maximum number of templates to return (default: 25)
+        #[arg(long, default_value = "25")]
+        limit: u32,
+        /// Offset into the result set, for pagination (default: 0)
+        #[arg(long, default_value = "0")]
+        start: u32,
     },
 }
 
