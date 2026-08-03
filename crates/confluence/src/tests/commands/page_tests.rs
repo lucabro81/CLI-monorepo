@@ -11,11 +11,11 @@ fn parse_body_source_accepts_body_only() {
 }
 
 #[test]
-fn parse_body_source_accepts_template_file_only() {
+fn parse_body_source_accepts_body_file_only() {
     let source =
-        parse_body_source(None, Some("./template.html".to_string()), None).expect("should parse");
+        parse_body_source(None, Some("./content.html".to_string()), None).expect("should parse");
 
-    assert_eq!(source, BodySource::TemplateFile("./template.html".to_string()));
+    assert_eq!(source, BodySource::BodyFile("./content.html".to_string()));
 }
 
 #[test]
@@ -39,7 +39,7 @@ fn parse_body_source_rejects_more_than_one_as_internal_error() {
     // silently picking one, in case that invariant is ever broken.
     let result = parse_body_source(
         Some("<p>hi</p>".to_string()),
-        Some("./template.html".to_string()),
+        Some("./content.html".to_string()),
         None,
     );
 

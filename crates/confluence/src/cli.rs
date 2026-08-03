@@ -85,6 +85,11 @@ pub enum Command {
         #[command(subcommand)]
         command: SpaceCommand,
     },
+    /// Work with Confluence content templates
+    Template {
+        #[command(subcommand)]
+        command: TemplateCommand,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -126,18 +131,19 @@ pub enum PageCommand {
     },
     /// Create a new page in a space
     ///
-    /// Exactly one of --body, --template-file, or --template-id supplies the
+    /// Exactly one of --body, --body-file, or --template-id supplies the
     /// page content. --body is raw Confluence storage-format XHTML (the same
     /// format `page get`'s body.storage.value returns) — plain text with no
-    /// markup is also valid storage format. --template-file reads that
-    /// content from a local file instead of a command-line argument.
-    /// --template-id copies the body of an existing Confluence content
-    /// template (find one's ID via the Confluence UI: Space settings ->
-    /// Content Types -> Templates) — Confluence has no API to create a page
-    /// "from" a template directly, so this fetches the template's body and
-    /// submits it as this page's initial content, same as duplicating it by
-    /// hand.
-    #[command(after_help = "Examples:\n  confluence page create --space-id 98765 --title \"Sprint Notes\" --body \"<p>Agenda</p>\"\n  confluence page create --space-id 98765 --title \"Runbook\" --template-file ./runbook-template.html\n  confluence page create --space-id 98765 --title \"Retro\" --template-id 4321 --parent-id 111222")]
+    /// markup is also valid storage format. --body-file reads that same kind
+    /// of content from a local file instead of a command-line argument — a
+    /// convenience for longer content, unrelated to Confluence's own
+    /// Template feature. --template-id copies the body of an existing
+    /// Confluence content template (find one's ID via the Confluence UI:
+    /// Space settings -> Content Types -> Templates) — Confluence has no API
+    /// to create a page "from" a template directly, so this fetches the
+    /// template's body and submits it as this page's initial content, same
+    /// as duplicating it by hand.
+    #[command(after_help = "Examples:\n  confluence page create --space-id 98765 --title \"Sprint Notes\" --body \"<p>Agenda</p>\"\n  confluence page create --space-id 98765 --title \"Runbook\" --body-file ./runbook-content.html\n  confluence page create --space-id 98765 --title \"Retro\" --template-id 4321 --parent-id 111222")]
     Create {
         /// Numeric ID of the space to create the page in — find one with `space list`
         #[arg(long)]
@@ -149,13 +155,14 @@ pub enum PageCommand {
         #[arg(long)]
         parent_id: Option<String>,
         /// Page body as raw Confluence storage-format XHTML
-        #[arg(long, conflicts_with_all = ["template_file", "template_id"])]
+        #[arg(long, conflicts_with_all = ["body_file", "template_id"])]
         body: Option<String>,
-        /// Path to a local file whose content becomes the page body
+        /// Path to a local file whose content becomes the page body (same
+        /// format as --body, just read from a file instead of the command line)
         #[arg(long, conflicts_with_all = ["body", "template_id"])]
-        template_file: Option<String>,
+        body_file: Option<String>,
         /// ID of an existing Confluence content template to copy as the page body
-        #[arg(long, conflicts_with_all = ["body", "template_file"])]
+        #[arg(long, conflicts_with_all = ["body", "body_file"])]
         template_id: Option<String>,
     },
     /// Update an existing page's title and/or body
@@ -202,6 +209,50 @@ pub enum SpaceCommand {
         /// Cursor token for the next page, from the _links.next field of a previous response
         #[arg(long)]
         cursor: Option<String>,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum TemplateCommand {
+    /// Create a new content template
+    ///
+    /// Exactly one of --body or --body-file supplies the template content
+    /// (same storage-format XHTML as `page create`'s --body/--body-file — see
+    /// that command's help). Omit --space-key to create a global template
+    /// (requires Confluence Administrator global permission); pass it to
+    /// create a space template instead (requires Admin permission on that
+    /// space). The created template's ID (`templateId` in the response) can
+    /// then be passed to `page create --template-id` to build pages from it.
+    #[command(after_help = "Examples:\n  confluence template create --name \"Runbook\" --space-key ENG --body \"<p>Steps</p>\"\n  confluence template create --name \"Postmortem\" --body-file ./postmortem.html --description \"Standard postmortem layout\"")]
+    Create {
+        /// Space key to create a space-scoped template in; omit for a global template
+        #[arg(long)]
+        space_key: Option<String>,
+        /// Template name
+        #[arg(long)]
+        name: String,
+        /// Optional template description
+        #[arg(long)]
+        description: Option<String>,
+        /// Template body as raw Confluence storage-format XHTML
+        #[arg(long, conflicts_with = "body_file")]
+        body: Option<String>,
+        /// Path to a local file whose content becomes the template body
+        #[arg(long, conflicts_with = "body")]
+        body_file: Option<String>,
+    },
+    /// List content templates and print them as JSON
+    #[command(after_help = "Examples:\n  confluence template list\n  confluence template list --space-key ENG\n  confluence template list --limit 10 --start 10\n\nOffset pagination: pass --start <previous start + limit> to fetch the next page.")]
+    List {
+        /// Only list templates in this space; omit to list global templates
+        #[arg(long)]
+        space_key: Option<String>,
+        /// Maximum number of templates to return (default: 25)
+        #[arg(long, default_value = "25")]
+        limit: u32,
+        /// Offset into the result set, for pagination (default: 0)
+        #[arg(long, default_value = "0")]
+        start: u32,
     },
 }
 

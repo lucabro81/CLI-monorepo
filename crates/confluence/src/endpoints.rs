@@ -21,8 +21,12 @@ pub const PATH_USER_CURRENT: &str = "/wiki/rest/api/user/current";
 /// CQL content search (`page search`). v1 — no v2 equivalent exists yet.
 pub const PATH_CONTENT_SEARCH: &str = "/wiki/rest/api/content/search";
 
-/// Template lookup, used to resolve `page create --template-id`. v1 — no v2 equivalent exists.
+/// Template lookup (`page create --template-id`) and creation (`template create`).
+/// v1 — no v2 equivalent exists.
 pub const PATH_TEMPLATE: &str = "/wiki/rest/api/template";
+
+/// Lists page-type content templates (`template list`). v1 — no v2 equivalent exists.
+pub const PATH_TEMPLATE_PAGE: &str = "/wiki/rest/api/template/page";
 
 pub const PATH_PAGES: &str = "/wiki/api/v2/pages";
 pub const PATH_SPACES: &str = "/wiki/api/v2/spaces";

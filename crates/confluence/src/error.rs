@@ -75,7 +75,7 @@ pub enum CliError {
     IoError { reason: String },
 
     #[error(
-        "page create requires exactly one of --body, --template-file, or --template-id \
+        "page create requires exactly one of --body, --body-file, or --template-id \
         to supply the page content. Retry with one of them set."
     )]
     PageCreateMissingBodySource,
@@ -91,6 +91,12 @@ pub enum CliError {
         The template may be empty, or this is an unexpected response shape."
     )]
     TemplateBodyMissing { reason: String },
+
+    #[error(
+        "template create requires exactly one of --body or --body-file to supply the \
+        template content. Retry with one of them set."
+    )]
+    TemplateCreateMissingBodySource,
 
     /// A condition that should be unreachable given valid inputs (e.g. clap's
     /// `conflicts_with` should have already ruled it out). If this surfaces it

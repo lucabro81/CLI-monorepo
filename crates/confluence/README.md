@@ -16,6 +16,8 @@ CLI for Confluence Cloud, designed to be driven by an LLM agent (output is JSON,
   - [`confluence page update <ID>`](#confluence-page-update-id)
   - [`confluence page search --cql <QUERY>`](#confluence-page-search---cql-query)
   - [`confluence space list`](#confluence-space-list)
+  - [`confluence template create`](#confluence-template-create)
+  - [`confluence template list`](#confluence-template-list)
   - [`--select <PATHS>` (global flag)](#--select-paths-global-flag)
 - [Testing](#testing)
 - [Error design](#error-design)
@@ -104,15 +106,15 @@ cargo run -p confluence -- page get 123456 --select title,body.storage.value,ver
 
 ### `confluence page create`
 
-Creates a page in a space. Requires `--space-id` and `--title`, plus exactly one of `--body`, `--template-file`, or `--template-id` to supply the content — see this crate's `CLAUDE.md` "API design notes" for why templates work this way (Confluence has no API to create a page "from" a template directly).
+Creates a page in a space. Requires `--space-id` and `--title`, plus exactly one of `--body`, `--body-file`, or `--template-id` to supply the content — see this crate's `CLAUDE.md` "API design notes" for why `--template-id` works this way (Confluence has no API to create a page "from" a template directly).
 
 ```sh
 cargo run -p confluence -- page create --space-id 98765 --title "Sprint Notes" --body "<p>Agenda</p>"
-cargo run -p confluence -- page create --space-id 98765 --title "Runbook" --template-file ./runbook-template.html
+cargo run -p confluence -- page create --space-id 98765 --title "Runbook" --body-file ./runbook-content.html
 cargo run -p confluence -- page create --space-id 98765 --title "Retro" --template-id 4321 --parent-id 111222
 ```
 
-`--body`/`--template-file` are raw Confluence **storage format** (XHTML) — the same format `page get`'s `body.storage.value` returns. Plain text with no markup is also valid storage format.
+`--body`/`--body-file` are raw Confluence **storage format** (XHTML) — the same format `page get`'s `body.storage.value` returns. Plain text with no markup is also valid storage format. `--body-file` is just `--body` read from a local file instead of the command line (handy for longer content) — it has no relation to Confluence's own Template feature, unlike `--template-id`.
 
 ### `confluence page update <ID>`
 
@@ -142,6 +144,27 @@ Lists Confluence spaces, cursor-paginated.
 cargo run -p confluence -- space list
 cargo run -p confluence -- space list --limit 10
 cargo run -p confluence -- space list --cursor <cursor-from-previous-response>
+```
+
+### `confluence template create`
+
+Creates a content template. Requires `--name`, plus exactly one of `--body`/`--body-file` to supply the content (same storage-format XHTML as `page create` — see that command's section above). Omit `--space-key` for a global template (requires Confluence Administrator global permission); pass it for a space template (requires Admin permission on that space).
+
+```sh
+cargo run -p confluence -- template create --name "Runbook" --space-key ENG --body "<p>Steps</p>"
+cargo run -p confluence -- template create --name "Postmortem" --body-file ./postmortem.html --description "Standard postmortem layout"
+```
+
+The created template's `templateId` can be passed to [`page create --template-id`](#confluence-page-create) to build pages from it.
+
+### `confluence template list`
+
+Lists content templates, offset-paginated. Omit `--space-key` to list global templates; pass it to scope to one space.
+
+```sh
+cargo run -p confluence -- template list
+cargo run -p confluence -- template list --space-key ENG
+cargo run -p confluence -- template list --limit 10 --start 10
 ```
 
 ### `--select <PATHS>` (global flag)

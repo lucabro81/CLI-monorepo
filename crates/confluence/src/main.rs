@@ -60,6 +60,7 @@ fn run() -> Result<(), CliError> {
         Command::Auth { command: AuthCommand::Whoami } => commands::auth::run_whoami(select),
         Command::Page { command } => commands::page::run(command, select),
         Command::Space { command } => commands::space::run(command, select),
+        Command::Template { command } => commands::template::run(command, select),
     }
 }
 

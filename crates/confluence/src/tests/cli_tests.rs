@@ -2,7 +2,7 @@
 
 use clap::Parser;
 
-use super::{AuthCommand, Cli, Command, PageCommand, SpaceCommand};
+use super::{AuthCommand, Cli, Command, PageCommand, SpaceCommand, TemplateCommand};
 
 #[test]
 fn parses_auth_login() {
@@ -189,7 +189,7 @@ fn parses_page_create_with_body() {
                     title,
                     parent_id,
                     body,
-                    template_file,
+                    body_file,
                     template_id,
                 },
         } => {
@@ -197,7 +197,7 @@ fn parses_page_create_with_body() {
             assert_eq!(title, "Sprint Notes");
             assert!(parent_id.is_none());
             assert_eq!(body.as_deref(), Some("<p>hi</p>"));
-            assert!(template_file.is_none());
+            assert!(body_file.is_none());
             assert!(template_id.is_none());
         }
         other => panic!("unexpected command: {other:?}"),
@@ -205,18 +205,18 @@ fn parses_page_create_with_body() {
 }
 
 #[test]
-fn parses_page_create_with_template_file() {
+fn parses_page_create_with_body_file() {
     let cli = Cli::try_parse_from([
         "confluence", "page", "create", "--space-id", "98765", "--title", "Runbook",
-        "--template-file", "./runbook.html",
+        "--body-file", "./runbook.html",
     ])
     .expect("should parse");
 
     match cli.command {
         Command::Page {
-            command: PageCommand::Create { template_file, body, template_id, .. },
+            command: PageCommand::Create { body_file, body, template_id, .. },
         } => {
-            assert_eq!(template_file.as_deref(), Some("./runbook.html"));
+            assert_eq!(body_file.as_deref(), Some("./runbook.html"));
             assert!(body.is_none());
             assert!(template_id.is_none());
         }
@@ -244,23 +244,23 @@ fn parses_page_create_with_template_id_and_parent_id() {
 }
 
 #[test]
-fn rejects_page_create_with_body_and_template_file_together() {
+fn rejects_page_create_with_body_and_body_file_together() {
     let result = Cli::try_parse_from([
         "confluence", "page", "create", "--space-id", "98765", "--title", "X",
-        "--body", "<p>hi</p>", "--template-file", "./t.html",
+        "--body", "<p>hi</p>", "--body-file", "./t.html",
     ]);
 
-    assert!(result.is_err(), "--body and --template-file should conflict");
+    assert!(result.is_err(), "--body and --body-file should conflict");
 }
 
 #[test]
-fn rejects_page_create_with_template_file_and_template_id_together() {
+fn rejects_page_create_with_body_file_and_template_id_together() {
     let result = Cli::try_parse_from([
         "confluence", "page", "create", "--space-id", "98765", "--title", "X",
-        "--template-file", "./t.html", "--template-id", "4321",
+        "--body-file", "./t.html", "--template-id", "4321",
     ]);
 
-    assert!(result.is_err(), "--template-file and --template-id should conflict");
+    assert!(result.is_err(), "--body-file and --template-id should conflict");
 }
 
 #[test]
@@ -417,6 +417,115 @@ fn parses_space_list_with_limit_and_cursor() {
         } => {
             assert_eq!(limit, 5);
             assert_eq!(cursor.as_deref(), Some("abc123"));
+        }
+        other => panic!("unexpected command: {other:?}"),
+    }
+}
+
+// --- template create ---
+
+#[test]
+fn parses_template_create_with_body() {
+    let cli = Cli::try_parse_from([
+        "confluence", "template", "create", "--name", "Runbook Template",
+        "--body", "<p>Steps</p>",
+    ])
+    .expect("should parse");
+
+    match cli.command {
+        Command::Template {
+            command:
+                TemplateCommand::Create {
+                    space_key,
+                    name,
+                    description,
+                    body,
+                    body_file,
+                },
+        } => {
+            assert!(space_key.is_none());
+            assert_eq!(name, "Runbook Template");
+            assert!(description.is_none());
+            assert_eq!(body.as_deref(), Some("<p>Steps</p>"));
+            assert!(body_file.is_none());
+        }
+        other => panic!("unexpected command: {other:?}"),
+    }
+}
+
+#[test]
+fn parses_template_create_with_body_file_space_key_and_description() {
+    let cli = Cli::try_parse_from([
+        "confluence", "template", "create", "--name", "Runbook Template",
+        "--space-key", "ENG", "--description", "Standard runbook layout",
+        "--body-file", "./runbook.html",
+    ])
+    .expect("should parse");
+
+    match cli.command {
+        Command::Template {
+            command: TemplateCommand::Create { space_key, description, body_file, body, .. },
+        } => {
+            assert_eq!(space_key.as_deref(), Some("ENG"));
+            assert_eq!(description.as_deref(), Some("Standard runbook layout"));
+            assert_eq!(body_file.as_deref(), Some("./runbook.html"));
+            assert!(body.is_none());
+        }
+        other => panic!("unexpected command: {other:?}"),
+    }
+}
+
+#[test]
+fn rejects_template_create_with_body_and_body_file_together() {
+    let result = Cli::try_parse_from([
+        "confluence", "template", "create", "--name", "X",
+        "--body", "<p>a</p>", "--body-file", "./t.html",
+    ]);
+
+    assert!(result.is_err(), "--body and --body-file should conflict");
+}
+
+#[test]
+fn rejects_template_create_missing_name() {
+    let result = Cli::try_parse_from([
+        "confluence", "template", "create", "--body", "<p>a</p>",
+    ]);
+
+    assert!(result.is_err());
+}
+
+// --- template list ---
+
+#[test]
+fn parses_template_list_defaults() {
+    let cli = Cli::try_parse_from(["confluence", "template", "list"]).expect("should parse");
+
+    match cli.command {
+        Command::Template {
+            command: TemplateCommand::List { space_key, limit, start },
+        } => {
+            assert!(space_key.is_none());
+            assert_eq!(limit, 25);
+            assert_eq!(start, 0);
+        }
+        other => panic!("unexpected command: {other:?}"),
+    }
+}
+
+#[test]
+fn parses_template_list_with_space_key_limit_and_start() {
+    let cli = Cli::try_parse_from([
+        "confluence", "template", "list", "--space-key", "ENG", "--limit", "10", "--start", "5",
+    ])
+    .expect("should parse");
+
+    match cli.command {
+        Command::Template {
+            command: TemplateCommand::List { space_key, limit, start },
+        } => {
+            assert_eq!(space_key.as_deref(), Some("ENG"));
+            assert_eq!(limit, 10);
+            assert_eq!(start, 5);
         }
         other => panic!("unexpected command: {other:?}"),
     }
