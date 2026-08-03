@@ -247,6 +247,17 @@ there, not just jira.
 
 ---
 
+## `crates/atlassian-auth`
+
+### SCOPE-1 — RESOLVED: `get_granted_scopes` only read the first of multiple same-`id` accessible-resources entries
+**Found:** 2026-08-03, live testing `confluence`/`jira` `doctor` against a single Service Account credential granted both Jira and Confluence scopes
+**Trigger:** a token whose OAuth scopes span more than one Atlassian product (e.g. a Service Account with both Jira and Confluence scopes on the same site)
+**Current (buggy) behaviour:** `GET https://api.atlassian.com/oauth/token/accessible-resources` returns **multiple entries sharing the same `id`** (site `cloud_id`) when a token's scopes span multiple products — one entry per product's scope subset, not one entry with their union (confirmed live via a direct `curl` against the endpoint, not documented anywhere found). `get_granted_scopes` used `.find(|r| r.id == cloud_id)`, which returns only the *first* matching entry — so `jira doctor`'s `oauth_scopes` check reported only the Confluence scopes for a token that also had Jira scopes granted (the Confluence entry happened to come first in the response), and vice versa depending on response order. The underlying API calls all still worked (scopes were genuinely granted), only the *reporting* was wrong — but a wrong report is exactly what makes `doctor` unable to do its job of catching real scope problems.
+**Resolved same day:** added `merge_scopes_for_cloud_id` (`crates/atlassian-auth/src/oauth.rs`) — unions (deduped) the `scopes` of every entry matching `cloud_id` instead of taking only the first. `fetch_cloud_id` (used for login, not scope reporting) was unaffected — it only needs *an* `id`, and every matching entry has the same one. Fixed in the shared crate, so both `jira` and `confluence` doctor now report the full scope list without any per-crate change. 4 new unit tests in `atlassian-auth`'s `oauth_tests.rs` cover the union, dedup, no-match, and present-but-empty cases. **Verified live**: re-ran `jira doctor`/`confluence doctor` against the same real credential after the fix — both now report all 8 granted scopes (5 Confluence + 3 Jira) instead of only 5.
+**Why this shape of credential is fine (see also `LIB-1`)**: one Service Account, one OAuth 2.0 credential, scoped across multiple products is a legitimate and arguably simpler setup than a separate credential per product — see the design discussion in this PR's conversation for the tradeoffs (least-privilege/blast-radius vs. operational simplicity). This bug would have surfaced eventually either way, since even single-product credentials could in principle hit multi-entry responses under other conditions not yet observed.
+
+---
+
 ## `crates/google-chat`
 
 ### GCHAT-1 — Service-account/domain-wide-delegation login not yet activated

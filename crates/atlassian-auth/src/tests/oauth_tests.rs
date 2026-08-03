@@ -4,8 +4,9 @@ use std::path::{Path, PathBuf};
 
 use super::{
     app_config_path, authorization_url, code_challenge, credentials_path, generate_code_verifier,
-    generate_state, parse_callback_request_line, refresh, CallbackError, CallbackParams,
-    Credentials, LoginError, OAuthConfig, OAuthConfigError,
+    generate_state, merge_scopes_for_cloud_id, parse_callback_request_line, refresh,
+    AccessibleResource, CallbackError, CallbackParams, Credentials, LoginError, OAuthConfig,
+    OAuthConfigError,
 };
 
 const TEST_SCOPES: &str = "read:example write:example offline_access";
@@ -313,4 +314,82 @@ fn credentials_json_field_names_are_stable() {
     assert!(json.contains("\"refresh_token\""));
     assert!(json.contains("\"expires_at\""));
     assert!(json.contains("\"cloud_id\""));
+}
+
+#[test]
+fn merge_scopes_for_cloud_id_unions_multiple_entries_with_the_same_id() {
+    // Regression: Atlassian's accessible-resources endpoint returns one entry
+    // PER PRODUCT when a single token's scopes span more than one product
+    // (e.g. a Service Account credential granted both Jira and Confluence
+    // scopes) — all sharing the same site `id`, each holding only that
+    // product's scope subset, not the union. Taking just the first matching
+    // entry (the original bug) silently under-reported the granted scopes.
+    // Discovered live: `jira doctor`'s oauth_scopes check showed only the
+    // Confluence scopes for a token that also had Jira scopes granted,
+    // because the Confluence entry happened to come first in the response.
+    let resources = vec![
+        AccessibleResource {
+            id: "site-1".to_string(),
+            scopes: vec!["read:confluence-user".to_string(), "search:confluence".to_string()],
+        },
+        AccessibleResource {
+            id: "site-1".to_string(),
+            scopes: vec!["read:jira-work".to_string()],
+        },
+    ];
+
+    let merged = merge_scopes_for_cloud_id(&resources, "site-1").expect("should find matching id");
+
+    assert_eq!(
+        merged,
+        vec![
+            "read:confluence-user".to_string(),
+            "search:confluence".to_string(),
+            "read:jira-work".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn merge_scopes_for_cloud_id_returns_none_when_no_entry_matches() {
+    let resources = vec![AccessibleResource {
+        id: "other-site".to_string(),
+        scopes: vec!["read:jira-work".to_string()],
+    }];
+
+    assert_eq!(merge_scopes_for_cloud_id(&resources, "site-1"), None);
+}
+
+#[test]
+fn merge_scopes_for_cloud_id_dedupes_overlapping_scopes_across_entries() {
+    let resources = vec![
+        AccessibleResource {
+            id: "site-1".to_string(),
+            scopes: vec!["read:jira-work".to_string()],
+        },
+        AccessibleResource {
+            id: "site-1".to_string(),
+            scopes: vec!["read:jira-work".to_string(), "write:jira-work".to_string()],
+        },
+    ];
+
+    let merged = merge_scopes_for_cloud_id(&resources, "site-1").expect("should find matching id");
+
+    assert_eq!(
+        merged,
+        vec!["read:jira-work".to_string(), "write:jira-work".to_string()]
+    );
+}
+
+#[test]
+fn merge_scopes_for_cloud_id_returns_some_empty_vec_when_entry_has_no_scopes() {
+    // Present-but-empty is a different case from "not found at all" — an
+    // entry that matches the cloud_id but grants zero scopes is still a
+    // legitimate (if useless) resource, not a NoAccessibleResources error.
+    let resources = vec![AccessibleResource {
+        id: "site-1".to_string(),
+        scopes: vec![],
+    }];
+
+    assert_eq!(merge_scopes_for_cloud_id(&resources, "site-1"), Some(vec![]));
 }

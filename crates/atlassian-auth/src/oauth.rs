@@ -322,11 +322,34 @@ fn fetch_cloud_id(access_token: &str) -> Result<String, LoginError> {
 /// `cloud_id`, via the accessible-resources endpoint. Used by `doctor`'s
 /// `oauth_scopes` check, distinct from product-side permission checks.
 pub fn get_granted_scopes(access_token: &str, cloud_id: &str) -> Result<Vec<String>, LoginError> {
-    fetch_accessible_resources(access_token)?
-        .into_iter()
-        .find(|r| r.id == cloud_id)
-        .map(|r| r.scopes)
-        .ok_or(LoginError::NoAccessibleResources)
+    let resources = fetch_accessible_resources(access_token)?;
+    merge_scopes_for_cloud_id(&resources, cloud_id).ok_or(LoginError::NoAccessibleResources)
+}
+
+/// Merges the `scopes` of every entry in `resources` whose `id` matches
+/// `cloud_id`. Atlassian's accessible-resources endpoint returns **multiple
+/// entries with the same `id`** when a single token's scopes span more than
+/// one product (e.g. a Service Account credential granted both Jira and
+/// Confluence scopes) — each entry holds one product's scope subset, not
+/// their union — so taking only the first matching entry silently
+/// under-reports the granted scopes. Returns `None` only if no entry matches
+/// `cloud_id` at all; an entry that matches but grants zero scopes still
+/// returns `Some(vec![])`, since those are different situations (no access
+/// to this site at all vs. access with nothing granted).
+fn merge_scopes_for_cloud_id(resources: &[AccessibleResource], cloud_id: &str) -> Option<Vec<String>> {
+    let mut matched = false;
+    let mut scopes = Vec::new();
+    for resource in resources {
+        if resource.id == cloud_id {
+            matched = true;
+            for scope in &resource.scopes {
+                if !scopes.contains(scope) {
+                    scopes.push(scope.clone());
+                }
+            }
+        }
+    }
+    matched.then_some(scopes)
 }
 
 /// Renews credentials whose access token has expired (or is about to).
