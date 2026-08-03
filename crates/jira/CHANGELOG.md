@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.5.1](https://github.com/lucabro81/CLI-monorepo/compare/jira-v0.5.0...jira-v0.5.1) - 2026-08-03
+
+### Fixed
+- *(jira)* correctly report multi-product OAuth scopes in doctor
+
+### Other
+- *(jira)* extract shared Atlassian OAuth into crates/atlassian-auth
+- Merge pull request #56 from lucabro81/feat/confluence-crate ([#56](https://github.com/lucabro81/CLI-monorepo/pull/56))
 ## [0.5.0](https://github.com/lucabro81/CLI-monorepo/compare/jira-v0.4.0...jira-v0.5.0) - 2026-07-30
 
 ### Added
