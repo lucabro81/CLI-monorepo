@@ -14,7 +14,25 @@ skill's job is everything that has to happen *before* that loop can start.
 Read the workspace root `CLAUDE.md` first if you haven't already (structure
 convention, error handling, flag conventions).
 
-## 0. Scaffold
+## 0. Plan, issue, and branch
+
+Before scaffolding, follow root `CLAUDE.md`'s "Feature workflow: plan → issue
+→ branch": write the plan for this crate (service, auth approach if already
+known, initial command pool), open a GitHub issue with the plan as its body,
+then create and check out the linked branch:
+
+```sh
+gh issue create --title "New crate: <service>" --body "<plan>"
+gh issue develop <issue-number> --name "issue<issue-number>" --checkout
+```
+
+Everything from step 1 (scaffold) onward happens on this branch. The auth
+design (step 2) and command pool (step 3) discussions with the user can
+still refine the plan after the issue is opened — update the issue body
+(`gh issue edit <number> --body ...`) if it changes materially rather than
+letting the issue go stale.
+
+## 1. Scaffold
 
 ```sh
 .claude/skills/new-cli-crate/scripts/new-crate.sh <crate-name> "<short service description>"
@@ -25,13 +43,13 @@ the shared `crates/cli-fields` crate for `--select` support — see root
 `CLAUDE.md`'s "Shared library: crates/cli-fields"), the directory layout from
 root `CLAUDE.md`, and placeholder `TODO` stubs for everything
 service-specific. It also adds the crate to the workspace `members` list.
-**It does not compile yet** — that's expected until step 4.
+**It does not compile yet** — that's expected until step 5.
 
 If the crate name is ambiguous (e.g. the service has a generic name, or
 there's already a similarly-named crate), confirm with the user before
 running this.
 
-## 1. Auth design — research and decide before anything else
+## 2. Auth design — research and decide before anything else
 
 This is the step that most determines the shape of everything downstream, and
 the one place this skill should slow down and discuss with the user rather
@@ -59,17 +77,17 @@ than barrel ahead.
    atlassian-admin were deliberately kept out of that library despite being
    Atlassian-family crates themselves).
 3. **Decide and confirm with the user** (AskUserQuestion for anything
-   ambiguous): grant type, scopes needed for the baseline commands (step 2),
+   ambiguous): grant type, scopes needed for the baseline commands (step 3),
    config file layout (`app.json` / `credentials.json` under
    `$XDG_CONFIG_HOME/<crate>-cli/`, matching existing crates unless there's a
    reason to deviate), and whether a one-time human bootstrap step
    (`init --user` equivalent) is required.
 4. Write this decision down as a draft "Auth design" section for
-   `crates/<crate>/CLAUDE.md` (you'll place it properly in step 3) — don't
-   leave it only in conversation, the bootstrap step (step 4) implements
+   `crates/<crate>/CLAUDE.md` (you'll place it properly in step 4) — don't
+   leave it only in conversation, the bootstrap step (step 5) implements
    against it.
 
-## 2. Command pool — propose, don't assume
+## 3. Command pool — propose, don't assume
 
 Per root `CLAUDE.md`'s incremental approach: "start with the smallest useful
 command set, add new commands only when a concrete need arises." Propose:
@@ -87,19 +105,19 @@ get their reaction/adjustments before proceeding — this is a second
 checkpoint, separate from the auth discussion, because the user may want a
 different starting slice than what seems obvious from the API docs.
 
-## 3. Write the docs
+## 4. Write the docs
 
-With auth design (step 1) and command pool (step 2) agreed:
+With auth design (step 2) and command pool (step 3) agreed:
 
 - `crates/<crate>/CLAUDE.md` — module map (mirror an existing crate's, e.g.
   bitbucket's, adjusted for this service), "Auth design" section from step
-  1, "Implemented commands" table (empty/TODO for now — filled in as step 4/5
-  land each command), "Planned commands" table from step 2's core list,
+  2, "Implemented commands" table (empty/TODO for now — filled in as step
+  5/6 land each command), "Planned commands" table from step 3's core list,
   config layout, API design notes (pagination style if known).
 - `crates/<crate>/README.md` — skeleton with the same sections as
   jira/bitbucket's READMEs (Table of contents, Setup, How the OAuth flow
   works, Usage, Testing, Error design), Setup and OAuth sections filled in
-  from step 1, Usage left as TODO per command.
+  from step 2, Usage left as TODO per command.
 - `crates/<crate>/.claude/skills/add-<crate>-command/ADDENDUM.md` — following
   the structure of `crates/jira/.claude/skills/add-jira-command/ADDENDUM.md`
   or `crates/bitbucket/.claude/skills/add-bitbucket-command/ADDENDUM.md`:
@@ -111,7 +129,7 @@ With auth design (step 1) and command pool (step 2) agreed:
 Commit this as its own small commit ("docs: scaffold <crate> crate docs and
 ADDENDUM") — it's a coherent unit separate from the code that follows. This
 commit has no crate-specific feature, so it's fine without a `(<crate>)`
-scope; every commit from step 4 onward (real code) must use `<crate>` as the
+scope; every commit from step 5 onward (real code) must use `<crate>` as the
 conventional-commit scope, per `add-cli-command`'s commit-and-PR step — this
 is what lets the release pipeline (root CLAUDE.md "CI/CD" section) attribute
 commits to this crate and compute its version bumps.
@@ -128,35 +146,36 @@ it's parameterized via `$CRATE_NAME`); create an empty `crates/<crate>/CHANGELOG
 with the standard Keep-a-Changelog header (copy from any existing crate) so
 git-cliff's `--prepend` has something to prepend to.
 
-## 4. Bootstrap — init, doctor, auth
+## 5. Bootstrap — init, doctor, auth
 
 Invoke `add-cli-command` for `auth login` (and `auth whoami`) first, then
 `doctor`, then `init` — in that order, since `doctor` calls into auth checks
 and `init` calls `doctor` as its final verification (see existing crates'
-`commands/init.rs`). This is the step where the placeholder files from step 0
+`commands/init.rs`). This is the step where the placeholder files from step 1
 get real content and the crate starts compiling.
 
 Run `cargo build -p <crate>` and `cargo clippy -p <crate> --all-targets`
 after this step — the crate must build clean before moving on.
 
-## 5. Core commands
+## 6. Core commands
 
-Loop `add-cli-command` over the commands agreed in step 2, one at a time,
+Loop `add-cli-command` over the commands agreed in step 3, one at a time,
 same as adding any command to an existing crate.
 
-## 6. Final report
+## 7. Final report
 
-Same shape as `add-cli-command`'s step 9: what was created (crate, files,
-commits), the auth design decided and why, the command pool and rationale,
-any `BACKLOG.md` entries added (e.g. a new shared-library candidate flagged
-but deferred), and a "needs human review" section — most importantly **any
-human-side setup required** (creating an OAuth app/consumer, granting
-scopes/permissions) before `doctor`/`init` can pass for real.
+Same shape as `add-cli-command`'s step 10: what was created (crate, files,
+commits), the tracking issue/branch/PR from step 0, the auth design decided
+and why, the command pool and rationale, any `BACKLOG.md` entries added (e.g.
+a new shared-library candidate flagged but deferred), and a "needs human
+review" section — most importantly **any human-side setup required**
+(creating an OAuth app/consumer, granting scopes/permissions) before
+`doctor`/`init` can pass for real.
 
-Do all of the above on a branch and open a PR against `main` (per
-`add-cli-command`'s commit-and-PR step) rather than pushing straight to
-`main` — include the PR link in the final report. Before merging, make sure
-the release-pipeline wiring from step 3 (matrix entries, `Cargo.toml`
-`publish = false` + `pre-release-hook`, initial `CHANGELOG.md`) is included,
-or the new crate's `feat`/`fix` commits will silently never trigger a
-release PR.
+Do all of the above on the branch created in step 0 and open a PR against
+`main` (per `add-cli-command`'s commit-and-PR step) rather than pushing
+straight to `main` — include `Closes #<issue-number>` in the PR body and the
+PR link in the final report. Before merging, make sure the release-pipeline
+wiring from step 4 (matrix entries, `Cargo.toml` `publish = false` +
+`pre-release-hook`, initial `CHANGELOG.md`) is included, or the new crate's
+`feat`/`fix` commits will silently never trigger a release PR.

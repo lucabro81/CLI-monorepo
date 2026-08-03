@@ -19,7 +19,27 @@ Monorepo: single Cargo workspace holding many CLI tools, one per external servic
 - Each CLI lives as its own crate/binary in the workspace, named after the service it wraps, under `crates/<service>/`. The exceptions are `crates/cli-fields` and `crates/atlassian-auth`, shared libraries (not binaries, no service of their own) — see "Shared library: crates/cli-fields" and "Shared library: crates/atlassian-auth" below.
 - Update this CLAUDE.md, the crate's own CLAUDE.md, and project memory after every significant addition or change — keep them in sync with codebase state.
 - When adding a new crate, add a row for it to the table in the root [README.md](README.md).
-- To add a new CLI crate from scratch, use the `new-cli-crate` skill (`.claude/skills/new-cli-crate/`). To add a command/subcommand to an existing crate, use `add-cli-command` (`.claude/skills/add-cli-command/`).
+- To add a new CLI crate from scratch, use the `new-cli-crate` skill (`.claude/skills/new-cli-crate/`). To add a command/subcommand to an existing crate, use `add-cli-command` (`.claude/skills/add-cli-command/`). Both skills open a tracking GitHub issue and a linked branch before writing any code — see "Feature workflow" below.
+
+## Feature workflow: plan → issue → branch
+
+Every feature-sized piece of work (a new crate, a new command, or comparable scope — not a one-line fix, typo, or doc tweak) starts with a GitHub issue, not a branch pulled out of thin air. Issue and branch are linked by construction, not by naming convention alone — this repo's `gh` CLI is authenticated and supports this directly:
+
+1. **Write the plan first.** Concrete: what's being built, the approach, files/commands affected, open questions to confirm with the user.
+2. **Create the issue with the plan as its body** — the issue *is* where the plan lives, not a separate doc:
+   ```sh
+   gh issue create --title "<feature>" --body "<plan>"
+   ```
+   If the plan changes materially mid-implementation, update the issue (`gh issue edit <number> --body "..."`) rather than letting it go stale.
+3. **Create the branch from the issue**, using `gh issue develop` — this both creates the branch and links it to the issue (the link shows up under the issue's "Development" section, and any PR later opened from that branch inherits it automatically):
+   ```sh
+   gh issue develop <issue-number> --name "issue<issue-number>" --checkout
+   ```
+   Branch name is always `issue<issue-number>` — no separate slug. The number is what ties branch, issue, and PR together.
+4. Implement on that branch as usual (TDD, incremental commits, per the rest of this file).
+5. **Reference the issue in the PR** — include `Closes #<issue-number>` in the PR body so merging it closes the issue automatically.
+
+Applies to work driven by the `new-cli-crate` and `add-cli-command` skills (see each skill's step 0) and to any other feature-sized request handled outside those skills.
 
 ## Structure convention for each crate
 

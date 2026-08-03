@@ -10,7 +10,20 @@ a crate in this monorepo. Follow the steps in order. Don't skip the research
 or the verification loop — "compiles and unit tests pass" is not "done" for
 these crates.
 
-## 0. Identify the crate and load its addendum
+## 0. Plan, issue, and branch
+
+Before step 1, follow root `CLAUDE.md`'s "Feature workflow: plan → issue →
+branch": write the plan for this command, open a GitHub issue with the plan
+as its body, then create and check out the linked branch:
+
+```sh
+gh issue create --title "<crate>: <command>" --body "<plan>"
+gh issue develop <issue-number> --name "issue<issue-number>" --checkout
+```
+
+Everything from step 1 onward happens on this branch.
+
+## 1. Identify the crate and load its addendum
 
 Determine the target crate from the current working directory (e.g. cwd
 `crates/bitbucket` -> crate `bitbucket`) or from what the user asked. If
@@ -32,7 +45,7 @@ All three are short. If the addendum is missing or a crate has none yet,
 note that and proceed with generic defaults, flagging gaps in the final
 report.
 
-## 1. Scope the command — ask, don't assume
+## 2. Scope the command — ask, don't assume
 
 Before writing anything, make sure these are nailed down. Use AskUserQuestion
 for anything ambiguous — guessing wrong here means rework later. This initial
@@ -57,12 +70,12 @@ the command being added.
   addendum for this crate's existing precedent.
 - **Auth/scope impact**: does this need a permission/scope not currently
   granted? Check this crate's `doctor` output against the endpoint's
-  documented requirement (see step 2). If a new scope/permission is needed,
+  documented requirement (see step 3). If a new scope/permission is needed,
   flag this explicitly to the user — see the addendum for what human step
   (re-consent, OAuth consumer edit, etc.) that requires, and whether `doctor`
   itself needs a new check (usually not — see addendum).
 
-## 2. Research the REST API endpoint
+## 3. Research the REST API endpoint
 
 Don't guess endpoint paths or payload shapes. For each endpoint involved:
 
@@ -83,7 +96,7 @@ against the real test target (see addendum) than to keep re-reading docs. Ask
 the user for a project/site/workspace identifier if one isn't already
 established in the conversation.
 
-## 3. Design — write it down before coding
+## 4. Design — write it down before coding
 
 Sketch (briefly, in your own response, not a separate doc):
 
@@ -108,7 +121,7 @@ handler → dispatch, each as its own edit with a one-line description of what
 it does and why, so the pieces remain individually reviewable even though the
 loop runs end-to-end without pausing for approval between them.
 
-## 4. TDD — red, then green
+## 5. TDD — red, then green
 
 Per root CLAUDE.md, tests must exist and fail before implementation:
 
@@ -136,7 +149,7 @@ Per root CLAUDE.md, tests must exist and fail before implementation:
    --all-targets` — zero warnings (fix `pedantic` lints too, don't `#[allow]`
    them away unless there's a real reason).
 
-## 5. Manual smoke test
+## 6. Manual smoke test
 
 ```sh
 cargo run -p <crate> -- <command> --help          # accurate, complete help text?
@@ -144,18 +157,18 @@ cargo run -p <crate> -- <command> ...             # against the real test target
 ```
 
 Iterate here against the live API until the output looks right — this is
-where wrong endpoint assumptions from step 2 usually surface (e.g. an
+where wrong endpoint assumptions from step 3 usually surface (e.g. an
 unexpected 4xx because of an account/workspace-level constraint, a field name
 that differs from the docs).
 
 If the command is destructive or creates persistent state, tell the user what
-was created/modified in the real target as part of the final report (step 8)
+was created/modified in the real target as part of the final report (step 10)
 — don't silently leave test artifacts without mentioning them.
 
-## 6. Extended verification (e2e, if this crate has it)
+## 7. Extended verification (e2e, if this crate has it)
 
 Check the addendum: some crates have an automated e2e suite, others rely on
-step 5's manual live verification only. If this crate has e2e tests, add one
+step 6's manual live verification only. If this crate has e2e tests, add one
 following the addendum's conventions (cleanup helpers, naming prefixes,
 self-contained scoping, thread-safety constraints).
 
@@ -179,7 +192,7 @@ Not every command needs e2e coverage — see the addendum for this crate's
 scope (e.g. read-only-only, or some commands excluded because they create
 real visible/destructive state and aren't safe to run unattended).
 
-## 7. Verification loop — run until it actually works
+## 8. Verification loop — run until it actually works
 
 Repeat until everything below is green, fixing root causes (not loosening
 assertions or adding `--allow` to silence problems):
@@ -191,11 +204,11 @@ cargo clippy -p <crate> --all-targets
 
 Plus this crate's e2e command, if applicable (see addendum).
 
-If a test fails because an assumption from step 2 was wrong (wrong endpoint,
-wrong permission/scope, wrong response field name), go back to step 2,
+If a test fails because an assumption from step 3 was wrong (wrong endpoint,
+wrong permission/scope, wrong response field name), go back to step 3,
 correct it, and re-run the full loop — don't patch around it locally.
 
-## 8. Docs and commit
+## 9. Docs and commit
 
 - `crates/<crate>/README.md`: add a `### <crate> <command>` section with
   usage, flags, required scope/permission, and at least one example,
@@ -219,15 +232,16 @@ correct it, and re-run the full loop — don't patch around it locally.
   An unscoped commit, a wrong scope, or one commit spanning multiple crates
   breaks that — split into separate scoped commits if a change genuinely
   touches more than one crate. Note this only applies to crates already
-  wired into the release pipeline's matrix (see `new-cli-crate`'s step 3) —
+  wired into the release pipeline's matrix (see `new-cli-crate`'s step 4) —
   a brand-new crate isn't auto-discovered.
 - Push the branch and **open a PR against `main`** — don't push commits
-  directly to `main`. The PR's CI run (`.github/workflows/ci.yml`) is the
-  build/test/clippy gate; merging it is what eventually triggers
-  `release-pr.yml` to draft a release PR for this crate (see root
-  CLAUDE.md).
+  directly to `main`. Include `Closes #<issue-number>` in the PR body (the
+  issue opened in step 0) so merging the PR closes it automatically. The
+  PR's CI run (`.github/workflows/ci.yml`) is the build/test/clippy gate;
+  merging it is what eventually triggers `release-pr.yml` to draft a release
+  PR for this crate (see root CLAUDE.md).
 
-## 9. Final report
+## 10. Final report
 
 This skill is meant to run largely unsupervised end-to-end — possibly invoked
 by an agent that is itself a user of this CLI, not a human watching every
@@ -235,10 +249,10 @@ step. Compensate for that with a **detailed final report** to the user,
 covering:
 
 - What was added (command, flags, endpoint(s), required scope/permission,
-  files touched, commits made).
-- Every assumption made during step 1 that wasn't explicitly confirmed by the
+  files touched, commits made), and the tracking issue/branch/PR from step 0.
+- Every assumption made during step 2 that wasn't explicitly confirmed by the
   user (there shouldn't be many, but name them if they exist).
-- Any persistent state created/modified in the live target during step 5
+- Any persistent state created/modified in the live target during step 6
   (e.g. a test repository or issue) that the user may want to clean up.
 - **Specific points the user should double-check**, called out clearly —
   e.g. "the scope/permission required couldn't be verified against a real
