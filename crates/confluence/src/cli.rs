@@ -196,6 +196,26 @@ pub enum PageCommand {
         #[arg(long, default_value = "0")]
         start: u32,
     },
+    /// Delete a page — requires --confirm
+    ///
+    /// By default moves the page to the trash, where it can be restored —
+    /// not a permanent delete. Pass --purge to permanently remove it instead,
+    /// but this only works on a page that is already trashed: to permanently
+    /// delete a page in one workflow, call this command twice — once without
+    /// --purge (moves it to trash), then again with --purge (purges it).
+    /// Always prints its full result regardless of --select — a small,
+    /// synthesized confirmation object.
+    #[command(after_help = "Examples:\n  confluence page delete 123456 --confirm\n  confluence page delete 123456 --confirm --purge\n\nThis command has no output body from the Confluence API (204 No Content) —\nthe printed JSON is synthesized by this CLI to confirm what happened.")]
+    Delete {
+        /// Page ID to delete
+        id: String,
+        /// Acknowledge that this action moves the page to trash (or, with --purge, permanently deletes it)
+        #[arg(long)]
+        confirm: bool,
+        /// Permanently delete instead of trashing — only works on a page that is already trashed
+        #[arg(long)]
+        purge: bool,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -253,6 +273,43 @@ pub enum TemplateCommand {
         /// Offset into the result set, for pagination (default: 0)
         #[arg(long, default_value = "0")]
         start: u32,
+    },
+    /// Update an existing template's name, description, and/or body
+    ///
+    /// Confluence's template API replaces the whole template on every
+    /// update — there is no partial-patch endpoint. This command fetches the
+    /// template's current name/description/body first, then submits a full
+    /// update with your --name/--description/--body(-file) overriding just
+    /// those fields (the others keep their current value). At least one of
+    /// --name, --description, --body, or --body-file is required.
+    #[command(after_help = "Examples:\n  confluence template update 4321 --name \"Runbook (v2)\"\n  confluence template update 4321 --body-file ./runbook-v2.html")]
+    Update {
+        /// Template ID
+        id: String,
+        /// New template name
+        #[arg(long)]
+        name: Option<String>,
+        /// New template description
+        #[arg(long)]
+        description: Option<String>,
+        /// New template body as raw Confluence storage-format XHTML
+        #[arg(long, conflicts_with = "body_file")]
+        body: Option<String>,
+        /// Path to a local file whose content becomes the new template body
+        #[arg(long, conflicts_with = "body")]
+        body_file: Option<String>,
+    },
+    /// Permanently delete a template — requires --confirm
+    ///
+    /// Always prints its full result regardless of --select — a small,
+    /// synthesized confirmation object.
+    #[command(after_help = "Example: confluence template delete 4321 --confirm\n\nThis action is irreversible. --confirm must be passed explicitly so the caller acknowledges the deletion.")]
+    Delete {
+        /// Template ID to delete
+        id: String,
+        /// Acknowledge that this action is permanent and irreversible
+        #[arg(long)]
+        confirm: bool,
     },
 }
 

@@ -11,14 +11,15 @@ src/
     auth.rs       — run_login(), run_whoami()
     doctor.rs     — run_doctor(); also called by init as final verification
     init.rs       — run_init(), write_app_config(); human onboarding flow
-    page.rs       — run(PageCommand); dispatches page get/create/update/search;
+    page.rs       — run(PageCommand); dispatches page get/create/update/search/delete;
                     also holds the --template-id/--body-file body-source
                     resolution logic (see "API design notes" below)
     space.rs      — run(SpaceCommand); dispatches space list
-    template.rs   — run(TemplateCommand); dispatches template create/list;
+    template.rs   — run(TemplateCommand); dispatches template create/list/update/delete;
                     also holds the --body/--body-file resolution logic for
-                    template create (resolve_body — narrower than page.rs's
-                    parse_body_source, no --template-id equivalent)
+                    template create/update (resolve_body/resolve_optional_body
+                    — narrower than page.rs's parse_body_source, no
+                    --template-id equivalent)
   auth.rs         — thin wrapper over the shared `atlassian_auth` crate, fixing
                     this crate's config dir name and OAuth SCOPES: OAuthConfig,
                     Credentials, login(), login_client_credentials(), renew(),
@@ -28,10 +29,11 @@ src/
                     parsing, and cloud_id resolution live in `atlassian_auth`
                     (workspace-local, shared with `jira` — see root CLAUDE.md's
                     "Shared library: crates/atlassian-auth" and BACKLOG.md's LIB-1)
-  client.rs       — ConfluenceClient (blocking reqwest); get_json/post_json/put_json
+  client.rs       — ConfluenceClient (blocking reqwest); get_json/post_json/put_json/delete
                     helpers; Confluence REST API methods spanning both API
                     generations [get_current_user, get_page, create_page,
-                    update_page, get_template, create_template, list_templates,
+                    update_page, delete_page, get_template, create_template,
+                    update_template, delete_template, list_templates,
                     search_content, list_spaces]
   cli.rs          — clap structs: Cli (--select global), Command, AuthCommand,
                     PageCommand, SpaceCommand, TemplateCommand. No logic.
@@ -65,7 +67,9 @@ more than one body source on `create`, and there's no way to declare "at
 least one of two optional flags" for `update` at all). `template.rs` has its
 own `tests/commands/template_tests.rs` covering `resolve_body` (same
 `--body`/`--body-file` resolution shape as `page.rs`'s, minus the
-`--template-id` branch). `space.rs` has no dedicated unit-test file — its one
+`--template-id` branch) and `resolve_optional_body` (the `template update`
+variant — `None`/`None` is valid here, unlike `resolve_body`, since it means
+"keep the current body" rather than "no content supplied"). `space.rs` has no dedicated unit-test file — its one
 command is a thin passthrough, covered entirely by `cli_tests.rs`. `auth.rs`
 is a thin wrapper over `atlassian_auth`
 (see "OAuth / auth design" below) — its own test file only guards this
@@ -111,7 +115,11 @@ Kept separate so automatic token writes never clobber the app identity — same 
 - **`template list`**: `GET /wiki/rest/api/template/page` (page-type templates specifically; Confluence also has a separate `/template/blueprint` listing not implemented here), offset pagination (`--start`/`--limit`, default 25), optional `--space-key` to scope to one space instead of listing global templates.
 - **`page update`**: Confluence v2 has no partial-patch endpoint — every `PUT /wiki/api/v2/pages/{id}` must submit the full page (title, body, version). This command fetches the current page first (reusing `get_page`) to learn its current title/body/version, then submits a full update with `--title`/`--body` overriding just those fields and `version.number` incremented by exactly one. At least one of `--title`/`--body` is required (`validate_update_target`) — otherwise the "update" would just resubmit unchanged content and bump the version number for no reason.
 - **`page search`**: `GET /wiki/rest/api/content/search` with a raw CQL string via `--cql`, offset pagination (`--start`/`--limit`, default 25). No CQL validation/building on the client side — same "pass the query language straight through" approach as `jira issue search --jql`.
+- **`page delete --purge`**: `DELETE /wiki/api/v2/pages/{id}` defaults to moving the page to Confluence's trash (recoverable) — not a permanent delete, unlike every other `--confirm`-gated delete in this workspace so far (`jira issue delete`, `bitbucket repo delete`). `?purge=true` requests permanent removal, but per Atlassian's own docs this only works on a page that's *already* trashed — a caller wanting a true one-shot permanent delete must call this command twice (plain, then `--purge`). Not yet live-verified what `purge=true` does against a non-trashed page (error vs. silently trashing it) — see "Known gaps". `client.rs`'s `delete_page` and the new `delete` helper expect Confluence's 204 No Content and return `Ok(())`, unlike every other client method here which returns the parsed response body — there is none to parse.
+- **Page position/ordering is read-only** — `page get`'s response includes a `position` field (a page's order among siblings, visible today via `--select position` with no extra code needed), but there is no documented Confluence Cloud endpoint to *change* it. Confirmed via the still-open Atlassian feature request [CONFCLOUD-40101](https://jira.atlassian.com/browse/CONFCLOUD-40101) ("Gathering Interest", not implemented) — the UI's drag-and-drop reorder uses something internal/undocumented. No `page move`/reorder command exists in this crate because there's nothing in the public API for it to call; revisit only if Atlassian ships this.
 - **`space list`**: `GET /wiki/api/v2/spaces`, cursor pagination (`--cursor`, from the previous response's `_links.next`) — v2's pagination style, distinct from `page search`'s v1 offset style. No `space get` yet; add one when a concrete need for fetching a single space by ID/key arises (root CLAUDE.md's incremental-build rule).
+- **`template update`**: same "no partial-patch" shape as `page update`, but `PUT /wiki/rest/api/template` is *not* ID-scoped in the URL the way `PUT /pages/{id}` is — `templateId` goes in the request body instead (`client.rs`'s `update_template` PUTs to the bare `PATH_TEMPLATE`, not a per-ID path — see `template_path` vs `PATH_TEMPLATE`). Fetches the current template via the existing `get_template` to fill in `name`/`templateType`/`body` (and `space.key`, if the fetched template has one) for whichever of `--name`/`--description`/`--body`(-file) weren't overridden. At least one of those four is required (`TemplateUpdateMissingTarget`) — same reasoning as `page update`. Not yet live-verified whether the `GET /wiki/rest/api/template/{id}` response actually includes a `space` object to read back (`current["space"]["key"]` is read defensively — if absent, `space` is simply omitted from the update body rather than assumed).
+- **`template delete`**: `DELETE /wiki/rest/api/template/{id}`, 204 No Content. Unlike `page delete`, Confluence's own docs describe content-template deletion as immediate and permanent — no trash/`--purge` distinction, so this command has only `--confirm`.
 - **`--select`/`--select-all`** (global flags, see root `CLAUDE.md`): `--select` is mandatory by default. Exempt commands (always print in full via `select.or_all()`) and why:
   | Command | Exempt? | Why |
   |---|---|---|
@@ -121,15 +129,20 @@ Kept separate so automatic token writes never clobber the app identity — same 
   | `page create` | **no** | response echoes back the full created page including body — same size risk as `page get`, unlike jira's `issue create` (which returns only `{id,key,self}`) |
   | `page update` | **no** | same reasoning as `page create` |
   | `page search` | **no** | list endpoint, unbounded |
+  | `page delete` | yes | synthesized by us: `{"deleted": true, "id": ..., "purged": bool}` — Confluence itself returns 204 No Content |
   | `space list` | **no** | list endpoint, unbounded |
   | `template create` | **no** | response echoes back the full created template including body — same reasoning as `page create` |
   | `template list` | **no** | list endpoint, unbounded |
+  | `template update` | **no** | same reasoning as `page create`/`page update` |
+  | `template delete` | yes | synthesized by us: `{"deleted": true, "id": ...}` — Confluence itself returns 204 No Content |
 
 ## Known gaps
 
-- **No e2e tests yet.** Login, `doctor`, and `auth whoami` have been verified live (see "OAuth / auth design" above), but `page get`/`create`/`update`/`search`, `space list`, and `template create`/`list` have only been verified against `--help` output, clap parsing, and unit-testable pure logic — not against a real Confluence site. Add `tests/e2e_tests.rs` (mirroring `jira`'s `IssueGuard`-style pattern: a `PageGuard`/`TemplateGuard` that deletes/removes resources created during tests) the first time these commands are exercised live — see the `add-confluence-command` skill's `ADDENDUM.md` for the live-test target once one is chosen.
-- **No `doctor` permission-scheme layer** — unlike `jira`'s `service_user`/`projects` checks (which walk Jira's `mypermissions` API per-project), `confluence doctor` stops at `oauth_scopes`. Confluence's space-permission model is a different API surface; add a check here once a command actually needs to distinguish "token has the right OAuth scope" from "this account has permission in this specific space." This also applies to `template create`'s Admin/Confluence-Administrator permission requirement, distinct from any OAuth scope.
+- **No e2e tests yet.** Login, `doctor`, and `auth whoami` have been verified live (see "OAuth / auth design" above), but `page get`/`create`/`update`/`search`/`delete`, `space list`, and `template create`/`list`/`update`/`delete` have only been verified against `--help` output, clap parsing, and unit-testable pure logic — not against a real Confluence site. Add `tests/e2e_tests.rs` (mirroring `jira`'s `IssueGuard`-style pattern: a `PageGuard`/`TemplateGuard` that deletes/removes resources created during tests) the first time these commands are exercised live — see the `add-confluence-command` skill's `ADDENDUM.md` for the live-test target once one is chosen.
+- **No `doctor` permission-scheme layer** — unlike `jira`'s `service_user`/`projects` checks (which walk Jira's `mypermissions` API per-project), `confluence doctor` stops at `oauth_scopes`. Confluence's space-permission model is a different API surface; add a check here once a command actually needs to distinguish "token has the right OAuth scope" from "this account has permission in this specific space." This also applies to `template create`/`update`/`delete`'s Admin/Confluence-Administrator permission requirement, distinct from any OAuth scope.
+- **`page delete --purge` against a non-trashed page is unverified** — see "API design notes" above.
+- **`template update`'s `space` carry-over is unverified** — whether `GET /wiki/rest/api/template/{id}` actually returns a `space` object to read back is not yet confirmed live; see "API design notes" above.
 
 ## Planned commands (build incrementally, smallest first)
 
-Candidates for the next concrete need, not committed yet: `space get <id-or-key>`, `page delete`, `template delete`, attachment upload/download, page label management. Follow root `CLAUDE.md`'s incremental-build rule — don't build these speculatively.
+Candidates for the next concrete need, not committed yet: `space get <id-or-key>`, attachment upload/download, page label management. Follow root `CLAUDE.md`'s incremental-build rule — don't build these speculatively. **Not planned**: page reordering/move — Confluence Cloud has no public API for it (see "API design notes" above), so there's nothing to build against.
