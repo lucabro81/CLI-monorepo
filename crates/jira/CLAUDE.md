@@ -15,9 +15,16 @@ src/
                     holds comment-add's mention-building logic (see below)
     user.rs       — run(UserCommand); dispatches user subcommands (search)
     project.rs    — run(ProjectCommand); dispatches project subcommands (search)
-  auth.rs         — OAuth infrastructure: OAuthConfig, Credentials, login(),
-                    login_client_credentials(), refresh(), renew(),
-                    save_credentials(), load_credentials(), path helpers
+  auth.rs         — thin wrapper over the shared `atlassian_auth` crate, fixing
+                    this crate's config dir name and OAuth SCOPES: OAuthConfig,
+                    Credentials, login(), login_client_credentials(), renew(),
+                    save_credentials(), load_credentials(), path helpers,
+                    get_granted_scopes(). The actual OAuth 2.0 (3LO + PKCE /
+                    client_credentials) implementation, PKCE helpers, callback
+                    parsing, and cloud_id resolution live in `atlassian_auth`
+                    (workspace-local, shared with `confluence` — see root
+                    CLAUDE.md's "Shared library: crates/atlassian-auth" and
+                    BACKLOG.md's LIB-1)
   client.rs       — JiraClient (blocking reqwest); get_json/post_json helpers;
                     all Jira API methods: get_issue, get_myself, get_my_permissions,
                     add_comment (takes pre-built ADF content nodes), delete_comment,
@@ -30,8 +37,9 @@ src/
                     print_json(value, select), client_error_to_cli(e) (shared
                     ClientError -> CliError mapping used by every command handler
                     that calls JiraClient). Shared by all command handlers.
-  endpoints.rs    — URL/path constants for Atlassian OAuth and Jira REST API v3,
-                    used by auth.rs and client.rs. No logic.
+  endpoints.rs    — URL/path constants for Jira REST API v3, used by client.rs.
+                    No logic. Atlassian OAuth endpoint constants live in
+                    `atlassian_auth::endpoints` instead (shared with confluence).
   error.rs        — CliError (top-level, thiserror-derived). Includes IoError
                     for stdin prompts in init, and a transparent Select variant
                     wrapping cli_fields::RenderError.
@@ -77,6 +85,8 @@ stays covered end-to-end via `cli_tests.rs` instead. `user.rs` and
 thin passthrough, covered entirely by `cli_tests.rs`.
 
 ## OAuth / auth design
+
+**Implementation lives in `atlassian-auth`** (workspace-local crate, `crates/atlassian-auth`), not in this crate — `auth.rs` here is a thin wrapper fixing the `jira-cli` config dir name and this crate's `SCOPES` constant. `confluence` uses the exact same underlying flows (same `auth.atlassian.com`/`api.atlassian.com` endpoints, same `cloud_id` resolution), just with its own scopes — see `BACKLOG.md`'s `LIB-1` for why this was extracted (this crate's OAuth logic was about to be duplicated a third time, byte-for-byte, when `confluence` was added) and `atlassian-auth`'s own module docs for what it deliberately does *not* cover (`bitbucket`'s native OAuth consumer, `atlassian-admin`'s static API key — both genuinely different auth models, not more instances of this duplication).
 
 Two grant types, both using `client_id`/`client_secret` from `app.json`:
 

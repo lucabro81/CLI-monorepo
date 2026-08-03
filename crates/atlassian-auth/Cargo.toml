@@ -1,0 +1,22 @@
+[package]
+name = "atlassian-auth"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+reqwest = { version = "0.12", features = ["blocking", "json"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rand = "0.8"
+sha2 = "0.10"
+base64 = "0.22"
+webbrowser = "1"
+serde_urlencoded = "0.7"
+thiserror = "1"
+
+[dev-dependencies]
+tempfile = "3"
