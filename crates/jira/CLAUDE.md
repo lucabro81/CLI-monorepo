@@ -154,7 +154,14 @@ Three independent layers, each surfaced as its own report key (see
 conceptual background):
 
 - **`oauth_scopes`** — OAuth scopes granted to the token, from the
-  accessible-resources endpoint (`auth::get_granted_scopes`). `error` if empty.
+  accessible-resources endpoint (`auth::get_granted_scopes`, delegating to
+  `atlassian_auth::get_granted_scopes`). `error` if empty. Correctly reports
+  the full grant even when the credential's scopes span multiple Atlassian
+  products (e.g. a Service Account shared with `confluence`) — Atlassian's
+  accessible-resources endpoint returns one entry per product for the same
+  site in that case, and this check unions all of them rather than only the
+  first (see `BACKLOG.md`'s `SCOPE-1` for the bug this fixed, discovered live
+  against exactly this crate's `doctor` output).
 - **`service_user`** — `GET /mypermissions` with no `projectKey`: lists which
   of `PERMISSION_KEYS` are granted *globally*. For project-scoped permission
   keys, Jira evaluates this as "true if true in at least one project" — it can
