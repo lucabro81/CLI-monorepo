@@ -20,7 +20,7 @@
 set -euo pipefail
 
 REPO="lucabro81/CLI-monorepo"
-CRATES=(jira bitbucket google-chat atlassian-admin)
+CRATES=(jira bitbucket google-chat atlassian-admin confluence)
 INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
 
 usage() {

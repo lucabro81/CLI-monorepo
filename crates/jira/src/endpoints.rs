@@ -1,22 +1,8 @@
-//! Centralized URL and path constants for the Atlassian OAuth and Jira REST API v3
-//! endpoints used by [`crate::auth`] and [`crate::client`]. Keeping these in one
-//! place avoids subtly inconsistent hardcoded strings spread across both modules.
-
-// ── Atlassian OAuth (auth.rs) ──────────────────────────────────────────────
-
-/// `audience` parameter required by both the `client_credentials` and
-/// `authorization_code` token requests.
-pub const ATLASSIAN_AUDIENCE: &str = "api.atlassian.com";
-
-/// Token endpoint for both OAuth grant types.
-pub const ATLASSIAN_TOKEN_URL: &str = "https://auth.atlassian.com/oauth/token";
-
-/// Authorization endpoint for the 3LO + PKCE flow.
-pub const ATLASSIAN_AUTHORIZE_URL: &str = "https://auth.atlassian.com/authorize";
-
-/// Resolves the `cloud_id` of the Jira site(s) accessible with a given access token.
-pub const ATLASSIAN_ACCESSIBLE_RESOURCES_URL: &str =
-    "https://api.atlassian.com/oauth/token/accessible-resources";
+//! Centralized URL and path constants for the Jira REST API v3 endpoints used
+//! by [`crate::client`]. Keeping these in one place avoids subtly inconsistent
+//! hardcoded strings spread across the module. Atlassian OAuth endpoints
+//! (used by `auth.rs`) live in the shared `atlassian_auth::endpoints` crate
+//! instead — see root `CLAUDE.md`'s "Shared library: crates/atlassian-auth".
 
 // ── Jira REST API v3 (client.rs) ───────────────────────────────────────────
 

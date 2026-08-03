@@ -2,28 +2,35 @@
 //! directory name, OAuth scopes) on top of the shared `atlassian_auth` crate,
 //! which implements the actual OAuth 2.0 (3LO + PKCE / `client_credentials`)
 //! flows, PKCE helpers, and `cloud_id` resolution — identical logic shared
-//! with `confluence`. See root `CLAUDE.md`'s "Shared library:
-//! crates/atlassian-auth" and `BACKLOG.md`'s `LIB-1` for why this was
-//! extracted, and this crate's own `CLAUDE.md` "OAuth / auth design" section
-//! for the two grant types and their tradeoffs.
+//! with `jira` (same `auth.atlassian.com`/`api.atlassian.com` platform). See
+//! root `CLAUDE.md`'s "Shared library: crates/atlassian-auth" and
+//! `BACKLOG.md`'s `LIB-1` for why this was extracted.
 
 use std::path::{Path, PathBuf};
 
 pub use atlassian_auth::{Credentials, LoginError, OAuthConfig, OAuthConfigError};
 
-const CLI_DIR: &str = "jira-cli";
+const CLI_DIR: &str = "confluence-cli";
 
 /// OAuth scopes requested by the 3LO authorization URL. `client_credentials`
 /// has no `scope` parameter of its own — it inherits whatever scopes were
 /// granted at credential-creation time (see this crate's CLAUDE.md).
-pub const SCOPES: &str = "read:jira-work read:jira-user write:jira-work offline_access";
+///
+/// Mixes classic and granular scopes because this crate's commands span both
+/// Confluence REST API versions: the v2 page/space endpoints have no classic
+/// scope equivalent (always need the granular form), while `auth whoami`
+/// (`GET /wiki/rest/api/user/current`) and CQL search are v1-only and use
+/// classic scopes. Not yet live-verified against a real 3LO app — see this
+/// crate's CLAUDE.md "OAuth / auth design" section.
+pub const SCOPES: &str =
+    "read:page:confluence write:page:confluence read:space:confluence read:confluence-user search:confluence offline_access";
 
-/// Path to the app credentials file: `<config_dir>/jira-cli/app.json`.
+/// Path to the app credentials file: `<config_dir>/confluence-cli/app.json`.
 pub fn app_config_path(config_dir: &Path) -> PathBuf {
     atlassian_auth::app_config_path(config_dir, CLI_DIR)
 }
 
-/// Path to the local credentials file: `<config_dir>/jira-cli/credentials.json`.
+/// Path to the local credentials file: `<config_dir>/confluence-cli/credentials.json`.
 pub fn credentials_path(config_dir: &Path) -> PathBuf {
     atlassian_auth::credentials_path(config_dir, CLI_DIR)
 }

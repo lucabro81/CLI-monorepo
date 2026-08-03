@@ -94,6 +94,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "atlassian-auth"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "rand 0.8.6",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "serde_urlencoded",
+ "sha2 0.10.9",
+ "tempfile",
+ "thiserror 1.0.69",
+ "webbrowser",
+]
+
+[[package]]
 name = "atomic-waker"
 version = "1.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -319,6 +335,22 @@ checksum = "ba5a308b75df32fe02788e748662718f03fde005016435c444eea572398219fd"
 dependencies = [
  "bytes",
  "memchr",
+]
+
+[[package]]
+name = "confluence"
+version = "0.1.0"
+dependencies = [
+ "atlassian-auth",
+ "clap",
+ "cli-fields",
+ "dirs",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "serde_urlencoded",
+ "tempfile",
+ "thiserror 1.0.69",
 ]
 
 [[package]]
@@ -1319,20 +1351,17 @@ checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
 name = "jira"
 version = "0.5.0"
 dependencies = [
- "base64",
+ "atlassian-auth",
  "clap",
  "cli-fields",
  "dirs",
  "dotenvy",
- "rand 0.8.6",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
  "serde_urlencoded",
- "sha2 0.10.9",
  "tempfile",
  "thiserror 1.0.69",
- "webbrowser",
 ]
 
 [[package]]

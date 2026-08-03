@@ -1,10 +1,11 @@
-# git-cliff configuration shared by jira, bitbucket, and google-chat.
+# git-cliff configuration shared by every releasable crate in this workspace
+# (jira, bitbucket, google-chat, atlassian-admin, confluence, ...).
 #
 # Per-invocation scoping (--tag-pattern, --include-path, --tag) is passed as
 # CLI flags by cargo-release's pre-release-hook (see each crate's
 # [package.metadata.release] in its own Cargo.toml), not hardcoded here,
-# since this one file serves all three crates independently — tags are
-# shared across the whole repo (jira-v*, bitbucket-v*, google-chat-v*), so
+# since this one file serves every crate independently — tags are shared
+# across the whole repo (jira-v*, bitbucket-v*, confluence-v*, ...), so
 # each invocation must scope itself to its own crate's tag lineage.
 
 [changelog]
