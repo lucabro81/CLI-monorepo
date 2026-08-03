@@ -122,7 +122,8 @@ With auth design (step 2) and command pool (step 3) agreed:
   the structure of `crates/jira/.claude/skills/add-jira-command/ADDENDUM.md`
   or `crates/bitbucket/.claude/skills/add-bitbucket-command/ADDENDUM.md`:
   permission/scope check location, API docs URL, e2e conventions (or "no e2e
-  yet" if deferred), BACKLOG ID prefix for this crate.
+  yet" if deferred), the crate's GitHub issue scope label (add it to root
+  `CLAUDE.md`'s scope-label list if new).
 - Root `README.md` — add the crate's row to the CLI registry table (per root
   `CLAUDE.md`'s Development approach).
 
@@ -166,9 +167,10 @@ same as adding any command to an existing crate.
 
 Same shape as `add-cli-command`'s step 10: what was created (crate, files,
 commits), the tracking issue/branch/PR from step 0, the auth design decided
-and why, the command pool and rationale, any `BACKLOG.md` entries added (e.g.
-a new shared-library candidate flagged but deferred), and a "needs human
-review" section — most importantly **any human-side setup required**
+and why, the command pool and rationale, any GitHub issues opened for edge
+cases/design notes (e.g. a new shared-library candidate flagged but
+deferred), and a "needs human review" section — most importantly **any
+human-side setup required**
 (creating an OAuth app/consumer, granting scopes/permissions) before
 `doctor`/`init` can pass for real.
 

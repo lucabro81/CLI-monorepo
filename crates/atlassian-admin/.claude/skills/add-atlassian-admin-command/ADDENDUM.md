@@ -53,6 +53,7 @@ check per command (verify a known real `account_id` resolves), not a
 multi-step lifecycle test like bitbucket's pr lifecycle, since this API's
 surface is read-only lookups, not create/mutate/delete sequences.
 
-## BACKLOG.md prefix
+## GitHub issue scope label
 
-Use `ADMIN-` for new entries as commands are implemented.
+Use the `atlassian-admin` label (per root `CLAUDE.md`'s "Tracking known
+issues and design notes") for new entries as commands are implemented.

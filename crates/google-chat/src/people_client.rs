@@ -21,7 +21,7 @@
 //!
 //! Only resolves users within the same Google Workspace domain as the
 //! authenticated identity — a documented, accepted limitation (see
-//! BACKLOG.md GCHAT-5).
+//! issue #91).
 
 use crate::endpoints;
 use crate::error::CliError;

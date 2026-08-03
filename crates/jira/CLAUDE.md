@@ -204,6 +204,15 @@ Issues") is needed by `jira issue assign`.
 | `user search --query <TEXT>` | GET /user/search; requires "Browse users and groups" (`USER_PICKER`), fails silently (empty list) without it |
 | `project search --query <TEXT>` | GET /project/search; literal substring/prefix filter on key+name, no dedicated permission beyond what `doctor`'s `projects` check already exercises |
 
-## Known edge cases (see BACKLOG.md)
+## Known edge cases
 
-FIELDS-1..4, AUTH-1..2, CREATE-1..2, DELETE-1.
+Tracked as GitHub issues labeled `jira` (plus `cli-fields` for the
+--fields/--select edge cases, since that logic now lives in the shared
+crate): #66-#69 (cli-fields edge cases), #70 (OAuth callback error param),
+#71 (empty --summary), #72 (issue types command), #73 (delete-subtasks
+400), #74 (assign to non-assignable account, unverified), #75 (OAuthConfig
+validation), #76 (doctor permissions map), #77 (comment get command), #78
+(JQL shorthand flags), #79 (trim --help descriptions), #80 (429 rate
+limiting), #81 (cloud_id resolution). See root CLAUDE.md's "Tracking known
+issues and design notes" for the label convention; `gh issue list --label
+jira` lists current entries.

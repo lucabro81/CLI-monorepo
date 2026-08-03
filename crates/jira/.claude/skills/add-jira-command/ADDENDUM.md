@@ -2,8 +2,8 @@
 
 Read alongside `.claude/skills/add-cli-command/SKILL.md` (workspace root) and
 `crates/jira/CLAUDE.md` (already covers module map, OAuth/auth design, API
-design notes, command table, BACKLOG prefixes — don't repeat that here, only
-what's missing for the skill's process).
+design notes, command table, GitHub issue label conventions — don't repeat
+that here, only what's missing for the skill's process).
 
 Section headings below match `SKILL.md`'s step numbers — only steps where
 this crate deviates from or adds to the generic skill are covered here.

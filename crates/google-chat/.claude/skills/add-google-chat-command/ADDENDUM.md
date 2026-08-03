@@ -33,8 +33,8 @@ Docs: `https://developers.google.com/workspace/chat/api/reference/rest`
   project/site the way Jira does, and `spaces list`/`messages list` are the
   only commands e2e-covered so far — they touch nothing. `messages send`
   creates real, visible messages in spaces shared with real colleagues, and
-  is deliberately **not** e2e-covered automatically — see `BACKLOG.md`
-  GCHAT-2. Don't add an automated/repeated e2e test that sends messages to a
+  is deliberately **not** e2e-covered automatically — see issue #90. Don't
+  add an automated/repeated e2e test that sends messages to a
   real space without explicit user sign-off (and only after the people in
   that space have been told what's being tested).
 - **No isolation/cleanup needed**: unlike jira's `IssueGuard`, these tests
@@ -49,6 +49,7 @@ Docs: `https://developers.google.com/workspace/chat/api/reference/rest`
   the response is well-formed (right top-level keys/types) rather than
   asserting specific content, since real account data will vary over time.
 
-## BACKLOG prefix
+## GitHub issue scope label
 
-Use `GCHAT-` for entries added to `BACKLOG.md` for this crate.
+Use the `google-chat` label (per root `CLAUDE.md`'s "Tracking known issues
+and design notes") for new entries as commands are implemented.

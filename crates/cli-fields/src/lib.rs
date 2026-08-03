@@ -1,7 +1,8 @@
 //! Shared `--select` field-projection support for this workspace's LLM-facing
 //! CLIs (jira, bitbucket, google-chat). Extracted because all three crates
 //! implemented the exact same dot-notation JSON projection independently —
-//! see this workspace's BACKLOG.md for the extraction rationale.
+//! see this workspace's root CLAUDE.md "Shared library: crates/cli-fields"
+//! section for the extraction rationale.
 
 mod fields;
 mod select;

@@ -53,7 +53,7 @@ src/
                     GoogleChatClient, different base URL/scope
                     (directory.readonly). Only resolves users in the same
                     Workspace domain as the authenticated identity
-                    (BACKLOG.md GCHAT-5).
+                    (issue #91).
   cli.rs          — clap structs: Cli (--select global), Command, AuthCommand,
                     SpacesCommand, MessagesCommand, SubscriptionCommand. No logic.
   context.rs      — config_dir(), load_oauth_config(), authenticated_credentials(),
@@ -145,7 +145,7 @@ resource name (`spaces/{space}`) under whichever identity is authenticated
    `client_email`/`private_key` from the downloaded key and
    `impersonate_user` set to the service user's email.
 
-**Status: not yet activated** (see `BACKLOG.md` GCHAT-1). The code above is
+**Status: not yet activated** (see issue #89). The code above is
 implemented and unit-tested, but step 2-3 need a Workspace super-admin, not
 available right now. This is planned, not abandoned — it'll be turned on as
 soon as that access is available, with no code changes needed. Until then,
@@ -180,7 +180,7 @@ delegation (this crate's default `auth login`) counts as user authentication
 both of this crate's auth modes support it, not just `--user` (3LO) — the
 `--user` path is what was actually verified live, the
 service-account path is inferred from Google's docs, same as every other
-scope here (GCHAT-1). Re-consenting to a newly-added scope needs a
+scope here (issue #89). Re-consenting to a newly-added scope needs a
 genuinely fresh interactive `auth login --user`; if that keeps returning the
 old scope set, check the local OAuth callback server actually completed
 rather than assuming a Google-side propagation delay — a stale process still
@@ -277,7 +277,7 @@ Both files live under `$XDG_CONFIG_HOME/google-chat-cli/` (falling back to
   own separate, visibly-distinct member, which contradicts the actual goal
   (the authenticated identity behaves like an ordinary, indistinguishable
   space member, not a separate bot). Same-Workspace-domain-only limitation
-  applies (`BACKLOG.md` GCHAT-5).
+  applies (issue #91).
 - **`--select`/`--select-all`** (global flags, see root `CLAUDE.md`): `--select` is mandatory by default; omitting both flags fails with the response's byte size and top-level fields instead of printing. `--select-all` is the explicit stateless opt-out. Exempt commands (always print in full via `select.or_all()` at their `print_json` call site) and why:
   | Command | Exempt? | Why |
   |---|---|---|
@@ -412,11 +412,11 @@ Both files live under `$XDG_CONFIG_HOME/google-chat-cli/` (falling back to
 
 | Command | Notes |
 |---------|-------|
-| `auth login [--user]` | Default: domain-wide-delegation (service account, no browser) — implemented, not yet verified live (GCHAT-1). `--user`: interactive OAuth 2.0 + PKCE — verified live, current day-to-day path |
+| `auth login [--user]` | Default: domain-wide-delegation (service account, no browser) — implemented, not yet verified live (issue #89). `--user`: interactive OAuth 2.0 + PKCE — verified live, current day-to-day path |
 | `doctor` | Cascading JSON health check (app_config, credentials, api); exit non-zero on any failure. Verified live against a real Workspace via the `--user` flow. |
 | `init [--client-id --client-secret]` | Human onboarding; only command with narrative output. `write_app_config` preserves an existing `service_account` block across reruns. |
 | `spaces list [--page-size --page-token]` | Lists spaces (`spaces.list`) the authenticated identity belongs to. Verified live — real spaces returned, types (`SPACE`/`GROUP_CHAT`/`DIRECT_MESSAGE`) confirmed. |
-| `spaces members list --space <id> [--page-size --page-token]` | Lists a space's members (`spaces.members.list`), resolving each `HUMAN` member to their People API profile — the same enrichment `users get` does, applied to a whole space. Returns `{"members": [...], "unresolved": [...], "nextPageToken": ...}`: `unresolved` collects members that couldn't be resolved (non-`HUMAN`, e.g. a chat app/bot member — skipped without a network call — or a People API failure, e.g. cross-domain human, same limitation as `users get`, BACKLOG.md GCHAT-5) with a `reason`, instead of failing the whole command (`build_members_response` in `commands/spaces.rs`, unit-tested via an injected `resolve` closure). Requires `chat.memberships.readonly` + `directory.readonly` (both already granted for `subscription create`/`users get` respectively) — no new scope needed. Verified live against a real 2-member space: both members resolved with correct display names and emails; the `unresolved` path (non-`HUMAN`/failed resolution) is covered by unit tests only, not observed live (no accessible test space currently has a bot/cross-domain member). |
+| `spaces members list --space <id> [--page-size --page-token]` | Lists a space's members (`spaces.members.list`), resolving each `HUMAN` member to their People API profile — the same enrichment `users get` does, applied to a whole space. Returns `{"members": [...], "unresolved": [...], "nextPageToken": ...}`: `unresolved` collects members that couldn't be resolved (non-`HUMAN`, e.g. a chat app/bot member — skipped without a network call — or a People API failure, e.g. cross-domain human, same limitation as `users get`, issue #91) with a `reason`, instead of failing the whole command (`build_members_response` in `commands/spaces.rs`, unit-tested via an injected `resolve` closure). Requires `chat.memberships.readonly` + `directory.readonly` (both already granted for `subscription create`/`users get` respectively) — no new scope needed. Verified live against a real 2-member space: both members resolved with correct display names and emails; the `unresolved` path (non-`HUMAN`/failed resolution) is covered by unit tests only, not observed live (no accessible test space currently has a bot/cross-domain member). |
 | `spaces create --user <user> [--user <user> ...]` | Creates a new space, or returns an existing one (`spaces.setup`), given user identifiers instead of a pre-existing `--space` — the entry point for messaging someone never interacted with before. One `--user` creates/finds a `DIRECT_MESSAGE` (idempotent on Google's side: an existing DM is returned, not duplicated); two or more create an unnamed `GROUP_CHAT`. Requires the `chat.spaces.create` scope (re-run `auth login`/`auth login --user` to re-consent if you logged in before this command was added). Verified live 2026-07-21: `--user <own email>` correctly rejected with `400 INVALID_ARGUMENT` (can't add the calling user as a membership); `--user mauro.seno@comperio.it` (a colleague with a pre-existing DM, `spaces/ud85UsAAAAE`) returned that exact existing space instead of creating a duplicate — idempotency confirmed, zero new state created. Creating a genuinely new DM and a `GROUP_CHAT` (2+ users) were not separately exercised live — no safe test target for either without contacting someone new. |
 | `messages list --space <id> [--page-size --page-token --order-by]` | Lists messages in a space (`spaces.messages.list`). Chronological by default (`createTime ASC`, the Chat API's own default) — the context-recovery path for an agent resuming after a gap or summarization. `--order-by "createTime DESC"` gets the most recent first. `--space` accepts bare id or full `spaces/{id}`. Verified live against real conversation history both orderings, both id forms. |
 | `messages send --space <id> --text <text>` | Creates a message (`spaces.messages.create`) in a space; prints the created Message (including its `name`). Not gated by `--confirm` — visible but not data-destructive. Verified live: real message delivered and visible to the other party, both `--space` id forms confirmed. |
@@ -427,13 +427,17 @@ Both files live under `$XDG_CONFIG_HOME/google-chat-cli/` (falling back to
 | `subscription get --name <name>` | Fetches a single Workspace Events subscription by name (`subscriptions.get`) — e.g. to check `expireTime` without waiting for `listen` to renew implicitly. Always prints in full regardless of `--select` — single, fixed-shape object. Same scopes as `spaces list`, no new scope needed. Verified live against a real subscription. |
 | `subscription list --event-type <type> [--event-type ...] [--space <id>] [--page-size --page-token]` | Lists Workspace Events subscriptions (`subscriptions.list`) for the authenticated identity. `--event-type` is required and repeatable (the API itself requires at least one event type per query; multiple are OR'd); `--space` additionally restricts to one space's `target_resource` (both combined into the API's query-string `filter` grammar by the pure, unit-tested `build_list_filter` in `events_client.rs`, following the same body-builder-extraction pattern as `build_subscription_body`/`build_pubsub_subscription_body`). Mandatory `--select` like other list commands — the result set is unbounded. Same scopes as `spaces list`, no new scope needed. Verified live: listed real subscriptions, `--space` filter confirmed to narrow results correctly. |
 | `listen --pubsub-subscription <sub> --workspace-events-subscription <name> [--max-messages N]` | Streams messages from a Pub/Sub subscription via `google-cloud-pubsub`, printing each as NDJSON and acking it. Refreshes its own token every 5 min and renews the Workspace Events subscription's TTL every 30 min, both in the background; stops cleanly on SIGINT/SIGTERM. Verified live — a real `messages send` was received and printed within ~2s, `kill -TERM <pid>` exited cleanly, and the renewal PATCH call was confirmed directly (pushed `expireTime` out another ~4h, same scopes, no extra scope needed). Neither background task's periodic *trigger* was observed firing during an actual `listen` run (would need a 5/30-minute-long session) — the calls they invoke were verified directly instead. |
-| `users get --user <id>` | Resolves a Chat user id (`users/{id}`, from a message's `sender.name`) to a display name and email address via the People API (`people.get`, `personFields=names,emailAddresses`) — the Chat API itself doesn't expose this under either auth mode (confirmed live: a message's `sender` only ever has `name`/`type`, no `displayName`). Requires the `directory.readonly` scope (re-run `auth login --user` if logged in before this command existed) and the People API enabled on the underlying Google Cloud project. `directory.readonly` is already sufficient for `emailAddresses` per Google's People API scope docs — no extra scope or re-consent needed when the email field was added. Only resolves users in the same Workspace domain as the authenticated identity (BACKLOG.md GCHAT-5). Always prints in full regardless of `--select` — single, small, fixed-shape profile object. Verified live: resolved two real `users/{id}` values (both full and bare-id forms) to their real display names, confirmed the People API must be separately enabled on the GCP project (`SERVICE_DISABLED` otherwise, even with the scope granted), and confirmed the `emailAddresses` field is populated (a real sender resolved to a real work email) once `personFields` was extended. |
+| `users get --user <id>` | Resolves a Chat user id (`users/{id}`, from a message's `sender.name`) to a display name and email address via the People API (`people.get`, `personFields=names,emailAddresses`) — the Chat API itself doesn't expose this under either auth mode (confirmed live: a message's `sender` only ever has `name`/`type`, no `displayName`). Requires the `directory.readonly` scope (re-run `auth login --user` if logged in before this command existed) and the People API enabled on the underlying Google Cloud project. `directory.readonly` is already sufficient for `emailAddresses` per Google's People API scope docs — no extra scope or re-consent needed when the email field was added. Only resolves users in the same Workspace domain as the authenticated identity (issue #91). Always prints in full regardless of `--select` — single, small, fixed-shape profile object. Verified live: resolved two real `users/{id}` values (both full and bare-id forms) to their real display names, confirmed the People API must be separately enabled on the GCP project (`SERVICE_DISABLED` otherwise, even with the scope granted), and confirmed the `emailAddresses` field is populated (a real sender resolved to a real work email) once `personFields` was extended. |
 
 ## Planned commands
 
 (none — new commands land as concrete needs arise, per root CLAUDE.md's incremental approach)
 
-## Known edge cases (see BACKLOG.md)
+## Known edge cases
 
-See `BACKLOG.md` GCHAT-1 through GCHAT-5. Use prefix `GCHAT-` for new entries
-as commands are implemented.
+Tracked as GitHub issues labeled `google-chat` (per root CLAUDE.md's
+"Tracking known issues and design notes"): #89 (service-account/DWD login
+not yet activated), #90 (send/update/delete lack e2e coverage), #91 (users
+get only resolves same-Workspace-domain users). `gh issue list --label
+google-chat` lists current entries; use the same label for new ones as
+commands are implemented.

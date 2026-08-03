@@ -300,7 +300,7 @@ fn fields_flag_accepted_after_subcommand() {
 #[test]
 fn comment_add_accepts_empty_body() {
     // clap does not reject empty strings — an LLM could pass --body "".
-    // Whether to reject at runtime is a separate concern (see BACKLOG).
+    // Whether to reject at runtime is a separate concern, not currently tracked.
     let cli = Cli::try_parse_from(["jira", "issue", "comment", "add", "KAN-1", "--body", ""])
         .expect("should parse");
 
@@ -316,7 +316,7 @@ fn comment_add_accepts_empty_body() {
 
 #[test]
 fn fields_flag_with_trailing_comma_parses_as_string() {
-    // BACKLOG FIELDS-1: trailing comma produces an empty segment after split in run().
+    // issue #66: trailing comma produces an empty segment after split in run().
     // This test documents that clap accepts the raw string; trimming/filtering is run()'s job.
     let cli =
         Cli::try_parse_from(["jira", "issue", "get", "KAN-4", "--select", "summary,"])
@@ -474,7 +474,7 @@ fn rejects_issue_delete_missing_key() {
 #[test]
 fn issue_create_accepts_empty_summary() {
     // clap does not reject empty strings — Jira will return 400 at runtime.
-    // Documents current behaviour; see BACKLOG CREATE-1.
+    // Documents current behaviour; see issue #71.
     let cli = Cli::try_parse_from([
         "jira", "issue", "create",
         "--project", "KAN", "--type", "Task", "--summary", "",

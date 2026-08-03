@@ -41,6 +41,20 @@ Every feature-sized piece of work (a new crate, a new command, or comparable sco
 
 Applies to work driven by the `new-cli-crate` and `add-cli-command` skills (see each skill's step 0) and to any other feature-sized request handled outside those skills.
 
+## Tracking known issues and design notes
+
+Known edge cases, deferred fixes, and design notes (documented tradeoffs that aren't scheduled) are tracked as GitHub issues, not in a `BACKLOG.md` file (retired 2026-08-03 in favor of this). Use labels instead of an ID prefix per crate:
+
+- **Type** (pick one): `bug`, `enhancement`, `tech-debt` (internal robustness/coverage improvement, not user-facing), `design-note` (a decision already made and documented, not scheduled to change), `needs-verification` (implemented but not confirmed live).
+- **Scope** (pick one): the crate name (`jira`, `bitbucket`, `google-chat`, `cli-fields`, `atlassian-auth`, `atlassian-admin`, `confluence`) or `cross-crate` for anything spanning multiple crates or repo-wide tooling/CI.
+
+```sh
+gh issue create --title "<crate>: <short description>" --label "<type>,<scope>" --body "<what was found, current behaviour, why deferred, what a fix would look like>"
+gh issue list --label <scope>   # check existing entries for a crate before adding a new command
+```
+
+This is a separate, lighter-weight track from "Feature workflow" above — a backlog note doesn't need a plan or a linked branch, since nobody is implementing it yet.
+
 ## Structure convention for each crate
 
 Every crate follows the same layout:

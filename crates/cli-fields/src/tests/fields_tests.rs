@@ -107,11 +107,11 @@ fn multiple_paths_share_prefix_merged() {
     );
 }
 
-// --- Edge cases (BACKLOG FIELDS-1, FIELDS-2, FIELDS-3, FIELDS-4) ---
+// --- Edge cases (issues #66, #67, #68, #69) ---
 
 #[test]
 fn empty_string_field_path_produces_empty_object() {
-    // BACKLOG FIELDS-1: split(',') on a trailing comma yields ""; documents current behaviour.
+    // issue #66: split(',') on a trailing comma yields ""; documents current behaviour.
     let value = json!({"summary": "x"});
 
     assert_eq!(filter_fields(value, &[""]), json!({}));
@@ -119,7 +119,7 @@ fn empty_string_field_path_produces_empty_object() {
 
 #[test]
 fn all_fields_missing_returns_empty_object() {
-    // BACKLOG FIELDS-2: caller gets {} with no error when all paths are wrong.
+    // issue #67: caller gets {} with no error when all paths are wrong.
     let value = json!({"summary": "x", "status": "open"});
 
     assert_eq!(filter_fields(value, &["nonexistent", "also.missing"]), json!({}));
@@ -127,7 +127,7 @@ fn all_fields_missing_returns_empty_object() {
 
 #[test]
 fn nested_path_where_intermediate_is_null_returns_null() {
-    // BACKLOG FIELDS-3: status is null; .name segment hits other => clone arm.
+    // issue #68 (closed wontfix, documented behaviour): status is null; .name segment hits other => clone arm.
     let value = json!({"status": null, "noise": true});
 
     assert_eq!(
@@ -138,7 +138,7 @@ fn nested_path_where_intermediate_is_null_returns_null() {
 
 #[test]
 fn nested_path_where_intermediate_is_scalar_returns_scalar() {
-    // BACKLOG FIELDS-4: status is a string, not an object; .name is silently ignored.
+    // issue #69: status is a string, not an object; .name is silently ignored.
     let value = json!({"status": "open", "noise": true});
 
     assert_eq!(

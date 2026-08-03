@@ -2,8 +2,8 @@
 
 Read alongside `.claude/skills/add-cli-command/SKILL.md` (workspace root) and
 `crates/bitbucket/CLAUDE.md` (already covers module map, auth/scope design,
-API design notes, command tables, BACKLOG prefixes — don't repeat that here,
-only what's missing for the skill's process).
+API design notes, command tables, GitHub issue label conventions — don't
+repeat that here, only what's missing for the skill's process).
 
 Section headings below match `SKILL.md`'s step numbers — only steps where
 this crate deviates from or adds to the generic skill are covered here.
@@ -12,7 +12,7 @@ Steps not listed (3-5, 7-9) follow `SKILL.md` as-is.
 ## Step 1 — Scope
 
 - A new OAuth scope requires editing the workspace OAuth consumer (Settings →
-  OAuth consumers → edit) — a one-time human step. Per `DOCTOR-1`, do **not**
+  OAuth consumers → edit) — a one-time human step. Per issue #76, do **not**
   add a new key to `doctor`'s permissions check for this; it reports
   `granted_scopes` as-is.
 
@@ -44,7 +44,7 @@ workspace/repo slug is needed.
   hammering the API and to match other crates' convention.
 - **Sync with other checks**: n/a currently — `doctor`'s `permissions` check
   reports raw `granted_scopes` with no fixed permission map to keep in sync
-  (see `DOCTOR-1`).
+  (see issue #76).
 - **Running**:
   ```sh
   cargo test -p bitbucket -- --ignored --test-threads=1

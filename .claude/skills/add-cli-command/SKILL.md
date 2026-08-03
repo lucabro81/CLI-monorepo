@@ -38,7 +38,7 @@ Read, in order:
 3. `crates/<crate>/.claude/skills/add-<crate>-command/ADDENDUM.md` — the
    crate-specific facts this skill refers to throughout: API docs URL,
    pagination style, scope/permission system and where it's checked,
-   destructive-command precedent, BACKLOG ID prefixes, live-test
+   destructive-command precedent, GitHub issue scope label, live-test
    target (project/site/workspace), and whether e2e tests exist.
 
 All three are short. If the addendum is missing or a crate has none yet,
@@ -53,9 +53,9 @@ briefing is the most important step: the rest of this skill runs largely
 unsupervised, so anything not pinned down here becomes an assumption baked
 into the implementation.
 
-Check `BACKLOG.md` (workspace root) for existing entries with the addendum's
-ID prefixes — a planned edge case or design note may be directly relevant to
-the command being added.
+Check open GitHub issues for this crate (`gh issue list --label <crate>`, per
+root `CLAUDE.md`'s "Tracking known issues and design notes") — a planned edge
+case or design note may be directly relevant to the command being added.
 
 - **Command shape**: top-level (`Command` enum) or subcommand of an existing
   group (per the addendum's command-group list)? Exact name — long,
@@ -217,8 +217,9 @@ correct it, and re-run the full loop — don't patch around it locally.
   annotations, and the "Implemented commands"/"Planned commands" tables.
   Update "API design notes" if this introduced a new pattern (new pagination
   style, new HTTP method helper, etc.).
-- `BACKLOG.md` (workspace root): note any edge cases discovered but not
-  handled, with an ID following the addendum's prefix convention.
+- Open a GitHub issue for any edge case discovered but not handled, labeled
+  `<type>,<crate>` (per root `CLAUDE.md`'s "Tracking known issues and design
+  notes") — not a `BACKLOG.md` note.
 - Commit in small atomic units per root CLAUDE.md (e.g. one commit for
   client+endpoints+cli+handler+unit tests+docs if it's genuinely one logical
   unit, separate commits for unrelated refactors or backlog notes). Each

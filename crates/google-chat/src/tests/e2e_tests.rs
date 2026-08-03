@@ -22,8 +22,8 @@
 //! `spaces.list` and `messages.list` only. `messages send` creates real,
 //! visible messages in spaces shared with real people (colleagues), and
 //! `messages delete` permanently removes real messages, so neither is
-//! covered by an automated/repeatable e2e test — see `BACKLOG.md` GCHAT-2
-//! for the reasoning. Manual live verification (as done while implementing
+//! covered by an automated/repeatable e2e test — see issue #90 for the
+//! reasoning. Manual live verification (as done while implementing
 //! each command) is the only check for both.
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
@@ -238,7 +238,7 @@ fn e2e_messages_list_on_designated_test_space_succeeds() {
     // Unlike e2e_messages_list_on_first_space_succeeds (whatever space
     // happens to be first for this account), this targets the specific
     // space designated safe for repeated automated checks — the
-    // prerequisite BACKLOG.md's GCHAT-2 needs before messages send/delete
+    // prerequisite issue #90 needs before messages send/delete
     // can get their own automated e2e coverage.
     let response = client
         .list_messages(&space, 10, None, None)

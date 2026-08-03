@@ -264,7 +264,7 @@ single user, applied to every member of a space. Returns
 `members` holds the resolved People API profile for each `HUMAN` member;
 `unresolved` lists members that couldn't be resolved (e.g. a chat app/bot
 member, or a human in a different Workspace domain — same limitation as
-`users get`, see `BACKLOG.md` GCHAT-5) with a `reason`, instead of failing
+`users get`, see issue #91) with a `reason`, instead of failing
 the whole command. Requires the `chat.memberships.readonly` and
 `directory.readonly` scopes (both already requested by `auth login`; no new
 scope or re-consent needed if you've already run `users get` before).
@@ -571,7 +571,7 @@ added) and the People API enabled on the underlying Google Cloud project
 **Only resolves users in the same Google Workspace domain as the
 authenticated identity** — a sender from a different domain, or a personal
 Gmail account, fails with a `403 PERMISSION_DENIED` instead of a name (see
-`BACKLOG.md` GCHAT-5).
+issue #91).
 
 ```sh
 cargo run -p google-chat -- users get --user users/108506379394699518479
@@ -610,7 +610,7 @@ the normal test suite. Unlike jira, coverage is deliberately **read-only**:
 `messages send` creates real, visible messages
 in spaces shared with real people, and `messages delete` permanently removes
 real messages, so both are covered only by manual `cargo run` testing during
-development, not by an automated test (see `BACKLOG.md` GCHAT-2).
+development, not by an automated test (see issue #90).
 `subscription create` (creates real GCP subscriptions) and `listen` (a
 long-running process) are likewise only covered by manual testing, not
 automated e2e tests.
