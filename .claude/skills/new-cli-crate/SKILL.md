@@ -42,13 +42,22 @@ than barrel ahead.
    viable or whether a 3LO/PKCE-style human consent step is unavoidable,
    token lifetime/refresh behavior, scope model, and any multi-tenancy
    concept analogous to jira's `cloud_id` or bitbucket's workspace slug.
-2. **Check for reuse first.** If this service's OAuth shape resembles an
-   existing crate (Atlassian-family, or otherwise), read that crate's
-   `auth.rs` and `CLAUDE.md` "Auth design" section, and check
-   [[BACKLOG.md]] for `LIB-1` (shared Atlassian-auth library, currently
-   deferred pending a third crate). If this crate would be that third
-   instance, raise it explicitly with the user — this may be the point where
-   `LIB-1` stops being premature.
+2. **Check for reuse first.** If this service authenticates against the
+   Atlassian identity platform (`auth.atlassian.com`/`api.atlassian.com` —
+   the same platform `jira` and `confluence` use), it should almost
+   certainly depend on the existing `crates/atlassian-auth` shared library
+   (see root `CLAUDE.md`'s "Shared library: crates/atlassian-auth") rather
+   than duplicating auth code again — read `jira`'s or `confluence`'s
+   `auth.rs` for the thin-wrapper pattern to follow. If this service's OAuth
+   shape instead resembles an existing crate's *without* actually being the
+   same platform (e.g. bitbucket's native OAuth consumer, a different
+   provider entirely), read that crate's `auth.rs` and `CLAUDE.md` "Auth
+   design" section and judge on the merits whether a new shared library is
+   warranted — don't force a fit into `atlassian-auth`'s API just because
+   the shape is superficially similar (see root `CLAUDE.md`'s "Shared
+   library: crates/atlassian-auth" for the reasoning on why bitbucket and
+   atlassian-admin were deliberately kept out of that library despite being
+   Atlassian-family crates themselves).
 3. **Decide and confirm with the user** (AskUserQuestion for anything
    ambiguous): grant type, scopes needed for the baseline commands (step 2),
    config file layout (`app.json` / `credentials.json` under
@@ -139,8 +148,8 @@ same as adding any command to an existing crate.
 
 Same shape as `add-cli-command`'s step 9: what was created (crate, files,
 commits), the auth design decided and why, the command pool and rationale,
-any `BACKLOG.md` entries added (e.g. if `LIB-1` was acted on or deferred
-again), and a "needs human review" section — most importantly **any
+any `BACKLOG.md` entries added (e.g. a new shared-library candidate flagged
+but deferred), and a "needs human review" section — most importantly **any
 human-side setup required** (creating an OAuth app/consumer, granting
 scopes/permissions) before `doctor`/`init` can pass for real.
 

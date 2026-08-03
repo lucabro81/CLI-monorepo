@@ -4,11 +4,11 @@ use std::path::{Path, PathBuf};
 
 use super::{app_config_path, credentials_path, SCOPES};
 
-// `auth.rs` is now a thin wrapper over `atlassian_auth` (see BACKLOG.md's
-// LIB-1) — the OAuth flows, PKCE helpers, and callback parsing it delegates
-// to are covered by that crate's own test suite. These tests only guard the
-// two things that are actually jira-specific: which config directory this
-// crate's paths resolve under, and what scopes it requests.
+// `auth.rs` is now a thin wrapper over `atlassian_auth` — the OAuth flows,
+// PKCE helpers, and callback parsing it delegates to are covered by that
+// crate's own test suite. These tests only guard the two things that are
+// actually jira-specific: which config directory this crate's paths
+// resolve under, and what scopes it requests.
 
 #[test]
 fn credentials_path_is_under_jira_cli_dir() {

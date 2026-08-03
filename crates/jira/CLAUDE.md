@@ -23,8 +23,7 @@ src/
                     client_credentials) implementation, PKCE helpers, callback
                     parsing, and cloud_id resolution live in `atlassian_auth`
                     (workspace-local, shared with `confluence` — see root
-                    CLAUDE.md's "Shared library: crates/atlassian-auth" and
-                    BACKLOG.md's LIB-1)
+                    CLAUDE.md's "Shared library: crates/atlassian-auth")
   client.rs       — JiraClient (blocking reqwest); get_json/post_json helpers;
                     all Jira API methods: get_issue, get_myself, get_my_permissions,
                     add_comment (takes pre-built ADF content nodes), delete_comment,
@@ -67,8 +66,7 @@ JIRA_E2E_PROJECT=MER cargo test -p jira e2e_cleanup -- --ignored
 `JIRA_E2E_PROJECT` can also be set once in a workspace-root `.env` (see
 `.env.example`) instead of exporting it inline every run — `setup()` in
 `src/tests/e2e_tests.rs` loads it via `dotenvy::dotenv()`, and an
-already-exported value still takes precedence. See `BACKLOG.md`'s
-`TESTENV-1` for why this exists.
+already-exported value still takes precedence.
 
 ## Test file convention
 
@@ -86,7 +84,7 @@ thin passthrough, covered entirely by `cli_tests.rs`.
 
 ## OAuth / auth design
 
-**Implementation lives in `atlassian-auth`** (workspace-local crate, `crates/atlassian-auth`), not in this crate — `auth.rs` here is a thin wrapper fixing the `jira-cli` config dir name and this crate's `SCOPES` constant. `confluence` uses the exact same underlying flows (same `auth.atlassian.com`/`api.atlassian.com` endpoints, same `cloud_id` resolution), just with its own scopes — see `BACKLOG.md`'s `LIB-1` for why this was extracted (this crate's OAuth logic was about to be duplicated a third time, byte-for-byte, when `confluence` was added) and `atlassian-auth`'s own module docs for what it deliberately does *not* cover (`bitbucket`'s native OAuth consumer, `atlassian-admin`'s static API key — both genuinely different auth models, not more instances of this duplication).
+**Implementation lives in `atlassian-auth`** (workspace-local crate, `crates/atlassian-auth`), not in this crate — `auth.rs` here is a thin wrapper fixing the `jira-cli` config dir name and this crate's `SCOPES` constant. `confluence` uses the exact same underlying flows (same `auth.atlassian.com`/`api.atlassian.com` endpoints, same `cloud_id` resolution), just with its own scopes — extracted because this crate's OAuth logic was about to be duplicated a third time, byte-for-byte, when `confluence` was added. See `atlassian-auth`'s own module docs for what it deliberately does *not* cover (`bitbucket`'s native OAuth consumer, `atlassian-admin`'s static API key — both genuinely different auth models, not more instances of this duplication).
 
 Two grant types, both using `client_id`/`client_secret` from `app.json`:
 
@@ -160,8 +158,8 @@ conceptual background):
   products (e.g. a Service Account shared with `confluence`) — Atlassian's
   accessible-resources endpoint returns one entry per product for the same
   site in that case, and this check unions all of them rather than only the
-  first (see `BACKLOG.md`'s `SCOPE-1` for the bug this fixed, discovered live
-  against exactly this crate's `doctor` output).
+  first — a bug discovered live against exactly this crate's `doctor` output,
+  fixed in the shared crate.
 - **`service_user`** — `GET /mypermissions` with no `projectKey`: lists which
   of `PERMISSION_KEYS` are granted *globally*. For project-scoped permission
   keys, Jira evaluates this as "true if true in at least one project" — it can

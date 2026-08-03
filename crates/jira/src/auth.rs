@@ -3,9 +3,9 @@
 //! which implements the actual OAuth 2.0 (3LO + PKCE / `client_credentials`)
 //! flows, PKCE helpers, and `cloud_id` resolution — identical logic shared
 //! with `confluence`. See root `CLAUDE.md`'s "Shared library:
-//! crates/atlassian-auth" and `BACKLOG.md`'s `LIB-1` for why this was
-//! extracted, and this crate's own `CLAUDE.md` "OAuth / auth design" section
-//! for the two grant types and their tradeoffs.
+//! crates/atlassian-auth" for why this was extracted, and this crate's own
+//! `CLAUDE.md` "OAuth / auth design" section for the two grant types and
+//! their tradeoffs.
 
 use std::path::{Path, PathBuf};
 

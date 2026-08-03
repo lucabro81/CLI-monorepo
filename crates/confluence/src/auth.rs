@@ -3,8 +3,8 @@
 //! which implements the actual OAuth 2.0 (3LO + PKCE / `client_credentials`)
 //! flows, PKCE helpers, and `cloud_id` resolution — identical logic shared
 //! with `jira` (same `auth.atlassian.com`/`api.atlassian.com` platform). See
-//! root `CLAUDE.md`'s "Shared library: crates/atlassian-auth" and
-//! `BACKLOG.md`'s `LIB-1` for why this was extracted.
+//! root `CLAUDE.md`'s "Shared library: crates/atlassian-auth" for why this
+//! was extracted.
 
 use std::path::{Path, PathBuf};
 
