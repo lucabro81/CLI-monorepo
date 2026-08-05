@@ -6,13 +6,19 @@ Architecture and design notes for the `jira` crate. Global rules (TDD, error han
 
 ```
 src/
+  adf.rs          — markdown_to_adf_content(text) -> Vec<Value>: pure Markdown
+                    (via `pulldown-cmark`) -> Atlassian Document Format block-node
+                    converter, used by both `client::create_issue`'s description
+                    and `commands::issue::build_comment_content`'s body. Has no
+                    concept of Jira mentions — see "ADF" below.
   commands/
     mod.rs        — pub mod declarations for all command handlers
     auth.rs       — run_login(), run_whoami()
     doctor.rs     — run_doctor(); also called by init as final verification
     init.rs       — run_init(), write_app_config(); human onboarding flow
     issue.rs      — run(IssueCommand); dispatches all issue subcommands; also
-                    holds comment-add's mention-building logic (see below)
+                    holds comment-add's Markdown/mention-composition logic
+                    (see below)
     user.rs       — run(UserCommand); dispatches user subcommands (search)
     project.rs    — run(ProjectCommand); dispatches project subcommands (search)
   auth.rs         — thin wrapper over the shared `atlassian_auth` crate, fixing
@@ -71,16 +77,24 @@ already-exported value still takes precedence.
 ## Test file convention
 
 See root `CLAUDE.md` for the general `src/tests/` convention and the
-cli_tests/commands split. `issue.rs` has a dedicated `tests/commands/issue_tests.rs`
-covering `apply_stale_filter` (the `--stale-days` JQL builder),
-`parse_body_segments` (the `{{mention:ACCOUNT_ID}}` placeholder parser used by
-`comment add`), and `validate_assign_target` (the "exactly one of --assignee/
---unassign" runtime check for `issue assign` — `clap`'s `conflicts_with` only
-rules out passing both, not passing neither) — the non-HTTP logic in the
-module, besides `issue transition`'s case-insensitive status matching, which
-stays covered end-to-end via `cli_tests.rs` instead. `user.rs` and
-`project.rs` have no dedicated unit-test file: each has one command that's a
-thin passthrough, covered entirely by `cli_tests.rs`.
+cli_tests/commands split. `adf.rs` has a dedicated `tests/adf_tests.rs`
+covering every Markdown -> ADF mapping case (paragraphs, hardBreak, headings
+1-6, bullet/ordered lists, inline code, fenced code blocks with/without a
+language, bold, italic, combined marks, links, and empty/whitespace input) —
+pure, no HTTP, `assert_eq!` against `serde_json::json!` literals, no mocking
+library (none exists in this repo; see "ADF" below for why). `issue.rs` has a
+dedicated `tests/commands/issue_tests.rs` covering `apply_stale_filter` (the
+`--stale-days` JQL builder), `parse_body_segments` (the
+`{{mention:ACCOUNT_ID}}` placeholder parser), `expand_mentions_in_content`
+(recursive mention-placeholder expansion over an ADF block-node tree, tested
+with a canned resolver closure instead of a real `client::get_user` call —
+see "ADF" below), and `validate_assign_target` (the "exactly one of
+--assignee/--unassign" runtime check for `issue assign` — `clap`'s
+`conflicts_with` only rules out passing both, not passing neither) — the
+non-HTTP logic in the module, besides `issue transition`'s case-insensitive
+status matching, which stays covered end-to-end via `cli_tests.rs` instead.
+`user.rs` and `project.rs` have no dedicated unit-test file: each has one
+command that's a thin passthrough, covered entirely by `cli_tests.rs`.
 
 ## OAuth / auth design
 
@@ -139,8 +153,12 @@ Kept separate so automatic token writes never clobber the app identity.
   | `project search` | **no** | list endpoint, same unbounded-response risk as `issue search`/`user search` — unbounded in principle even though this account currently sees only one project |
 - **`--fields`** (issue search only): server-side Jira field selection. Defaults to `*navigable`. Reduces payload at the source; orthogonal to `--select`.
 - **`--stale-days`** (issue search only): client-side JQL rewriting, not a separate API call — Jira's JQL grammar supports relative-date literals (`-Nd`) directly in a comparison (`updated <= -Nd`), evaluated server-side by Jira's own query engine. `apply_stale_filter` (`commands/issue.rs`) appends `AND updated <= -Nd` to `--jql`, inserting it immediately before an existing `ORDER BY` clause (found case-insensitively) since JQL requires `ORDER BY` to be the final clause — appending unconditionally would produce invalid JQL for any `--jql` that already sorts results.
-- **ADF**: comment bodies and issue descriptions are wrapped in Atlassian Document Format by the client methods. `client::add_comment` takes pre-built ADF content nodes (`Vec<Value>`) rather than raw text, since `comment add` may need to mix plain `text` nodes with `mention` nodes — `commands/issue.rs` builds that list (`build_comment_content`, `parse_body_segments`, `build_text_node`, `build_mention_node`) before calling it.
-- **Mentions in comments** (`issue comment add --mention <ACCOUNT_ID>` and/or `{{mention:ACCOUNT_ID}}` inside `--body`): both forms build an ADF `mention` node (`{"type": "mention", "attrs": {"id": ..., "text": "@..."}}`). The `text` attrs value is resolved to the user's real current display name via `client::get_user` (`GET /rest/api/3/user?accountId=...`) before the comment is posted — one extra API call per mention — rather than a generic placeholder, since Jira's fallback `text` is what's shown in contexts where the ADF isn't fully re-rendered (some notification digests). A lookup failure (e.g. unknown account ID) surfaces as the same `ApiError`/`ApiRequestFailed` as any other Jira API call — no special-cased error handling. `jira user search` is the way to discover an account ID for a name/email.
+- **ADF**: `issue create --description` and `issue comment add --body` both accept Markdown, converted to Atlassian Document Format by `adf::markdown_to_adf_content(text) -> Vec<Value>` — a pure, infallible function that walks a `pulldown-cmark` `Event` stream with a small stack-based tree builder (see the module doc comment in `adf.rs` for the full mapping table: paragraphs/hardBreak, headings 1-6, bullet/ordered lists, inline/fenced code, bold, italic, links). `pulldown-cmark` is the only Markdown-parsing dependency in the whole workspace, added specifically for this — chosen over a hand-rolled parser to avoid reinventing CommonMark edge cases (nesting, escaping). Empty/whitespace-only input returns an empty `Vec`, not a placeholder block: Jira rejects an empty comment/description body regardless of the exact empty-ish ADF shape sent (`content: []`, a single empty paragraph, and a paragraph with one empty-string text node were all verified live to get the same "Comment body can not be empty!" 400), so no shape here would make it acceptable.
+
+  `client::add_comment(key, content)` takes pre-built **block-level** ADF nodes (`Vec<Value>` — `paragraph`/`heading`/`bulletList`/etc.) and uses them as-is as the comment doc's `content` array; it does not wrap them in an outer paragraph itself (unlike before this Markdown support existed) — that's what lets one comment contain multiple paragraphs, a heading, and a list. `client::create_issue` assigns `adf::markdown_to_adf_content(text)` directly to the description's `content`, no intermediate wrapping either.
+
+  `adf.rs` itself has no concept of Jira mentions — a `{{mention:ACCOUNT_ID}}` placeholder passed through `markdown_to_adf_content` comes out as literal text. `commands::issue::build_comment_content` composes the two concerns: it runs `--body` through `markdown_to_adf_content`, then `expand_mentions_in_content` (a separate recursive pass over the resulting block-node tree) rewrites any `{{mention:ACCOUNT_ID}}` found inside a leaf `text` node into a real ADF `mention` node, splitting that text node into a `text`/`mention`/`text` sequence and preserving its original `marks` on the surviving text pieces. Display-name resolution is injected via a closure (`&mut impl FnMut(&str) -> Result<String, ClientError>`) so the recursive walk itself stays pure and unit-testable without HTTP — tests pass a canned closure, production passes `mention_display_name` (below).
+- **Mentions in comments** (`issue comment add --mention <ACCOUNT_ID>` and/or `{{mention:ACCOUNT_ID}}` inside `--body`): both forms build an ADF `mention` node (`{"type": "mention", "attrs": {"id": ..., "text": "@..."}}`) — `--mention` as a leading paragraph prepended to the parsed Markdown content, `{{mention:...}}` in place via `expand_mentions_in_content` above. The `text` attrs value is resolved to the user's real current display name via `client::get_user` (`GET /rest/api/3/user?accountId=...`) before the comment is posted — one extra API call per mention — rather than a generic placeholder, since Jira's fallback `text` is what's shown in contexts where the ADF isn't fully re-rendered (some notification digests). A lookup failure (e.g. unknown account ID) surfaces as the same `ApiError`/`ApiRequestFailed` as any other Jira API call — no special-cased error handling. `jira user search` is the way to discover an account ID for a name/email.
 - **Destructive commands**: no interactive prompts (an LLM cannot respond). `issue delete` requires explicit `--confirm`; error message includes the exact command to retry. `commands/issue.rs::run` calls `authenticated_client()` **per match arm** rather than once up front, so the `--confirm` check (free, local) runs before the network round-trip a token refresh may require — otherwise a caller who forgot `--confirm` with expired credentials would see a confusing auth error instead of the actionable `DeleteNotConfirmed` one (spotted and fixed alongside `google-chat`'s `messages delete`, which had the same hoisted-auth structure).
 - **Assignee endpoint**: `PUT /rest/api/3/issue/{key}/assignee` takes `{"accountId": "..."}` to assign, or `{"accountId": null}` to unassign — verified live against a real Jira Cloud site rather than trusted from docs, since Atlassian's own docs/community answers are ambiguous between this and the older Jira Server `{"name": null}` form. `issue assign`'s `--assignee`/`--unassign` flags are mutually exclusive (`clap`'s `conflicts_with`); `validate_assign_target` (`commands/issue.rs`) is the runtime check that at least one was passed, since `conflicts_with` alone doesn't enforce that.
 - **`project search`**: `GET /rest/api/3/project/search?query=` is a literal substring/prefix filter (case-insensitive) against project key and name — not a query language, and distinct from JQL's `project = <value>` clause, which resolves a project's *exact, full* name or key but does not fragment-match (verified live: `project = Mercury` resolves to that project's issues, `project = mercur` returns zero). `client::search_projects` is a separate method from `client::list_projects` (used only internally by `doctor`'s `projects` check) even though both hit the same endpoint — `list_projects` paginates and discards everything but `key`, which is wrong for this command's purpose (surfacing `name` is the whole point); same reasoning as `list_transitions_json`/`get_transitions` being two separate views over one endpoint.

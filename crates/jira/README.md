@@ -199,10 +199,19 @@ On error (issue not found, not authenticated, etc.), prints a message to stderr 
 
 Creates a new issue. Required: `--project`, `--type`, `--summary`. Optional: `--description`, `--assignee`, `--priority`.
 
+`--description` accepts Markdown, converted to Jira's document format: headings (`#`…`######`), bullet/numbered lists, inline `` `code` `` and fenced ` ```code blocks``` `, `**bold**`, `_italic_`/`*italic*`, `[links](url)`, and line breaks (a blank line starts a new paragraph, a single line break becomes a hard break within one).
+
 ```sh
 cargo run -p jira -- issue create --project KAN --type Task --summary "Fix login bug"
 cargo run -p jira -- issue create --project KAN --type Bug --summary "Crash on startup" \
   --description "Reproducible on macOS 14" --priority High
+cargo run -p jira -- issue create --project KAN --type Task --summary "Add caching" \
+  --description "## Plan
+
+- profile the endpoint
+- add a cache layer
+
+See \`get_data()\`."
 ```
 
 Prints the Jira response (`id`, `key`, `self`) on success.
@@ -252,10 +261,14 @@ Use [`jira user search`](#jira-user-search---query-text) to find an account ID. 
 
 ### `jira issue comment add <KEY> --body <TEXT>`
 
-Adds a plain-text comment to an issue (converted to Jira's document format internally). Prints the created comment as JSON.
+Adds a comment to an issue. `--body` accepts Markdown, converted to Jira's document format the same way as `issue create --description` (see above). Prints the created comment as JSON.
 
 ```sh
 cargo run -p jira -- issue comment add KAN-4 --body "Blocked by network issue, retrying tomorrow"
+cargo run -p jira -- issue comment add KAN-4 --body "Root cause:
+
+- stale cache
+- missing invalidation on \`update()\`"
 ```
 
 Two ways to tag/mention a user in the comment, which can be combined:
