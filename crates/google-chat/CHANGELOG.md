@@ -14,6 +14,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Merge pull request #65 from lucabro81/chore/backlog-cleanup ([#65](https://github.com/lucabro81/CLI-monorepo/pull/65))
 - migrate BACKLOG.md to GitHub issues
 - Merge pull request #103 from lucabro81/issue102 ([#103](https://github.com/lucabro81/CLI-monorepo/pull/103))
+- Release
+- Merge pull request #104 from lucabro81/release/google-chat ([#104](https://github.com/lucabro81/CLI-monorepo/pull/104))
+## [0.13.0](https://github.com/lucabro81/CLI-monorepo/compare/google-chat-v0.12.1...google-chat-v0.13.0) - 2026-08-05
+
+### Added
+- *(google-chat)* align repeated flags to comma-separated format
+
+### Other
+- remove resolved entries from BACKLOG.md
+- Merge pull request #65 from lucabro81/chore/backlog-cleanup ([#65](https://github.com/lucabro81/CLI-monorepo/pull/65))
+- migrate BACKLOG.md to GitHub issues
+- Merge pull request #103 from lucabro81/issue102 ([#103](https://github.com/lucabro81/CLI-monorepo/pull/103))
 ## [0.12.1](https://github.com/lucabro81/CLI-monorepo/compare/google-chat-v0.12.0...google-chat-v0.12.1) - 2026-07-24
 
 ### Fixed
