@@ -164,7 +164,7 @@ pub enum IssueCommand {
     ///
     /// Always prints its full result regardless of --select — Jira's create
     /// response is only {id, key, self}, small and fixed-shape.
-    #[command(after_help = "Examples:\n  jira issue create --project KAN --type Task --summary \"Fix login bug\"\n  jira issue create --project KAN --type Bug --summary \"Crash on startup\" --description \"Happens on macOS 14\" --priority High")]
+    #[command(after_help = "Examples:\n  jira issue create --project KAN --type Task --summary \"Fix login bug\"\n  jira issue create --project KAN --type Bug --summary \"Crash on startup\" --description \"Happens on macOS 14\" --priority High\n  jira issue create --project KAN --type Task --summary \"Add caching\" --description \"## Plan\\n\\n- profile the endpoint\\n- add a cache layer\\n\\nSee \\`get_data()\\`.\"")]
     Create {
         /// Project key, e.g. KAN
         #[arg(long)]
@@ -175,7 +175,9 @@ pub enum IssueCommand {
         /// One-line summary of the issue
         #[arg(long)]
         summary: String,
-        /// Optional description (plain text; converted to Jira document format)
+        /// Optional description (Markdown; converted to Jira document format —
+        /// headings, bullet/numbered lists, inline/fenced code, bold, italic,
+        /// links, and line breaks are all supported)
         #[arg(long)]
         description: Option<String>,
         /// Optional assignee account ID (use `auth whoami` to get your own)
@@ -241,13 +243,15 @@ pub enum CommentCommand {
     /// `{{mention:ACCOUNT_ID}}` anywhere inside --body tags a user at that exact
     /// position in the text. Use `jira user search --query <name>` first to find
     /// the account ID to mention.
-    #[command(after_help = "Examples:\n  jira issue comment add KAN-4 --body \"Blocked by network issue, retrying tomorrow\"\n  jira issue comment add KAN-4 --mention 5b10ac8d82e05b22cc7d4ef5 --body \"can you take a look?\"\n  jira issue comment add KAN-4 --body \"Thanks {{mention:5b10ac8d82e05b22cc7d4ef5}} for the fix\"")]
+    #[command(after_help = "Examples:\n  jira issue comment add KAN-4 --body \"Blocked by network issue, retrying tomorrow\"\n  jira issue comment add KAN-4 --mention 5b10ac8d82e05b22cc7d4ef5 --body \"can you take a look?\"\n  jira issue comment add KAN-4 --body \"Thanks {{mention:5b10ac8d82e05b22cc7d4ef5}} for the fix\"\n  jira issue comment add KAN-4 --body \"Root cause:\\n\\n- stale cache\\n- missing invalidation on \\`update()\\`\"")]
     Add {
         /// Issue key, e.g. PROJ-123
         key: String,
-        /// Comment text (plain text; the CLI converts it to Jira's document format).
-        /// Embed `{{mention:ACCOUNT_ID}}` anywhere in this text to tag a user at that
-        /// exact position, in addition to or instead of --mention.
+        /// Comment text (Markdown; converted to Jira's document format — headings,
+        /// bullet/numbered lists, inline/fenced code, bold, italic, links, and line
+        /// breaks are all supported). Embed `{{mention:ACCOUNT_ID}}` anywhere in
+        /// this text to tag a user at that exact position, in addition to or
+        /// instead of --mention.
         #[arg(long)]
         body: String,
         /// Account ID of a user to tag/mention at the start of the comment.

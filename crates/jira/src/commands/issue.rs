@@ -11,6 +11,7 @@
 //! options if no match is found; `issue search` builds its `--stale-days`
 //! JQL clause via `apply_stale_filter`.
 
+use crate::adf;
 use crate::cli::{CommentCommand, IssueCommand};
 use crate::client::{ClientError, JiraClient};
 use crate::context::{authenticated_client, client_error_to_cli, print_json};
@@ -207,31 +208,83 @@ fn parse_body_segments(body: &str) -> Vec<BodySegment> {
     segments
 }
 
-/// Builds the ADF content nodes for `issue comment add`: an optional leading mention
-/// node for `--mention`, followed by `body` parsed via [`parse_body_segments`] with
-/// any `{{mention:ACCOUNT_ID}}` placeholders resolved to mention nodes in place.
+/// Builds the ADF block-node content for `issue comment add`: `body` parsed as
+/// Markdown via [`adf::markdown_to_adf_content`], with any
+/// `{{mention:ACCOUNT_ID}}` placeholders inside its text nodes expanded to real
+/// ADF mention nodes via [`expand_mentions_in_content`], plus an optional
+/// leading paragraph for `--mention` tagging a user at the start of the comment.
 fn build_comment_content(
     client: &JiraClient,
     body: &str,
     mention: Option<&str>,
 ) -> Result<Vec<serde_json::Value>, ClientError> {
-    let mut content = Vec::new();
+    let mut content = adf::markdown_to_adf_content(body);
+    expand_mentions_in_content(&mut content, &mut |id| mention_display_name(client, id))?;
 
     if let Some(account_id) = mention {
         let display_name = mention_display_name(client, account_id)?;
-        content.push(build_mention_node(account_id, &display_name));
-        content.push(build_text_node(" "));
-    }
-    for segment in parse_body_segments(body) {
-        match segment {
-            BodySegment::Text(text) => content.push(build_text_node(&text)),
-            BodySegment::Mention(account_id) => {
-                let display_name = mention_display_name(client, &account_id)?;
-                content.push(build_mention_node(&account_id, &display_name));
-            }
-        }
+        content.insert(
+            0,
+            serde_json::json!({
+                "type": "paragraph",
+                "content": [build_mention_node(account_id, &display_name), build_text_node(" ")]
+            }),
+        );
     }
     Ok(content)
+}
+
+/// Recursively walks `content` (an ADF block-node tree, as produced by
+/// [`adf::markdown_to_adf_content`]) and expands any `{{mention:ACCOUNT_ID}}`
+/// placeholder found inside a leaf `text` node's `text` field into a real ADF
+/// `mention` node, splitting that text node into a `text`/`mention`/`text`
+/// sequence as needed (reusing [`parse_body_segments`] on the node's string).
+/// The surviving text pieces keep the original node's `marks`; mention nodes
+/// carry no marks, matching this crate's existing mention-node shape.
+/// `resolve` is called once per mention found, so tests can inject a canned
+/// closure instead of making real `GET /rest/api/3/user` calls (production
+/// passes [`mention_display_name`]).
+fn expand_mentions_in_content(
+    content: &mut Vec<serde_json::Value>,
+    resolve: &mut impl FnMut(&str) -> Result<String, ClientError>,
+) -> Result<(), ClientError> {
+    let mut expanded = Vec::with_capacity(content.len());
+    for mut node in content.drain(..) {
+        if node["type"] == "text" {
+            let text = node["text"].as_str().unwrap_or_default().to_string();
+            let segments = parse_body_segments(&text);
+            if segments.len() == 1 && matches!(segments[0], BodySegment::Text(_)) {
+                // No mention placeholder in this node — keep it unchanged.
+                expanded.push(node);
+                continue;
+            }
+            let marks = node.get("marks").cloned();
+            for segment in segments {
+                match segment {
+                    BodySegment::Text(text) => {
+                        let mut text_node = build_text_node(&text);
+                        if let Some(marks) = &marks {
+                            text_node["marks"] = marks.clone();
+                        }
+                        expanded.push(text_node);
+                    }
+                    BodySegment::Mention(account_id) => {
+                        let display_name = resolve(&account_id)?;
+                        expanded.push(build_mention_node(&account_id, &display_name));
+                    }
+                }
+            }
+        } else {
+            if let Some(inner) = node.get_mut("content").and_then(|c| c.as_array_mut()) {
+                let mut inner_content = std::mem::take(inner);
+                expand_mentions_in_content(&mut inner_content, resolve)?;
+                node["content"] = serde_json::Value::Array(inner_content);
+            }
+            expanded.push(node);
+        }
+    }
+    *content = expanded;
+    Ok(())
 }
 
 /// Resolves `account_id` to its current display name via `GET /rest/api/3/user`, for
