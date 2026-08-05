@@ -8,6 +8,7 @@
 //! prints any error to stderr and maps it to a non-zero `ExitCode`. No
 //! `process::exit` is used anywhere in the codebase.
 
+mod adf;
 mod auth;
 mod cli;
 mod client;
