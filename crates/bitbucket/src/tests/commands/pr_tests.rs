@@ -1,6 +1,6 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use super::{build_comment_body, build_create_body, build_merge_body, validate_inline_location};
+use super::{build_comment_body, build_create_body, build_merge_body, build_update_body, split_reviewers, validate_inline_location, validate_update_has_field};
 
 #[test]
 fn build_create_body_with_required_fields_only() {
@@ -75,6 +75,95 @@ fn build_create_body_includes_reviewers_when_set() {
             "source": {"branch": {"name": "feature-branch"}},
             "reviewers": [{"uuid": "{uuid-1}"}, {"uuid": "{uuid-2}"}]
         })
+    );
+}
+
+#[test]
+fn build_update_body_with_title_only() {
+    let body = build_update_body(Some("New title".to_string()), None, None, vec![]);
+
+    assert_eq!(body, serde_json::json!({"title": "New title"}));
+}
+
+#[test]
+fn build_update_body_with_description_only() {
+    let body = build_update_body(None, Some("New description".to_string()), None, vec![]);
+
+    assert_eq!(body, serde_json::json!({"description": "New description"}));
+}
+
+#[test]
+fn build_update_body_with_destination_only() {
+    let body = build_update_body(None, None, Some("develop".to_string()), vec![]);
+
+    assert_eq!(body, serde_json::json!({"destination": {"branch": {"name": "develop"}}}));
+}
+
+#[test]
+fn build_update_body_with_reviewers_only() {
+    let body = build_update_body(None, None, None, vec!["{uuid-1}".to_string(), "{uuid-2}".to_string()]);
+
+    assert_eq!(body, serde_json::json!({"reviewers": [{"uuid": "{uuid-1}"}, {"uuid": "{uuid-2}"}]}));
+}
+
+#[test]
+fn build_update_body_with_all_fields() {
+    let body = build_update_body(
+        Some("New title".to_string()),
+        Some("New description".to_string()),
+        Some("develop".to_string()),
+        vec!["{uuid-1}".to_string()],
+    );
+
+    assert_eq!(
+        body,
+        serde_json::json!({
+            "title": "New title",
+            "description": "New description",
+            "destination": {"branch": {"name": "develop"}},
+            "reviewers": [{"uuid": "{uuid-1}"}]
+        })
+    );
+}
+
+#[test]
+fn build_update_body_with_no_fields_is_empty_object() {
+    let body = build_update_body(None, None, None, vec![]);
+
+    assert_eq!(body, serde_json::json!({}));
+}
+
+#[test]
+fn validate_update_has_field_errs_when_all_absent() {
+    let result = validate_update_has_field(None, None, None, &[]);
+
+    assert!(result.is_err());
+}
+
+#[test]
+fn validate_update_has_field_ok_when_only_title_set() {
+    let result = validate_update_has_field(Some("New title"), None, None, &[]);
+
+    assert!(result.is_ok());
+}
+
+#[test]
+fn validate_update_has_field_ok_when_only_reviewers_set() {
+    let result = validate_update_has_field(None, None, None, &["{uuid-1}".to_string()]);
+
+    assert!(result.is_ok());
+}
+
+#[test]
+fn split_reviewers_returns_empty_vec_when_none() {
+    assert_eq!(split_reviewers(None), Vec::<String>::new());
+}
+
+#[test]
+fn split_reviewers_trims_and_filters_empty_entries() {
+    assert_eq!(
+        split_reviewers(Some(" {uuid-1} , {uuid-2},  ")),
+        vec!["{uuid-1}".to_string(), "{uuid-2}".to_string()]
     );
 }
 
