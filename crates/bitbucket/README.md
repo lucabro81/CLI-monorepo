@@ -17,6 +17,7 @@ CLI for Bitbucket Cloud, designed to be driven by an LLM agent (output is JSON, 
   - [`bitbucket repo create <workspace>/<repo_slug>`](#bitbucket-repo-create-workspacerepo_slug)
   - [`bitbucket repo delete <workspace>/<repo_slug>`](#bitbucket-repo-delete-workspacerepo_slug)
   - [`bitbucket pr create <workspace>/<repo_slug>`](#bitbucket-pr-create-workspacerepo_slug)
+  - [`bitbucket pr update <workspace>/<repo_slug> <id>`](#bitbucket-pr-update-workspacerepo_slug-id)
   - [`bitbucket pr approve <workspace>/<repo_slug> <id>`](#bitbucket-pr-approve-workspacerepo_slug-id)
   - [`bitbucket pr unapprove <workspace>/<repo_slug> <id>`](#bitbucket-pr-unapprove-workspacerepo_slug-id)
   - [`bitbucket pr decline <workspace>/<repo_slug> <id>`](#bitbucket-pr-decline-workspacerepo_slug-id)
@@ -32,7 +33,7 @@ CLI for Bitbucket Cloud, designed to be driven by an LLM agent (output is JSON, 
 
 ## Status
 
-`init`, `doctor`, `auth login`/`auth whoami`, `repo get`, `repo list`, `repo create`, `repo delete`, `pr get`, `pr list`, `pr create`, `pr comment`, `pr approve`, `pr unapprove`, `pr decline`, `pr merge`, `branch list` implemented. See [CLAUDE.md](CLAUDE.md) for architecture and the planned command list.
+`init`, `doctor`, `auth login`/`auth whoami`, `repo get`, `repo list`, `repo create`, `repo delete`, `pr get`, `pr list`, `pr create`, `pr update`, `pr comment`, `pr approve`, `pr unapprove`, `pr decline`, `pr merge`, `branch list` implemented. See [CLAUDE.md](CLAUDE.md) for architecture and the planned command list.
 
 ## Setup
 
@@ -200,6 +201,25 @@ cargo run -p bitbucket -- pr create lucabrognaracode/my-repo --title "My PR" --s
 - `--close-source-branch` — close the source branch after the pull request is merged
 
 Requires the `pullrequest:write` scope. Reviewers are not yet supported (see CLAUDE.md backlog).
+
+### `bitbucket pr update <workspace>/<repo_slug> <id>`
+
+Updates an open pull request's title, description, destination branch, or reviewers. Only the fields you pass are changed, with one exception: `--reviewers` replaces the entire reviewer list rather than adding to it.
+
+```sh
+cargo run -p bitbucket -- pr update lucabrognaracode/my-repo 42 --title "New title"
+cargo run -p bitbucket -- pr update lucabrognaracode/my-repo 42 --description "Updated description"
+cargo run -p bitbucket -- pr update lucabrognaracode/my-repo 42 --destination develop
+cargo run -p bitbucket -- pr update lucabrognaracode/my-repo 42 --reviewers "{504c3b62-8120-4f0c-a7bc-87800b9d6f70}"
+```
+
+**Flags** (at least one required):
+- `--title <TEXT>` — new pull request title
+- `--description <TEXT>` — new pull request description
+- `--destination <BRANCH>` — new destination branch name
+- `--reviewers <UUIDS>` — comma-separated reviewer UUIDs, same format as `pr create --reviewers`; replaces the full reviewer list
+
+Requires the `pullrequest:write` scope.
 
 ### `bitbucket pr approve <workspace>/<repo_slug> <id>`
 

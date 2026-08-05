@@ -11,10 +11,7 @@ pub fn run(command: PrCommand, select: cli_fields::Select<'_>) -> Result<(), Cli
     match command {
         PrCommand::Create { repository, title, source, destination, description, close_source_branch, reviewers } => {
             let (workspace, repo_slug) = split_repository(&repository)?;
-            let reviewer_uuids: Vec<String> = reviewers
-                .as_deref()
-                .map(|s| s.split(',').map(str::trim).filter(|u| !u.is_empty()).map(str::to_string).collect())
-                .unwrap_or_default();
+            let reviewer_uuids = split_reviewers(reviewers.as_deref());
             let body = build_create_body(&title, &source, destination, description, close_source_branch, reviewer_uuids);
             let value = authenticated_client()?
                 .create_pull_request(workspace, repo_slug, &body)
@@ -23,6 +20,9 @@ pub fn run(command: PrCommand, select: cli_fields::Select<'_>) -> Result<(), Cli
                 })?;
             // Exempt: a single pull request object, fixed shape.
             print_json(&value, select.or_all())
+        }
+        PrCommand::Update { repository, id, title, description, destination, reviewers } => {
+            run_update(&repository, id, title, description, destination, reviewers.as_deref(), select)
         }
         PrCommand::Approve { repository, id } => {
             let (workspace, repo_slug) = split_repository(&repository)?;
@@ -141,6 +141,85 @@ fn build_create_body(
     }
     if close_source_branch {
         map.insert("close_source_branch".to_string(), Value::Bool(true));
+    }
+    if !reviewers.is_empty() {
+        let reviewer_objects: Vec<Value> = reviewers.into_iter().map(|uuid| json!({"uuid": uuid})).collect();
+        map.insert("reviewers".to_string(), Value::Array(reviewer_objects));
+    }
+
+    body
+}
+
+/// Handles `PrCommand::Update`: parses reviewers, validates at least one field was
+/// passed, builds the request body, and calls `PUT .../pullrequests/{id}`.
+fn run_update(
+    repository: &str,
+    id: u64,
+    title: Option<String>,
+    description: Option<String>,
+    destination: Option<String>,
+    reviewers: Option<&str>,
+    select: cli_fields::Select<'_>,
+) -> Result<(), CliError> {
+    let (workspace, repo_slug) = split_repository(repository)?;
+    let reviewer_uuids = split_reviewers(reviewers);
+    validate_update_has_field(title.as_deref(), description.as_deref(), destination.as_deref(), &reviewer_uuids)?;
+    let body = build_update_body(title, description, destination, reviewer_uuids);
+    let value = authenticated_client()?
+        .update_pull_request(workspace, repo_slug, id, &body)
+        .map_err(|e| CliError::ApiRequestFailed {
+            reason: e.to_string(),
+        })?;
+    // Exempt: a single pull request object, fixed shape.
+    print_json(&value, select.or_all())
+}
+
+/// Parses a comma-separated list of reviewer UUIDs (as accepted by `--reviewers` on
+/// both `pr create` and `pr update`) into individual UUID strings.
+fn split_reviewers(reviewers: Option<&str>) -> Vec<String> {
+    reviewers
+        .map(|s| s.split(',').map(str::trim).filter(|u| !u.is_empty()).map(str::to_string).collect())
+        .unwrap_or_default()
+}
+
+/// Validates that at least one updatable field was provided for `pr update` — an
+/// empty body would be a no-op `PUT` request.
+fn validate_update_has_field(
+    title: Option<&str>,
+    description: Option<&str>,
+    destination: Option<&str>,
+    reviewers: &[String],
+) -> Result<(), CliError> {
+    if title.is_none() && description.is_none() && destination.is_none() && reviewers.is_empty() {
+        return Err(CliError::InvalidInput {
+            reason: "at least one of --title, --description, --destination, or --reviewers must be set".to_string(),
+        });
+    }
+    Ok(())
+}
+
+/// Builds the `PUT /2.0/repositories/{workspace}/{repo_slug}/pullrequests/{id}` request
+/// body. Only the fields passed as `Some`/non-empty are included, so the request only
+/// changes what was asked. `reviewers`, if non-empty, replaces the entire reviewer list.
+fn build_update_body(
+    title: Option<String>,
+    description: Option<String>,
+    destination: Option<String>,
+    reviewers: Vec<String>,
+) -> Value {
+    let mut body = json!({});
+    let map = body.as_object_mut().unwrap_or_else(|| {
+        unreachable!("body is always constructed as a JSON object literal above")
+    });
+
+    if let Some(title) = title {
+        map.insert("title".to_string(), Value::String(title));
+    }
+    if let Some(description) = description {
+        map.insert("description".to_string(), Value::String(description));
+    }
+    if let Some(destination) = destination {
+        map.insert("destination".to_string(), json!({"branch": {"name": destination}}));
     }
     if !reviewers.is_empty() {
         let reviewer_objects: Vec<Value> = reviewers.into_iter().map(|uuid| json!({"uuid": uuid})).collect();

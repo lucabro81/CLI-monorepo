@@ -191,6 +191,36 @@ pub enum PrCommand {
         #[arg(long)]
         reviewers: Option<String>,
     },
+    /// Update an open pull request's title, description, destination branch, or
+    /// reviewers, as JSON
+    ///
+    /// The pull request must be open. Only the fields you pass are changed, with
+    /// one exception: --reviewers replaces the entire reviewer list rather than
+    /// adding to it — to add a reviewer to an existing list, pass all current
+    /// reviewer UUIDs plus the new one. Always prints its full result regardless
+    /// of --select — a single pull request object, fixed shape.
+    #[command(after_help = "Examples:\n  bitbucket pr update lucabrognaracode/my-repo 42 --title \"New title\"\n  bitbucket pr update lucabrognaracode/my-repo 42 --description \"Updated description\"\n  bitbucket pr update lucabrognaracode/my-repo 42 --destination develop\n  bitbucket pr update lucabrognaracode/my-repo 42 --reviewers \"{504c3b62-8120-4f0c-a7bc-87800b9d6f70}\"")]
+    Update {
+        /// Full repository identifier in the form `workspace/repo_slug`
+        repository: String,
+        /// Pull request ID
+        id: u64,
+        /// New pull request title
+        #[arg(long)]
+        title: Option<String>,
+        /// New pull request description
+        #[arg(long)]
+        description: Option<String>,
+        /// New destination branch name
+        #[arg(long)]
+        destination: Option<String>,
+        /// Comma-separated list of reviewer UUIDs, each formatted with curly braces
+        /// (e.g. "{504c3b62-8120-4f0c-a7bc-87800b9d6f70}"). Find UUIDs with
+        /// `bitbucket workspace members <workspace>`. Replaces the entire reviewer
+        /// list rather than adding to it.
+        #[arg(long)]
+        reviewers: Option<String>,
+    },
     /// Approve a pull request, as JSON
     ///
     /// Always prints its full result regardless of --select — a small approval

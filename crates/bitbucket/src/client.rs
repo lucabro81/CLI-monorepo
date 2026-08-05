@@ -110,6 +110,19 @@ impl BitbucketClient {
         self.post_json(&endpoints::path_pull_requests(workspace, repo_slug, None, None), body)
     }
 
+    /// Updates the pull request identified by `id` in `workspace`/`repo_slug` with the
+    /// given JSON body. The pull request must be open. Returns the updated pull
+    /// request, as raw JSON.
+    pub fn update_pull_request(
+        &self,
+        workspace: &str,
+        repo_slug: &str,
+        id: u64,
+        body: &serde_json::Value,
+    ) -> Result<serde_json::Value, ClientError> {
+        self.put_json(&endpoints::path_pull_request(workspace, repo_slug, id), body)
+    }
+
     /// Adds a comment to the pull request identified by `id` in `workspace`/`repo_slug`.
     /// Returns the created comment, as raw JSON.
     pub fn create_pull_request_comment(
@@ -246,6 +259,32 @@ impl BitbucketClient {
         let response = self
             .http
             .post(&url)
+            .bearer_auth(&self.access_token)
+            .header("Accept", "application/json")
+            .json(body)
+            .send()
+            .map_err(|e| ClientError::Request(e.to_string()))?;
+
+        let status = response.status();
+        if !status.is_success() {
+            let body = response.text().unwrap_or_default();
+            return Err(ClientError::Status {
+                status: status.as_u16(),
+                body,
+            });
+        }
+
+        response
+            .json()
+            .map_err(|e| ClientError::Request(e.to_string()))
+    }
+
+    fn put_json(&self, path: &str, body: &serde_json::Value) -> Result<serde_json::Value, ClientError> {
+        let url = format!("{}{path}", self.base_url);
+
+        let response = self
+            .http
+            .put(&url)
             .bearer_auth(&self.access_token)
             .header("Accept", "application/json")
             .json(body)

@@ -264,6 +264,52 @@ fn parses_pr_create_with_all_flags() {
 }
 
 #[test]
+fn parses_pr_update_with_no_optional_flags() {
+    let cli = Cli::try_parse_from([
+        "bitbucket", "pr", "update", "lucabrognaracode/my-repo", "42",
+    ]).expect("should parse");
+
+    match cli.command {
+        Command::Pr {
+            command: PrCommand::Update { repository, id, title, description, destination, reviewers },
+        } => {
+            assert_eq!(repository, "lucabrognaracode/my-repo");
+            assert_eq!(id, 42);
+            assert_eq!(title, None);
+            assert_eq!(description, None);
+            assert_eq!(destination, None);
+            assert_eq!(reviewers, None);
+        }
+        other => panic!("expected Pr Update, got {other:?}"),
+    }
+}
+
+#[test]
+fn parses_pr_update_with_all_flags() {
+    let cli = Cli::try_parse_from([
+        "bitbucket", "pr", "update", "lucabrognaracode/my-repo", "42",
+        "--title", "New title",
+        "--description", "New description",
+        "--destination", "develop",
+        "--reviewers", "{uuid-1},{uuid-2}",
+    ]).expect("should parse");
+
+    match cli.command {
+        Command::Pr {
+            command: PrCommand::Update { repository, id, title, description, destination, reviewers },
+        } => {
+            assert_eq!(repository, "lucabrognaracode/my-repo");
+            assert_eq!(id, 42);
+            assert_eq!(title, Some("New title".to_string()));
+            assert_eq!(description, Some("New description".to_string()));
+            assert_eq!(destination, Some("develop".to_string()));
+            assert_eq!(reviewers, Some("{uuid-1},{uuid-2}".to_string()));
+        }
+        other => panic!("expected Pr Update, got {other:?}"),
+    }
+}
+
+#[test]
 fn parses_pr_comment_with_no_optional_flags() {
     let cli = Cli::try_parse_from([
         "bitbucket", "pr", "comment", "lucabrognaracode/my-repo", "42",
