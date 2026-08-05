@@ -186,30 +186,25 @@ fn parses_spaces_create_with_single_user() {
         cli.command,
         Command::Spaces {
             command: SpacesCommand::Create { ref user }
-        } if user == &["colleague@example.com".to_string()]
+        } if user == "colleague@example.com"
     ));
 }
 
 #[test]
-fn parses_spaces_create_with_repeated_user() {
+fn parses_spaces_create_with_comma_separated_users() {
     let cli = Cli::parse_from([
         "google-chat",
         "spaces",
         "create",
         "--user",
-        "colleague@example.com",
-        "--user",
-        "other@example.com",
+        "colleague@example.com,other@example.com",
     ]);
 
     assert!(matches!(
         cli.command,
         Command::Spaces {
             command: SpacesCommand::Create { ref user }
-        } if user == &[
-            "colleague@example.com".to_string(),
-            "other@example.com".to_string(),
-        ]
+        } if user == "colleague@example.com,other@example.com"
     ));
 }
 
@@ -511,7 +506,7 @@ fn parses_subscription_create_with_required_flags_only() {
         } if space == "spaces/AAQA-_d58OQ"
             && topic == "projects/p/topics/t"
             && pubsub_subscription == "projects/p/subscriptions/s"
-            && event_type == &["google.workspace.chat.message.v1.created".to_string()]
+            && event_type == "google.workspace.chat.message.v1.created"
             && message_filter.is_none()
             && !allow_unfiltered
     ));
@@ -593,7 +588,7 @@ fn parses_subscription_create_with_message_filter() {
 }
 
 #[test]
-fn parses_subscription_create_with_repeated_event_type() {
+fn parses_subscription_create_with_comma_separated_event_type() {
     let cli = Cli::parse_from([
         "google-chat",
         "subscription",
@@ -605,9 +600,7 @@ fn parses_subscription_create_with_repeated_event_type() {
         "--pubsub-subscription",
         "projects/p/subscriptions/s",
         "--event-type",
-        "google.workspace.chat.message.v1.created",
-        "--event-type",
-        "google.workspace.chat.message.v1.updated",
+        "google.workspace.chat.message.v1.created,google.workspace.chat.message.v1.updated",
     ]);
 
     assert!(matches!(
@@ -617,11 +610,7 @@ fn parses_subscription_create_with_repeated_event_type() {
                 ref event_type,
                 ..
             }
-        } if event_type
-            == &[
-                "google.workspace.chat.message.v1.created".to_string(),
-                "google.workspace.chat.message.v1.updated".to_string(),
-            ]
+        } if event_type == "google.workspace.chat.message.v1.created,google.workspace.chat.message.v1.updated"
     ));
 }
 
@@ -714,7 +703,7 @@ fn parses_subscription_list_with_required_event_type_only() {
                 page_size,
                 ref page_token,
             }
-        } if event_type == &["google.workspace.chat.message.v1.created".to_string()]
+        } if event_type == "google.workspace.chat.message.v1.created"
             && space.is_none()
             && page_size == 50
             && page_token.is_none()
@@ -722,26 +711,20 @@ fn parses_subscription_list_with_required_event_type_only() {
 }
 
 #[test]
-fn parses_subscription_list_with_repeated_event_type() {
+fn parses_subscription_list_with_comma_separated_event_type() {
     let cli = Cli::parse_from([
         "google-chat",
         "subscription",
         "list",
         "--event-type",
-        "google.workspace.chat.message.v1.created",
-        "--event-type",
-        "google.workspace.chat.message.v1.updated",
+        "google.workspace.chat.message.v1.created,google.workspace.chat.message.v1.updated",
     ]);
 
     assert!(matches!(
         cli.command,
         Command::Subscription {
             command: SubscriptionCommand::List { ref event_type, .. }
-        } if event_type
-            == &[
-                "google.workspace.chat.message.v1.created".to_string(),
-                "google.workspace.chat.message.v1.updated".to_string(),
-            ]
+        } if event_type == "google.workspace.chat.message.v1.created,google.workspace.chat.message.v1.updated"
     ));
 }
 

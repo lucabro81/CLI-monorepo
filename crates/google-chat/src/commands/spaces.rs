@@ -8,7 +8,7 @@
 
 use crate::cli::{SpaceMembersCommand, SpacesCommand};
 use crate::client::{self, ClientError};
-use crate::context::{authenticated_client, authenticated_credentials, print_json};
+use crate::context::{authenticated_client, authenticated_credentials, parse_comma_separated_required, print_json};
 use crate::error::CliError;
 use crate::people_client::PeopleClient;
 
@@ -39,6 +39,7 @@ pub fn run(command: SpacesCommand, select: cli_fields::Select<'_>) -> Result<(),
             print_json(&value, select)
         }
         SpacesCommand::Create { user } => {
+            let user = parse_comma_separated_required(&user, "user")?;
             let client = authenticated_client()?;
             let value = client.setup_space(&user).map_err(client_error_to_cli)?;
             print_json(&value, select.or_all())
