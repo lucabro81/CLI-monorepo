@@ -63,6 +63,20 @@ pub fn authenticated_client() -> Result<GoogleChatClient, CliError> {
     Ok(GoogleChatClient::new(&authenticated_credentials()?))
 }
 
+/// Splits a comma-separated flag value into a trimmed, non-empty `Vec<String>`.
+/// Errors if nothing survives trimming/filtering — clap only enforces the flag's
+/// presence, not its content, once the field is a plain `String` instead of a `Vec`.
+pub fn parse_comma_separated_required(value: &str, flag: &str) -> Result<Vec<String>, CliError> {
+    let values: Vec<String> = value.split(',').map(str::trim).filter(|s| !s.is_empty()).map(str::to_string).collect();
+    if values.is_empty() {
+        return Err(CliError::EmptyValueList {
+            flag: flag.to_string(),
+            value: value.to_string(),
+        });
+    }
+    Ok(values)
+}
+
 /// Prints `value` as pretty-printed JSON to stdout according to `select`.
 /// See `cli_fields::Select` — an omitted `--select`/`--select-all` results in
 /// `CliError::Select` instead of printing, unless the caller passed `Select::All`.

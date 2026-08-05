@@ -7,7 +7,7 @@
 //! prints the result as JSON (optionally filtered via `--select`).
 
 use crate::cli::SubscriptionCommand;
-use crate::context::{authenticated_credentials, print_json};
+use crate::context::{authenticated_credentials, parse_comma_separated_required, print_json};
 use crate::error::CliError;
 use crate::events_client::{EventsClient, EventsClientError};
 
@@ -23,6 +23,7 @@ pub fn run(command: SubscriptionCommand, select: cli_fields::Select<'_>) -> Resu
             allow_unfiltered,
         } => {
             require_message_filter(message_filter.as_deref(), allow_unfiltered, &pubsub_subscription)?;
+            let event_type = parse_comma_separated_required(&event_type, "event-type")?;
             let credentials = authenticated_credentials()?;
             let client = EventsClient::new(&credentials.access_token);
             client
@@ -53,6 +54,7 @@ pub fn run(command: SubscriptionCommand, select: cli_fields::Select<'_>) -> Resu
             print_json(&value, select.or_all())
         }
         SubscriptionCommand::List { event_type, space, page_size, page_token } => {
+            let event_type = parse_comma_separated_required(&event_type, "event-type")?;
             let credentials = authenticated_credentials()?;
             let client = EventsClient::new(&credentials.access_token);
             let value = client

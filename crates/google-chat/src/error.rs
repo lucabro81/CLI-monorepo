@@ -120,4 +120,10 @@ pub enum CliError {
 
     #[error("People API returned status {status}: {body}")]
     PeopleApiError { status: u16, body: String },
+
+    #[error(
+        "--{flag} \"{value}\" contained no usable values after splitting on commas and trimming \
+        whitespace. Pass at least one non-empty value, e.g. --{flag} value1,value2."
+    )]
+    EmptyValueList { flag: String, value: String },
 }

@@ -140,18 +140,18 @@ pub enum SpacesCommand {
     /// Wraps spaces.setup. Pass one --user for a 1:1 direct message: this is
     /// idempotent — if a DM already exists between the authenticated identity
     /// and that user, the existing space is returned instead of creating a
-    /// duplicate. Pass --user two or more times for an unnamed group chat.
+    /// duplicate. Comma-separate two or more users for an unnamed group chat.
     /// Prints the created/found Space as JSON, including its "name" field
     /// (the spaces/{id} to pass to `messages send`, `spaces list`, etc).
     /// Requires the chat.spaces.create scope — re-run `auth login` (service
     /// account) or `auth login --user` if you authenticated before this
     /// command was added. Always prints its full result regardless of
     /// --select — a single Space object, fixed shape.
-    #[command(after_help = "Examples:\n  google-chat spaces create --user colleague@example.com\n  google-chat spaces create --user colleague@example.com --user other@example.com\n  google-chat spaces create --user users/108506379394699518479\n\n--user accepts an email address, a bare Chat/People user id, or the full \"users/{id}\" resource name; repeat it for multiple users.\nOne --user creates or finds a DIRECT_MESSAGE space; two or more create an unnamed GROUP_CHAT.")]
+    #[command(after_help = "Examples:\n  google-chat spaces create --user colleague@example.com\n  google-chat spaces create --user colleague@example.com,other@example.com\n  google-chat spaces create --user users/108506379394699518479\n\n--user accepts an email address, a bare Chat/People user id, or the full \"users/{id}\" resource name; comma-separate multiple users.\nOne user creates or finds a DIRECT_MESSAGE space; two or more create an unnamed GROUP_CHAT.")]
     Create {
-        /// User to add to the space — email address, bare user id, or full "users/{id}" resource name. Repeat for multiple users.
-        #[arg(long, required = true)]
-        user: Vec<String>,
+        /// User to add to the space — email address, bare user id, or full "users/{id}" resource name. Comma-separate multiple users.
+        #[arg(long)]
+        user: String,
     },
 }
 
@@ -260,6 +260,9 @@ pub enum MessagesCommand {
     },
 }
 
+/// Default Chat event type for `subscription create` when `--event-type` is omitted.
+pub const DEFAULT_EVENT_TYPE: &str = "google.workspace.chat.message.v1.created";
+
 #[derive(Debug, Subcommand)]
 pub enum SubscriptionCommand {
     /// Create a Workspace Events subscription that pushes Chat events for a space to a Pub/Sub topic
@@ -294,7 +297,7 @@ pub enum SubscriptionCommand {
     /// at the cost of one `listen` process per space instead of one shared
     /// process. See README.md's `subscription create` section for the full
     /// tradeoff between the two patterns.
-    #[command(after_help = "Examples:\n  google-chat subscription create --space [SPACE_ID] --topic projects/my-project/topics/my-topic --pubsub-subscription projects/my-project/subscriptions/my-sub --message-filter 'hasPrefix(attributes.ce-subject, \"//chat.googleapis.com/spaces/[SPACE_ID]\")'\n\n  # Scope one shared subscription to two spaces at once:\n  google-chat subscription create --space [SPACE_ID] --topic projects/my-project/topics/my-topic --pubsub-subscription projects/my-project/subscriptions/my-sub --message-filter 'hasPrefix(attributes.ce-subject, \"//chat.googleapis.com/spaces/[SPACE_ID]\") OR hasPrefix(attributes.ce-subject, \"//chat.googleapis.com/spaces/OTHER_SPACE_ID\")'\n\n  # Explicitly opt out of filtering (receives events for every space ever attached to this subscription):\n  google-chat subscription create --space [SPACE_ID] --topic projects/my-project/topics/my-topic --pubsub-subscription projects/my-project/subscriptions/my-sub --allow-unfiltered\n\n--space accepts either the bare id or the full \"spaces/...\" resource name.\n--event-type can be repeated; defaults to google.workspace.chat.message.v1.created.\nValid event types: google.workspace.chat.message.v1.created, .updated, .deleted.\n--message-filter sets the Pub/Sub subscription's filter (see https://cloud.google.com/pubsub/docs/subscription-message-filter). One of --message-filter or --allow-unfiltered is required.")]
+    #[command(after_help = "Examples:\n  google-chat subscription create --space [SPACE_ID] --topic projects/my-project/topics/my-topic --pubsub-subscription projects/my-project/subscriptions/my-sub --message-filter 'hasPrefix(attributes.ce-subject, \"//chat.googleapis.com/spaces/[SPACE_ID]\")'\n\n  # Scope one shared subscription to two spaces at once:\n  google-chat subscription create --space [SPACE_ID] --topic projects/my-project/topics/my-topic --pubsub-subscription projects/my-project/subscriptions/my-sub --message-filter 'hasPrefix(attributes.ce-subject, \"//chat.googleapis.com/spaces/[SPACE_ID]\") OR hasPrefix(attributes.ce-subject, \"//chat.googleapis.com/spaces/OTHER_SPACE_ID\")'\n\n  # Explicitly opt out of filtering (receives events for every space ever attached to this subscription):\n  google-chat subscription create --space [SPACE_ID] --topic projects/my-project/topics/my-topic --pubsub-subscription projects/my-project/subscriptions/my-sub --allow-unfiltered\n\n--space accepts either the bare id or the full \"spaces/...\" resource name.\n--event-type accepts a comma-separated list; defaults to google.workspace.chat.message.v1.created.\nValid event types: google.workspace.chat.message.v1.created, .updated, .deleted.\n--message-filter sets the Pub/Sub subscription's filter (see https://cloud.google.com/pubsub/docs/subscription-message-filter). One of --message-filter or --allow-unfiltered is required.")]
     Create {
         /// Space to subscribe to — bare id or full "spaces/{id}" resource name
         #[arg(long)]
@@ -305,9 +308,9 @@ pub enum SubscriptionCommand {
         /// Pull subscription on that topic, created if it does not already exist: "projects/{project}/subscriptions/{subscription}"
         #[arg(long)]
         pubsub_subscription: String,
-        /// Chat event type to subscribe to (repeatable); default: google.workspace.chat.message.v1.created
-        #[arg(long, default_values_t = ["google.workspace.chat.message.v1.created".to_string()])]
-        event_type: Vec<String>,
+        /// Chat event type to subscribe to (comma-separated); default: google.workspace.chat.message.v1.created
+        #[arg(long, default_value_t = DEFAULT_EVENT_TYPE.to_string())]
+        event_type: String,
         /// Pub/Sub filter expression applied to the pull subscription, e.g. `hasPrefix(attributes.ce-subject, "//chat.googleapis.com/spaces/SPACE_ID")` to scope delivery to one space, or multiple spaces combined with OR (see <https://cloud.google.com/pubsub/docs/subscription-message-filter>). Required unless --allow-unfiltered is passed.
         #[arg(long, conflicts_with = "allow_unfiltered")]
         message_filter: Option<String>,
@@ -348,14 +351,14 @@ pub enum SubscriptionCommand {
     /// creating a new one, to check whether one already covers the space and
     /// event types needed, avoiding a redundant `subscription create` call.
     /// --event-type is required (the Workspace Events API requires at least
-    /// one event type in every list query); pass it more than once to OR
-    /// multiple event types together. --space additionally restricts results
+    /// one event type in every list query); comma-separate multiple event
+    /// types to OR them together. --space additionally restricts results
     /// to subscriptions targeting that one space.
     #[command(after_help = "Examples:\n  google-chat subscription list --event-type google.workspace.chat.message.v1.created --select subscriptions.name,subscriptions.eventTypes\n\n  # Restrict to one space:\n  google-chat subscription list --event-type google.workspace.chat.message.v1.created --space [SPACE_ID] --select subscriptions.name,subscriptions.eventTypes\n\n--space accepts either the bare id or the full \"spaces/...\" resource name.\nValid event types: google.workspace.chat.message.v1.created, .updated, .deleted.")]
     List {
-        /// Chat event type to filter by (repeatable, OR'd together) — required, at least one
-        #[arg(long, required = true)]
-        event_type: Vec<String>,
+        /// Chat event type to filter by (comma-separated, OR'd together) — required, at least one
+        #[arg(long)]
+        event_type: String,
         /// Restrict to subscriptions targeting this space — bare id or full "spaces/{id}" resource name
         #[arg(long)]
         space: Option<String>,

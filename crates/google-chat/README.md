@@ -290,8 +290,8 @@ exist. Wraps `spaces.setup`.
 One `--user` creates or finds a `DIRECT_MESSAGE`: **idempotent** — if a DM
 already exists between the authenticated identity and that user, the
 existing space is returned instead of creating a duplicate, so it's safe to
-call this before every `messages send` without checking first. Passing
-`--user` two or more times creates an unnamed `GROUP_CHAT` instead. Prints
+call this before every `messages send` without checking first. Comma-separating
+two or more users creates an unnamed `GROUP_CHAT` instead. Prints
 the created/found `Space` resource as JSON, including its `name` field (the
 `spaces/{id}` to pass to `messages send`, `spaces list`, etc).
 
@@ -301,12 +301,12 @@ command was added.
 
 ```sh
 cargo run -p google-chat -- spaces create --user colleague@example.com
-cargo run -p google-chat -- spaces create --user colleague@example.com --user other@example.com
+cargo run -p google-chat -- spaces create --user colleague@example.com,other@example.com
 cargo run -p google-chat -- spaces create --user users/108506379394699518479
 ```
 
 **Flags:**
-- `--user <USER>` (required, repeatable) — email address, bare Chat/People user id, or full `users/{id}` resource name
+- `--user <USER>` (required, comma-separated) — email address, bare Chat/People user id, or full `users/{id}` resource name
 
 ### `google-chat messages list --space <id>`
 
@@ -418,7 +418,7 @@ cargo run -p google-chat -- subscription create --space spaces/AAQA-_d58OQ --top
 - `--space <ID>` (required) — bare space id or full `spaces/{id}` resource name
 - `--topic <TOPIC>` (required) — Pub/Sub topic that will receive events: `projects/{project}/topics/{topic}`
 - `--pubsub-subscription <SUBSCRIPTION>` (required) — pull subscription on that topic, created if missing: `projects/{project}/subscriptions/{subscription}`
-- `--event-type <TYPE>` (repeatable) — Chat event type to subscribe to; default `google.workspace.chat.message.v1.created`. Other valid values: `.updated`, `.deleted`
+- `--event-type <TYPE>` (comma-separated) — Chat event type to subscribe to; default `google.workspace.chat.message.v1.created`. Other valid values: `.updated`, `.deleted`
 - `--message-filter <FILTER>` — Pub/Sub filter expression applied to the pull subscription, so only matching messages are delivered; see [Pub/Sub subscription filters](https://cloud.google.com/pubsub/docs/subscription-message-filter) for syntax. **One of `--message-filter` or `--allow-unfiltered` is required** (same "required unless explicitly confirmed" pattern as `--select`/`--select-all` — an unfiltered subscription silently delivers events for every space ever attached to it, which can flood an agent's `listen` stream with messages from conversations it isn't part of).
 - `--allow-unfiltered` — explicitly confirm an unfiltered subscription instead of passing `--message-filter`.
 
@@ -508,12 +508,15 @@ types needed, avoiding a redundant `subscription create` call.
 ```sh
 cargo run -p google-chat -- subscription list --event-type google.workspace.chat.message.v1.created --select subscriptions.name,subscriptions.eventTypes
 
+# OR multiple event types together:
+cargo run -p google-chat -- subscription list --event-type google.workspace.chat.message.v1.created,google.workspace.chat.message.v1.updated --select subscriptions.name,subscriptions.eventTypes
+
 # Restrict to one space:
 cargo run -p google-chat -- subscription list --event-type google.workspace.chat.message.v1.created --space spaces/AAQA-_d58OQ --select subscriptions.name,subscriptions.eventTypes
 ```
 
 **Flags:**
-- `--event-type <TYPE>` (required, repeatable) — the Workspace Events API requires at least one event type in every list query; pass this flag more than once to OR multiple event types together
+- `--event-type <TYPE>` (required, comma-separated) — the Workspace Events API requires at least one event type in every list query; comma-separate multiple event types to OR them together
 - `--space <SPACE>` (optional) — bare id or full `spaces/{id}` resource name; restricts results to subscriptions targeting that one space
 - `--page-size <N>` (default: `50`, server max: `100`)
 - `--page-token <TOKEN>` (optional) — from a previous response's `nextPageToken`
