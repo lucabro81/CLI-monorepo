@@ -1,6 +1,10 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use super::{apply_stale_filter, parse_body_segments, validate_assign_target, BodySegment};
+use super::{
+    apply_stale_filter, expand_mentions_in_content, parse_body_segments, validate_assign_target,
+    BodySegment,
+};
+use serde_json::json;
 
 #[test]
 fn apply_stale_filter_returns_jql_unchanged_when_stale_days_is_none() {
@@ -155,5 +159,145 @@ fn validate_assign_target_err_with_neither_assignee_nor_unassign() {
     // together, but does not require at least one of them — this runtime check
     // covers the "neither" case, e.g. `jira issue assign KAN-5` alone.
     let result = validate_assign_target("KAN-5", None, false);
+    assert!(result.is_err());
+}
+
+#[test]
+fn expand_mentions_leaves_text_only_tree_unchanged() {
+    let mut content = vec![json!({
+        "type": "paragraph",
+        "content": [{"type": "text", "text": "no mentions here"}]
+    })];
+    let expected = content.clone();
+    expand_mentions_in_content(&mut content, &mut |id| Ok(format!("@{id}"))).expect("should succeed");
+    assert_eq!(content, expected);
+}
+
+#[test]
+fn expand_mentions_replaces_a_mention_only_node() {
+    let mut content = vec![json!({
+        "type": "paragraph",
+        "content": [{"type": "text", "text": "{{mention:5b10ac8d}}"}]
+    })];
+    expand_mentions_in_content(&mut content, &mut |id| Ok(format!("Display {id}"))).expect("should succeed");
+    assert_eq!(
+        content,
+        vec![json!({
+            "type": "paragraph",
+            "content": [{
+                "type": "mention",
+                "attrs": {"id": "5b10ac8d", "text": "@Display 5b10ac8d"}
+            }]
+        })]
+    );
+}
+
+#[test]
+fn expand_mentions_splits_mid_string_mention_preserving_marks() {
+    let mut content = vec![json!({
+        "type": "paragraph",
+        "content": [{
+            "type": "text",
+            "text": "Thanks {{mention:5b10ac8d}} for the fix",
+            "marks": [{"type": "strong"}]
+        }]
+    })];
+    expand_mentions_in_content(&mut content, &mut |id| Ok(format!("@{id}"))).expect("should succeed");
+    assert_eq!(
+        content,
+        vec![json!({
+            "type": "paragraph",
+            "content": [
+                {"type": "text", "text": "Thanks ", "marks": [{"type": "strong"}]},
+                {"type": "mention", "attrs": {"id": "5b10ac8d", "text": "@@5b10ac8d"}},
+                {"type": "text", "text": " for the fix", "marks": [{"type": "strong"}]}
+            ]
+        })]
+    );
+}
+
+#[test]
+fn expand_mentions_recurses_into_bullet_list_items() {
+    let mut content = vec![json!({
+        "type": "bulletList",
+        "content": [{
+            "type": "listItem",
+            "content": [{
+                "type": "paragraph",
+                "content": [{"type": "text", "text": "ping {{mention:aaa}}"}]
+            }]
+        }]
+    })];
+    expand_mentions_in_content(&mut content, &mut |id| Ok(format!("@{id}"))).expect("should succeed");
+    assert_eq!(
+        content,
+        vec![json!({
+            "type": "bulletList",
+            "content": [{
+                "type": "listItem",
+                "content": [{
+                    "type": "paragraph",
+                    "content": [
+                        {"type": "text", "text": "ping "},
+                        {"type": "mention", "attrs": {"id": "aaa", "text": "@@aaa"}}
+                    ]
+                }]
+            }]
+        })]
+    );
+}
+
+#[test]
+fn expand_mentions_recurses_into_headings() {
+    let mut content = vec![json!({
+        "type": "heading",
+        "attrs": {"level": 2},
+        "content": [{"type": "text", "text": "{{mention:bbb}} review"}]
+    })];
+    expand_mentions_in_content(&mut content, &mut |id| Ok(format!("@{id}"))).expect("should succeed");
+    assert_eq!(
+        content,
+        vec![json!({
+            "type": "heading",
+            "attrs": {"level": 2},
+            "content": [
+                {"type": "mention", "attrs": {"id": "bbb", "text": "@@bbb"}},
+                {"type": "text", "text": " review"}
+            ]
+        })]
+    );
+}
+
+#[test]
+fn expand_mentions_handles_multiple_mentions_in_one_node() {
+    let mut content = vec![json!({
+        "type": "paragraph",
+        "content": [{"type": "text", "text": "hi {{mention:aaa}} and {{mention:bbb}} bye"}]
+    })];
+    expand_mentions_in_content(&mut content, &mut |id| Ok(format!("@{id}"))).expect("should succeed");
+    assert_eq!(
+        content,
+        vec![json!({
+            "type": "paragraph",
+            "content": [
+                {"type": "text", "text": "hi "},
+                {"type": "mention", "attrs": {"id": "aaa", "text": "@@aaa"}},
+                {"type": "text", "text": " and "},
+                {"type": "mention", "attrs": {"id": "bbb", "text": "@@bbb"}},
+                {"type": "text", "text": " bye"}
+            ]
+        })]
+    );
+}
+
+#[test]
+fn expand_mentions_propagates_resolver_error() {
+    let mut content = vec![json!({
+        "type": "paragraph",
+        "content": [{"type": "text", "text": "{{mention:unknown}}"}]
+    })];
+    let result = expand_mentions_in_content(&mut content, &mut |_id| {
+        Err(crate::client::ClientError::Request("lookup failed".to_string()))
+    });
     assert!(result.is_err());
 }
