@@ -4,7 +4,7 @@ use super::{build_comment_body, build_create_body, build_merge_body, validate_in
 
 #[test]
 fn build_create_body_with_required_fields_only() {
-    let body = build_create_body("My PR", "feature-branch", None, None, false);
+    let body = build_create_body("My PR", "feature-branch", None, None, false, vec![]);
 
     assert_eq!(
         body,
@@ -17,7 +17,7 @@ fn build_create_body_with_required_fields_only() {
 
 #[test]
 fn build_create_body_includes_destination_when_set() {
-    let body = build_create_body("My PR", "feature-branch", Some("main".to_string()), None, false);
+    let body = build_create_body("My PR", "feature-branch", Some("main".to_string()), None, false, vec![]);
 
     assert_eq!(
         body,
@@ -31,7 +31,7 @@ fn build_create_body_includes_destination_when_set() {
 
 #[test]
 fn build_create_body_includes_description_when_set() {
-    let body = build_create_body("My PR", "feature-branch", None, Some("does things".to_string()), false);
+    let body = build_create_body("My PR", "feature-branch", None, Some("does things".to_string()), false, vec![]);
 
     assert_eq!(
         body,
@@ -45,7 +45,7 @@ fn build_create_body_includes_description_when_set() {
 
 #[test]
 fn build_create_body_includes_close_source_branch_when_true() {
-    let body = build_create_body("My PR", "feature-branch", None, None, true);
+    let body = build_create_body("My PR", "feature-branch", None, None, true, vec![]);
 
     assert_eq!(
         body,
@@ -53,6 +53,27 @@ fn build_create_body_includes_close_source_branch_when_true() {
             "title": "My PR",
             "source": {"branch": {"name": "feature-branch"}},
             "close_source_branch": true
+        })
+    );
+}
+
+#[test]
+fn build_create_body_includes_reviewers_when_set() {
+    let body = build_create_body(
+        "My PR",
+        "feature-branch",
+        None,
+        None,
+        false,
+        vec!["{uuid-1}".to_string(), "{uuid-2}".to_string()],
+    );
+
+    assert_eq!(
+        body,
+        serde_json::json!({
+            "title": "My PR",
+            "source": {"branch": {"name": "feature-branch"}},
+            "reviewers": [{"uuid": "{uuid-1}"}, {"uuid": "{uuid-2}"}]
         })
     );
 }
@@ -160,6 +181,7 @@ fn build_create_body_combines_all_fields() {
         Some("main".to_string()),
         Some("does things".to_string()),
         true,
+        vec!["{uuid-1}".to_string()],
     );
 
     assert_eq!(
@@ -169,7 +191,8 @@ fn build_create_body_combines_all_fields() {
             "source": {"branch": {"name": "feature-branch"}},
             "destination": {"branch": {"name": "main"}},
             "description": "does things",
-            "close_source_branch": true
+            "close_source_branch": true,
+            "reviewers": [{"uuid": "{uuid-1}"}]
         })
     );
 }

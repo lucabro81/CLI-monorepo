@@ -9,9 +9,13 @@ use crate::error::CliError;
 /// Dispatches a `PrCommand` variant to the appropriate Bitbucket API call.
 pub fn run(command: PrCommand, select: cli_fields::Select<'_>) -> Result<(), CliError> {
     match command {
-        PrCommand::Create { repository, title, source, destination, description, close_source_branch } => {
+        PrCommand::Create { repository, title, source, destination, description, close_source_branch, reviewers } => {
             let (workspace, repo_slug) = split_repository(&repository)?;
-            let body = build_create_body(&title, &source, destination, description, close_source_branch);
+            let reviewer_uuids: Vec<String> = reviewers
+                .as_deref()
+                .map(|s| s.split(',').map(str::trim).filter(|u| !u.is_empty()).map(str::to_string).collect())
+                .unwrap_or_default();
+            let body = build_create_body(&title, &source, destination, description, close_source_branch, reviewer_uuids);
             let value = authenticated_client()?
                 .create_pull_request(workspace, repo_slug, &body)
                 .map_err(|e| CliError::ApiRequestFailed {
@@ -113,7 +117,14 @@ pub fn run(command: PrCommand, select: cli_fields::Select<'_>) -> Result<(), Cli
 
 /// Builds the `POST /2.0/repositories/{workspace}/{repo_slug}/pullrequests` request body.
 /// `title` and `source` are always included; other fields only if set.
-fn build_create_body(title: &str, source: &str, destination: Option<String>, description: Option<String>, close_source_branch: bool) -> Value {
+fn build_create_body(
+    title: &str,
+    source: &str,
+    destination: Option<String>,
+    description: Option<String>,
+    close_source_branch: bool,
+    reviewers: Vec<String>,
+) -> Value {
     let mut body = json!({
         "title": title,
         "source": {"branch": {"name": source}},
@@ -130,6 +141,10 @@ fn build_create_body(title: &str, source: &str, destination: Option<String>, des
     }
     if close_source_branch {
         map.insert("close_source_branch".to_string(), Value::Bool(true));
+    }
+    if !reviewers.is_empty() {
+        let reviewer_objects: Vec<Value> = reviewers.into_iter().map(|uuid| json!({"uuid": uuid})).collect();
+        map.insert("reviewers".to_string(), Value::Array(reviewer_objects));
     }
 
     body

@@ -4,7 +4,7 @@ Architecture and design notes for the `bitbucket` crate. Global rules (TDD, erro
 
 ## Status
 
-`init`, `doctor`, `auth login`, `auth whoami`, `repo get`, `repo list`, `repo create`, `repo delete`, `pr get`, `pr list`, `pr create`, `pr comment`, `pr approve`, `pr unapprove`, `pr decline`, `pr merge`, `pr diff`, `branch list` implemented. Other commands not started yet.
+`init`, `doctor`, `auth login`, `auth whoami`, `repo get`, `repo list`, `repo create`, `repo delete`, `pr get`, `pr list`, `pr create`, `pr comment`, `pr approve`, `pr unapprove`, `pr decline`, `pr merge`, `pr diff`, `branch list`, `workspace members` implemented. Other commands not started yet.
 
 ## Module map (mirrors crates/jira)
 
@@ -19,6 +19,7 @@ src/
     pr.rs         — run(PrCommand); dispatches all pr subcommands       [get, list, create, comment,
                     approve, unapprove, decline, merge, diff implemented]
     branch.rs     — run(BranchCommand); dispatches all branch subcommands [list implemented]
+    workspace.rs  — run(WorkspaceCommand); dispatches all workspace subcommands [members implemented]
   auth.rs         — OAuthConfig, Credentials, login_client_credentials(),
                     load_credentials()/save_credentials() [implemented]
   client.rs       — BitbucketClient (blocking reqwest); get_json/post_json/delete helpers;
@@ -26,9 +27,10 @@ src/
                     list_repositories, create_repository, delete_repository, list_pull_requests,
                     get_pull_request, create_pull_request, create_pull_request_comment,
                     approve_pull_request, unapprove_pull_request, decline_pull_request,
-                    merge_pull_request, get_pull_request_diff, list_branches implemented]
+                    merge_pull_request, get_pull_request_diff, list_branches,
+                    list_workspace_members implemented]
   cli.rs          — clap structs: Cli (--select global), Command, AuthCommand, RepoCommand,
-                    PrCommand, BranchCommand. No logic.
+                    PrCommand, BranchCommand, WorkspaceCommand. No logic.
   context.rs      — config_dir(), authenticated_client(), print_json(value, select),
                     split_repository(repository) (shared by repo and pr commands).
   endpoints.rs    — URL/path constants for OAuth and REST API v2.0.
@@ -46,10 +48,10 @@ src/
 ## Test file convention
 
 See root `CLAUDE.md` for the general `src/tests/` convention and the
-cli_tests/commands split. In this crate, `auth.rs` and `branch.rs` are the
-thin passthrough modules with no dedicated `tests/commands/` file — their
-coverage lives entirely in `cli_tests.rs`. `context.rs` also has a dedicated
-`tests/context_tests.rs`.
+cli_tests/commands split. In this crate, `auth.rs`, `branch.rs`, and
+`workspace.rs` are the thin passthrough modules with no dedicated
+`tests/commands/` file — their coverage lives entirely in `cli_tests.rs`.
+`context.rs` also has a dedicated `tests/context_tests.rs`.
 
 ## Testing
 
@@ -115,7 +117,7 @@ Config layout, mirroring jira (`$XDG_CONFIG_HOME/bitbucket-cli/`, falling back t
 | `repo delete <workspace>/<repo_slug> --confirm` | `DELETE /2.0/repositories/{workspace}/{repo_slug}`, destructive, requires `--confirm`, synthesizes `{"deleted": true, "repository": ...}`, supports `--select` |
 | `pr list <workspace>/<repo_slug> [--state --page]` | `GET /2.0/repositories/{workspace}/{repo_slug}/pullrequests`, paginated (`--page`), optional `--state` filter (OPEN/MERGED/DECLINED/SUPERSEDED), supports `--select` |
 | `pr get <workspace>/<repo_slug> <id>` | `GET /2.0/repositories/{workspace}/{repo_slug}/pullrequests/{id}`, supports `--select` |
-| `pr create <workspace>/<repo_slug> --title --source [--destination --description --close-source-branch]` | `POST /2.0/repositories/{workspace}/{repo_slug}/pullrequests`, supports `--select` |
+| `pr create <workspace>/<repo_slug> --title --source [--destination --description --close-source-branch --reviewers]` | `POST /2.0/repositories/{workspace}/{repo_slug}/pullrequests`, `--reviewers` is a comma-separated list of reviewer UUIDs (find them with `workspace members`), supports `--select` |
 | `pr comment <workspace>/<repo_slug> <id> --content [--path --line]` | `POST /2.0/repositories/{workspace}/{repo_slug}/pullrequests/{id}/comments`, `--path`/`--line` for inline comments (both or neither), supports `--select` |
 | `pr approve <workspace>/<repo_slug> <id>` | `POST /2.0/repositories/{workspace}/{repo_slug}/pullrequests/{id}/approve`, supports `--select` |
 | `pr unapprove <workspace>/<repo_slug> <id>` | `DELETE /2.0/repositories/{workspace}/{repo_slug}/pullrequests/{id}/approve`, synthesizes `{"unapproved": true, "id": ...}`, supports `--select` |
@@ -123,6 +125,7 @@ Config layout, mirroring jira (`$XDG_CONFIG_HOME/bitbucket-cli/`, falling back t
 | `pr merge <workspace>/<repo_slug> <id> --confirm [--message --merge-strategy --close-source-branch]` | `POST /2.0/repositories/{workspace}/{repo_slug}/pullrequests/{id}/merge`, destructive, requires `--confirm`, supports `--select` |
 | `pr diff <workspace>/<repo_slug> <id> [--context --path]` | `GET /2.0/repositories/{workspace}/{repo_slug}/pullrequests/{id}/diff`, raw unified diff text (not JSON), `--select` has no effect |
 | `branch list <workspace>/<repo_slug> [--page]` | `GET /2.0/repositories/{workspace}/{repo_slug}/refs/branches`, paginated (`--page`), supports `--select` |
+| `workspace members <workspace> [--page]` | `GET /2.0/workspaces/{workspace}/members`, paginated (`--page`), supports `--select`; the way to resolve a person to the `uuid` needed by `pr create --reviewers` |
 
 `doctor`/`init` are duplicated from jira's pattern (see "Future: shared Atlassian
 library" below). Unlike jira (which calls `/rest/api/3/mypermissions` and reports a
@@ -160,6 +163,7 @@ scopes a command needs is documented per-command, not enforced by `doctor`.
   | `pr merge` | yes | single pull request object, fixed shape |
   | `pr diff` | N/A | raw diff text, not JSON, `--select` has no effect |
   | `branch list` | **no** | paginated collection |
+  | `workspace members` | **no** | paginated collection |
 - Bitbucket Cloud REST API v2.0 base: `https://api.bitbucket.org/2.0`.
 - **Destructive commands** (e.g. `pr merge`, `pr decline`): no interactive prompts; require explicit `--confirm`, error message includes the exact retry command.
 

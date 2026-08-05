@@ -64,6 +64,11 @@ impl BitbucketClient {
         self.get_json(&endpoints::path_repositories(workspace, page))
     }
 
+    /// Returns a page of members of `workspace`, as raw JSON.
+    pub fn list_workspace_members(&self, workspace: &str, page: Option<u32>) -> Result<serde_json::Value, ClientError> {
+        self.get_json(&endpoints::path_workspace_members(workspace, page))
+    }
+
     /// Returns a page of branches in `workspace`/`repo_slug`, as raw JSON.
     pub fn list_branches(&self, workspace: &str, repo_slug: &str, page: Option<u32>) -> Result<serde_json::Value, ClientError> {
         self.get_json(&endpoints::path_branches(workspace, repo_slug, page))

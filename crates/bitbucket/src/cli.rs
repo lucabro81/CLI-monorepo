@@ -69,6 +69,11 @@ pub enum Command {
         #[command(subcommand)]
         command: BranchCommand,
     },
+    /// Inspect workspaces
+    Workspace {
+        #[command(subcommand)]
+        command: WorkspaceCommand,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -161,7 +166,7 @@ pub enum PrCommand {
     ///
     /// Always prints its full result regardless of --select — a single pull
     /// request object, fixed-shape.
-    #[command(after_help = "Examples:\n  bitbucket pr create lucabrognaracode/my-repo --title \"My PR\" --source feature-branch\n  bitbucket pr create lucabrognaracode/my-repo --title \"My PR\" --source feature-branch --destination main --description \"does things\"\n  bitbucket pr create lucabrognaracode/my-repo --title \"My PR\" --source feature-branch --close-source-branch")]
+    #[command(after_help = "Examples:\n  bitbucket pr create lucabrognaracode/my-repo --title \"My PR\" --source feature-branch\n  bitbucket pr create lucabrognaracode/my-repo --title \"My PR\" --source feature-branch --destination main --description \"does things\"\n  bitbucket pr create lucabrognaracode/my-repo --title \"My PR\" --source feature-branch --close-source-branch\n  bitbucket pr create lucabrognaracode/my-repo --title \"My PR\" --source feature-branch --reviewers \"{504c3b62-8120-4f0c-a7bc-87800b9d6f70}\"")]
     Create {
         /// Full repository identifier in the form `workspace/repo_slug`
         repository: String,
@@ -180,6 +185,11 @@ pub enum PrCommand {
         /// Close the source branch after the pull request is merged
         #[arg(long)]
         close_source_branch: bool,
+        /// Comma-separated list of reviewer UUIDs, each formatted with curly braces
+        /// (e.g. "{504c3b62-8120-4f0c-a7bc-87800b9d6f70}"). Find UUIDs with
+        /// `bitbucket workspace members <workspace>`.
+        #[arg(long)]
+        reviewers: Option<String>,
     },
     /// Approve a pull request, as JSON
     ///
@@ -301,6 +311,19 @@ pub enum BranchCommand {
     List {
         /// Full repository identifier in the form `workspace/repo_slug`
         repository: String,
+        /// Page number to fetch (Bitbucket pagination starts at 1)
+        #[arg(long)]
+        page: Option<u32>,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum WorkspaceCommand {
+    /// List members of a workspace, as JSON
+    #[command(after_help = "Examples:\n  bitbucket workspace members lucabrognaracode\n  bitbucket workspace members lucabrognaracode --page 2\n  bitbucket workspace members lucabrognaracode --select values.user.uuid,values.user.display_name")]
+    Members {
+        /// Workspace slug
+        workspace: String,
         /// Page number to fetch (Bitbucket pagination starts at 1)
         #[arg(long)]
         page: Option<u32>,

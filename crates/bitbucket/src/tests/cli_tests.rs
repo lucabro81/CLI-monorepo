@@ -1,6 +1,6 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use super::{AuthCommand, BranchCommand, Cli, Command, PrCommand, RepoCommand};
+use super::{AuthCommand, BranchCommand, Cli, Command, PrCommand, RepoCommand, WorkspaceCommand};
 use clap::Parser;
 
 #[test]
@@ -221,7 +221,7 @@ fn parses_pr_create_with_no_optional_flags() {
 
     match cli.command {
         Command::Pr {
-            command: PrCommand::Create { repository, title, source, destination, description, close_source_branch },
+            command: PrCommand::Create { repository, title, source, destination, description, close_source_branch, reviewers },
         } => {
             assert_eq!(repository, "lucabrognaracode/my-repo");
             assert_eq!(title, "My PR");
@@ -229,6 +229,7 @@ fn parses_pr_create_with_no_optional_flags() {
             assert_eq!(destination, None);
             assert_eq!(description, None);
             assert!(!close_source_branch);
+            assert_eq!(reviewers, None);
         }
         other => panic!("expected Pr Create, got {other:?}"),
     }
@@ -243,11 +244,12 @@ fn parses_pr_create_with_all_flags() {
         "--destination", "main",
         "--description", "does things",
         "--close-source-branch",
+        "--reviewers", "{uuid-1},{uuid-2}",
     ]).expect("should parse");
 
     match cli.command {
         Command::Pr {
-            command: PrCommand::Create { repository, title, source, destination, description, close_source_branch },
+            command: PrCommand::Create { repository, title, source, destination, description, close_source_branch, reviewers },
         } => {
             assert_eq!(repository, "lucabrognaracode/my-repo");
             assert_eq!(title, "My PR");
@@ -255,6 +257,7 @@ fn parses_pr_create_with_all_flags() {
             assert_eq!(destination, Some("main".to_string()));
             assert_eq!(description, Some("does things".to_string()));
             assert!(close_source_branch);
+            assert_eq!(reviewers, Some("{uuid-1},{uuid-2}".to_string()));
         }
         other => panic!("expected Pr Create, got {other:?}"),
     }
@@ -499,6 +502,36 @@ fn parses_pr_diff_with_no_optional_flags() {
             assert_eq!(path, None);
         }
         other => panic!("expected Pr Diff, got {other:?}"),
+    }
+}
+
+#[test]
+fn parses_workspace_members_with_no_optional_flags() {
+    let cli = Cli::try_parse_from(["bitbucket", "workspace", "members", "lucabrognaracode"]).expect("should parse");
+
+    match cli.command {
+        Command::Workspace {
+            command: WorkspaceCommand::Members { workspace, page },
+        } => {
+            assert_eq!(workspace, "lucabrognaracode");
+            assert_eq!(page, None);
+        }
+        other => panic!("expected Workspace Members, got {other:?}"),
+    }
+}
+
+#[test]
+fn parses_workspace_members_with_page() {
+    let cli = Cli::try_parse_from(["bitbucket", "workspace", "members", "lucabrognaracode", "--page", "2"]).expect("should parse");
+
+    match cli.command {
+        Command::Workspace {
+            command: WorkspaceCommand::Members { workspace, page },
+        } => {
+            assert_eq!(workspace, "lucabrognaracode");
+            assert_eq!(page, Some(2));
+        }
+        other => panic!("expected Workspace Members, got {other:?}"),
     }
 }
 
