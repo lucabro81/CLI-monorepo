@@ -13,6 +13,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - remove resolved entries from BACKLOG.md
 - Merge pull request #65 from lucabro81/chore/backlog-cleanup ([#65](https://github.com/lucabro81/CLI-monorepo/pull/65))
 - migrate BACKLOG.md to GitHub issues
+- Release
+- Merge pull request #94 from lucabro81/release/jira ([#94](https://github.com/lucabro81/CLI-monorepo/pull/94))
+## [0.6.0](https://github.com/lucabro81/CLI-monorepo/compare/jira-v0.5.1...jira-v0.6.0) - 2026-08-05
+
+### Added
+- *(jira)* convert Markdown to ADF for issue create/comment add (#93)
+
+### Other
+- remove resolved entries from BACKLOG.md
+- Merge pull request #65 from lucabro81/chore/backlog-cleanup ([#65](https://github.com/lucabro81/CLI-monorepo/pull/65))
+- migrate BACKLOG.md to GitHub issues
 ## [0.5.1](https://github.com/lucabro81/CLI-monorepo/compare/jira-v0.5.0...jira-v0.5.1) - 2026-08-03
 
 ### Fixed
