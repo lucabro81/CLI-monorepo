@@ -15,6 +15,7 @@
 
 use serde::Deserialize;
 
+use crate::adf;
 use crate::auth::Credentials;
 use crate::endpoints;
 
@@ -151,10 +152,13 @@ impl JiraClient {
     }
 
     /// Adds a comment to an issue and returns the created comment as JSON.
-    /// `content` is a list of pre-built Atlassian Document Format inline nodes
-    /// (e.g. `{"type": "text", ...}` or `{"type": "mention", ...}`), wrapped here
-    /// in the surrounding doc/paragraph envelope. Callers build `content` — see
-    /// `commands::issue::parse_body_segments` for plain text + mention handling.
+    /// `content` is a list of pre-built Atlassian Document Format **block-level**
+    /// nodes (e.g. `paragraph`, `heading`, `bulletList`), used as-is as the
+    /// comment doc's `content` array — this function does not wrap them in an
+    /// outer paragraph itself, so callers can emit multiple blocks (e.g. a
+    /// Markdown comment with several paragraphs or a heading). Callers build
+    /// `content` — see `commands::issue::build_comment_content`, which combines
+    /// `crate::adf::markdown_to_adf_content` with mention-placeholder expansion.
     pub fn add_comment(
         &self,
         key: &str,
@@ -164,10 +168,7 @@ impl JiraClient {
             "body": {
                 "type": "doc",
                 "version": 1,
-                "content": [{
-                    "type": "paragraph",
-                    "content": content
-                }]
+                "content": content
             }
         });
         self.post_json(&endpoints::issue_comment_path(key), &body)
@@ -249,7 +250,7 @@ impl JiraClient {
             fields["description"] = serde_json::json!({
                 "type": "doc",
                 "version": 1,
-                "content": [{"type": "paragraph", "content": [{"type": "text", "text": text}]}]
+                "content": adf::markdown_to_adf_content(text)
             });
         }
         if let Some(id) = assignee {
