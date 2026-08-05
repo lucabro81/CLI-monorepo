@@ -53,6 +53,14 @@ pub fn path_pull_request_merge(workspace: &str, repo_slug: &str, id: u64) -> Str
     format!("/repositories/{workspace}/{repo_slug}/pullrequests/{id}/merge")
 }
 
+/// Members of a workspace, optionally paginated.
+pub fn path_workspace_members(workspace: &str, page: Option<u32>) -> String {
+    match page {
+        Some(page) => format!("/workspaces/{workspace}/members?page={page}"),
+        None => format!("/workspaces/{workspace}/members"),
+    }
+}
+
 /// Branches within a repository, optionally paginated.
 pub fn path_branches(workspace: &str, repo_slug: &str, page: Option<u32>) -> String {
     match page {
