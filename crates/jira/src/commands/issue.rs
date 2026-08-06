@@ -51,6 +51,7 @@ pub fn run(command: IssueCommand, select: cli_fields::Select<'_>) -> Result<(), 
             description,
             assignee,
             priority,
+            parent,
         } => {
             let client = authenticated_client()?;
             let value = client
@@ -61,6 +62,7 @@ pub fn run(command: IssueCommand, select: cli_fields::Select<'_>) -> Result<(), 
                     description.as_deref(),
                     assignee.as_deref(),
                     priority.as_deref(),
+                    parent.as_deref(),
                 )
                 .map_err(client_error_to_cli)?;
             // Exempt: POST /issue returns only {id, key, self} — small, fixed shape.

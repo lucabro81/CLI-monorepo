@@ -355,11 +355,12 @@ fn parses_issue_create_with_required_fields() {
 
     match cli.command {
         Command::Issue {
-            command: IssueCommand::Create { project, issue_type, summary, .. },
+            command: IssueCommand::Create { project, issue_type, summary, parent, .. },
         } => {
             assert_eq!(project, "KAN");
             assert_eq!(issue_type, "Task");
             assert_eq!(summary, "Fix the bug");
+            assert_eq!(parent, None);
         }
         other => panic!("unexpected: {other:?}"),
     }
@@ -375,16 +376,18 @@ fn parses_issue_create_with_all_optional_fields() {
         "--description", "Steps to reproduce",
         "--assignee", "account-id-123",
         "--priority", "High",
+        "--parent", "KAN-10",
     ])
     .expect("should parse");
 
     match cli.command {
         Command::Issue {
-            command: IssueCommand::Create { description, assignee, priority, .. },
+            command: IssueCommand::Create { description, assignee, priority, parent, .. },
         } => {
             assert_eq!(description.as_deref(), Some("Steps to reproduce"));
             assert_eq!(assignee.as_deref(), Some("account-id-123"));
             assert_eq!(priority.as_deref(), Some("High"));
+            assert_eq!(parent.as_deref(), Some("KAN-10"));
         }
         other => panic!("unexpected: {other:?}"),
     }

@@ -231,6 +231,11 @@ impl JiraClient {
     }
 
     /// Creates a new issue and returns the Jira response (contains `id`, `key`, `self`).
+    // Each parameter is an independent optional Jira field with its own JSON shape
+    // (project/type/summary required, the rest optional) — a builder or options
+    // struct would add indirection without reducing complexity for 8 fields, so
+    // the arg-count lint is allowed here rather than worked around structurally.
+    #[allow(clippy::too_many_arguments)]
     pub fn create_issue(
         &self,
         project: &str,
@@ -239,6 +244,7 @@ impl JiraClient {
         description: Option<&str>,
         assignee: Option<&str>,
         priority: Option<&str>,
+        parent: Option<&str>,
     ) -> Result<serde_json::Value, ClientError> {
         let mut fields = serde_json::json!({
             "project": {"key": project},
@@ -258,6 +264,9 @@ impl JiraClient {
         }
         if let Some(p) = priority {
             fields["priority"] = serde_json::json!({"name": p});
+        }
+        if let Some(key) = parent {
+            fields["parent"] = serde_json::json!({"key": key});
         }
 
         self.post_json(endpoints::PATH_ISSUE, &serde_json::json!({"fields": fields}))

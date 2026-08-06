@@ -164,7 +164,7 @@ pub enum IssueCommand {
     ///
     /// Always prints its full result regardless of --select — Jira's create
     /// response is only {id, key, self}, small and fixed-shape.
-    #[command(after_help = "Examples:\n  jira issue create --project KAN --type Task --summary \"Fix login bug\"\n  jira issue create --project KAN --type Bug --summary \"Crash on startup\" --description \"Happens on macOS 14\" --priority High\n  jira issue create --project KAN --type Task --summary \"Add caching\" --description \"## Plan\\n\\n- profile the endpoint\\n- add a cache layer\\n\\nSee \\`get_data()\\`.\"")]
+    #[command(after_help = "Examples:\n  jira issue create --project KAN --type Task --summary \"Fix login bug\"\n  jira issue create --project KAN --type Bug --summary \"Crash on startup\" --description \"Happens on macOS 14\" --priority High\n  jira issue create --project KAN --type Task --summary \"Add caching\" --description \"## Plan\\n\\n- profile the endpoint\\n- add a cache layer\\n\\nSee \\`get_data()\\`.\"\n  jira issue create --project KAN --type Subtask --summary \"Fix typo\" --parent KAN-10")]
     Create {
         /// Project key, e.g. KAN
         #[arg(long)]
@@ -186,6 +186,12 @@ pub enum IssueCommand {
         /// Optional priority name, e.g. High, Medium, Low
         #[arg(long)]
         priority: Option<String>,
+        /// Optional parent issue key, e.g. KAN-10. Sets this issue as a subtask
+        /// of the given issue (any project), or as a child of an Epic on
+        /// team-managed projects. Not supported for Epic linkage on
+        /// company-managed projects, which uses a separate custom field instead.
+        #[arg(long)]
+        parent: Option<String>,
     },
     /// Permanently delete an issue — requires --confirm
     ///
