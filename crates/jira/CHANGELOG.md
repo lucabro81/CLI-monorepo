@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.7.0](https://github.com/lucabro81/CLI-monorepo/compare/jira-v0.6.0...jira-v0.7.0) - 2026-08-06
+
+### Added
+- *(jira)* add --parent flag to issue create for subtasks/epics
+
+### Other
+- *(jira)* add e2e test for issue create --parent
+- *(jira)* document --parent in CLAUDE.md
+- Merge pull request #108 from lucabro81/issue106 ([#108](https://github.com/lucabro81/CLI-monorepo/pull/108))
 ## [0.6.0](https://github.com/lucabro81/CLI-monorepo/compare/jira-v0.5.1...jira-v0.6.0) - 2026-08-05
 
 ### Added
