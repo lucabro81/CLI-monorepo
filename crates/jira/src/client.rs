@@ -53,6 +53,7 @@ impl std::fmt::Display for ClientError {
 pub struct JiraClient {
     base_url: String,
     access_token: String,
+    site_url: Option<String>,
     http: reqwest::blocking::Client,
 }
 
@@ -62,8 +63,15 @@ impl JiraClient {
         Self {
             base_url: format!("{}/{}", endpoints::JIRA_API_BASE_URL, credentials.cloud_id),
             access_token: credentials.access_token.clone(),
+            site_url: credentials.site_url.clone(),
             http: reqwest::blocking::Client::new(),
         }
+    }
+
+    /// The Atlassian site's browsable base URL, if resolved at login
+    /// (see `Credentials::site_url`); `None` until the caller re-runs `auth login`.
+    pub fn site_url(&self) -> Option<&str> {
+        self.site_url.as_deref()
     }
 
     /// Fetches a Jira issue by key and returns the raw JSON response.

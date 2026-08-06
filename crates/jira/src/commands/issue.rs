@@ -41,7 +41,10 @@ pub fn run(command: IssueCommand, select: cli_fields::Select<'_>) -> Result<(), 
         }
         IssueCommand::Get { key } => {
             let client = authenticated_client()?;
-            let value = client.get_issue(&key).map_err(client_error_to_cli)?;
+            let mut value = client.get_issue(&key).map_err(client_error_to_cli)?;
+            if let Some(url) = build_browse_url(client.site_url(), &key) {
+                value["browse_url"] = serde_json::Value::String(url);
+            }
             print_json(&value, select)
         }
         IssueCommand::Create {
@@ -54,7 +57,7 @@ pub fn run(command: IssueCommand, select: cli_fields::Select<'_>) -> Result<(), 
             parent,
         } => {
             let client = authenticated_client()?;
-            let value = client
+            let mut value = client
                 .create_issue(
                     &project,
                     &issue_type,
@@ -65,7 +68,13 @@ pub fn run(command: IssueCommand, select: cli_fields::Select<'_>) -> Result<(), 
                     parent.as_deref(),
                 )
                 .map_err(client_error_to_cli)?;
-            // Exempt: POST /issue returns only {id, key, self} — small, fixed shape.
+            if let Some(key) = value["key"].as_str()
+                && let Some(url) = build_browse_url(client.site_url(), key)
+            {
+                value["browse_url"] = serde_json::Value::String(url);
+            }
+            // Exempt: POST /issue returns only {id, key, self}, plus a synthesized
+            // browse_url when available — still small, fixed shape.
             print_json(&value, select.or_all())
         }
         IssueCommand::Delete {
@@ -163,6 +172,18 @@ fn apply_stale_filter(jql: &str, stale_days: Option<u32>) -> String {
         Some(index) => format!("{} AND {} {}", jql[..index].trim_end(), clause, &jql[index..]),
         None => format!("{} AND {clause}", jql.trim_end()),
     }
+}
+
+/// Builds a browsable ticket link (e.g. "<https://mysite.atlassian.net/browse/KAN-1>")
+/// from the stored site URL and an issue key. `None` when `site_url` is `None`
+/// (credentials predate the `site_url` field — re-run `jira auth login`) or
+/// resolves to an empty string once its trailing slash is trimmed.
+fn build_browse_url(site_url: Option<&str>, key: &str) -> Option<String> {
+    let trimmed = site_url?.trim_end_matches('/');
+    if trimmed.is_empty() {
+        return None;
+    }
+    Some(format!("{trimmed}/browse/{key}"))
 }
 
 /// Validates that `issue assign` was given exactly one target. `clap`'s
