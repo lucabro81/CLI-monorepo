@@ -209,7 +209,7 @@ fn e2e_issue_lifecycle() {
 
     // Create
     let created = client
-        .create_issue(&project, "Task", &summary, None, None, None)
+        .create_issue(&project, "Task", &summary, None, None, None, None)
         .expect("create_issue should succeed");
     let key = created["key"].as_str().expect("response must contain key").to_string();
     let _guard = IssueGuard::new(&key, creds);
@@ -228,13 +228,51 @@ fn e2e_issue_lifecycle() {
 
 #[test]
 #[ignore = "e2e: requires credentials and JIRA_E2E_PROJECT"]
+fn e2e_issue_create_with_parent() {
+    // Subtask issue type names are project/site-specific — this project's
+    // (MER) subtask type is the Italian-localized "Sottotask", not
+    // "Subtask"/"Sub-task" (verified live via GET /issue/createmeta). If
+    // JIRA_E2E_PROJECT ever points elsewhere, this constant may need updating.
+    let subtask_type = "Sottotask";
+
+    let (client, creds) = setup();
+    let project = project_key();
+
+    let parent_summary = e2e_summary("parent-issue");
+    let parent = client
+        .create_issue(&project, "Task", &parent_summary, None, None, None, None)
+        .expect("create_issue (parent) should succeed");
+    let parent_key = parent["key"].as_str().expect("key missing").to_string();
+    let _parent_guard = IssueGuard::new(&parent_key, creds.clone());
+
+    let child_summary = e2e_summary("child-issue");
+    let child = client
+        .create_issue(
+            &project,
+            subtask_type,
+            &child_summary,
+            None,
+            None,
+            None,
+            Some(&parent_key),
+        )
+        .expect("create_issue (child, with parent) should succeed");
+    let child_key = child["key"].as_str().expect("key missing").to_string();
+    let _child_guard = IssueGuard::new(&child_key, creds);
+
+    let issue = client.get_issue(&child_key).expect("get_issue should succeed");
+    assert_eq!(issue["fields"]["parent"]["key"], parent_key);
+}
+
+#[test]
+#[ignore = "e2e: requires credentials and JIRA_E2E_PROJECT"]
 fn e2e_issue_select_projection() {
     let (client, creds) = setup();
     let project = project_key();
     let summary = e2e_summary("select-projection");
 
     let created = client
-        .create_issue(&project, "Task", &summary, None, None, None)
+        .create_issue(&project, "Task", &summary, None, None, None, None)
         .expect("create_issue should succeed");
     let key = created["key"].as_str().expect("key missing").to_string();
     let _guard = IssueGuard::new(&key, creds);
@@ -268,7 +306,7 @@ fn e2e_comment_lifecycle() {
 
     // Create issue
     let created = client
-        .create_issue(&project, "Task", &summary, None, None, None)
+        .create_issue(&project, "Task", &summary, None, None, None, None)
         .expect("create_issue should succeed");
     let key = created["key"].as_str().expect("key missing").to_string();
     let _guard = IssueGuard::new(&key, creds);
@@ -320,7 +358,7 @@ fn e2e_transition() {
 
     // Create issue
     let created = client
-        .create_issue(&project, "Task", &summary, None, None, None)
+        .create_issue(&project, "Task", &summary, None, None, None, None)
         .expect("create_issue should succeed");
     let key = created["key"].as_str().expect("key missing").to_string();
     let _guard = IssueGuard::new(&key, creds);
@@ -371,7 +409,7 @@ fn e2e_assign_lifecycle() {
 
     // Create issue, unassigned by default
     let created = client
-        .create_issue(&project, "Task", &summary, None, None, None)
+        .create_issue(&project, "Task", &summary, None, None, None, None)
         .expect("create_issue should succeed");
     let key = created["key"].as_str().expect("key missing").to_string();
     let _guard = IssueGuard::new(&key, creds);
@@ -411,7 +449,7 @@ fn e2e_search_simple() {
     let summary = e2e_summary("search-simple");
 
     let created = client
-        .create_issue(&project, "Task", &summary, None, None, None)
+        .create_issue(&project, "Task", &summary, None, None, None, None)
         .expect("create_issue should succeed");
     let key = created["key"].as_str().expect("key missing").to_string();
     let _guard = IssueGuard::new(&key, creds);
@@ -434,7 +472,7 @@ fn e2e_search_complex() {
     let summary = e2e_summary("search-complex");
 
     let created = client
-        .create_issue(&project, "Task", &summary, None, None, None)
+        .create_issue(&project, "Task", &summary, None, None, None, None)
         .expect("create_issue should succeed");
     let key = created["key"].as_str().expect("key missing").to_string();
     let _guard = IssueGuard::new(&key, creds);
@@ -469,13 +507,13 @@ fn e2e_search_pagination() {
     let project = project_key();
 
     let created1 = client
-        .create_issue(&project, "Task", &e2e_summary("pagination-1"), None, None, None)
+        .create_issue(&project, "Task", &e2e_summary("pagination-1"), None, None, None, None)
         .expect("create_issue (1) should succeed");
     let key1 = created1["key"].as_str().expect("key missing").to_string();
     let _guard1 = IssueGuard::new(&key1, creds.clone());
 
     let created2 = client
-        .create_issue(&project, "Task", &e2e_summary("pagination-2"), None, None, None)
+        .create_issue(&project, "Task", &e2e_summary("pagination-2"), None, None, None, None)
         .expect("create_issue (2) should succeed");
     let key2 = created2["key"].as_str().expect("key missing").to_string();
     let _guard2 = IssueGuard::new(&key2, creds);
