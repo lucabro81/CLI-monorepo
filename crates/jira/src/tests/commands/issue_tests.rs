@@ -1,8 +1,8 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use super::{
-    apply_stale_filter, expand_mentions_in_content, parse_body_segments, validate_assign_target,
-    BodySegment,
+    apply_stale_filter, build_browse_url, expand_mentions_in_content, parse_body_segments,
+    validate_assign_target, BodySegment,
 };
 use serde_json::json;
 
@@ -41,6 +41,37 @@ fn apply_stale_filter_zero_days_is_still_valid_jql() {
         apply_stale_filter("project=KAN", Some(0)),
         "project=KAN AND updated <= -0d"
     );
+}
+
+#[test]
+fn build_browse_url_joins_site_url_and_key() {
+    assert_eq!(
+        build_browse_url(Some("https://mysite.atlassian.net"), "KAN-1"),
+        Some("https://mysite.atlassian.net/browse/KAN-1".to_string())
+    );
+}
+
+#[test]
+fn build_browse_url_trims_trailing_slash_on_site_url() {
+    assert_eq!(
+        build_browse_url(Some("https://mysite.atlassian.net/"), "KAN-1"),
+        Some("https://mysite.atlassian.net/browse/KAN-1".to_string())
+    );
+}
+
+#[test]
+fn build_browse_url_returns_none_when_site_url_is_none() {
+    assert_eq!(build_browse_url(None, "KAN-1"), None);
+}
+
+#[test]
+fn build_browse_url_returns_none_when_site_url_is_only_a_slash() {
+    assert_eq!(build_browse_url(Some("/"), "KAN-1"), None);
+}
+
+#[test]
+fn build_browse_url_returns_none_when_site_url_is_empty_string() {
+    assert_eq!(build_browse_url(Some(""), "KAN-1"), None);
 }
 
 #[test]

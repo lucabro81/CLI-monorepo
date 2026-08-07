@@ -16,7 +16,8 @@
 //!   loaded from a crate's `app.json`. Includes helpers for loading and validating
 //!   the file.
 //! - **Session credentials** (`Credentials`) — the dynamic token set (access token,
-//!   optional refresh token, expiry, cloud ID) persisted to a crate's `credentials.json`.
+//!   optional refresh token, expiry, cloud ID, optional site URL) persisted to a
+//!   crate's `credentials.json`.
 //!
 //! `refresh` exchanges a refresh token for a new token pair. Atlassian refresh
 //! tokens **rotate on every use** — the new pair must always be persisted immediately
@@ -134,6 +135,8 @@ struct AccessibleResource {
     id: String,
     #[serde(default)]
     scopes: Vec<String>,
+    #[serde(default)]
+    url: Option<String>,
 }
 
 /// Runs the full interactive OAuth 2.0 (3LO) + PKCE login flow:
@@ -154,13 +157,14 @@ pub fn login(config: &OAuthConfig, scopes: &str) -> Result<Credentials, LoginErr
     let params = wait_for_callback(&state)?;
 
     let token = exchange_code_for_token(config, &params.code, &verifier)?;
-    let cloud_id = fetch_cloud_id(&token.access_token)?;
+    let resource = fetch_primary_resource(&token.access_token)?;
 
     Ok(Credentials {
         access_token: token.access_token,
         refresh_token: token.refresh_token,
         expires_at: now_unix() + token.expires_in,
-        cloud_id,
+        cloud_id: resource.id,
+        site_url: resource.url,
     })
 }
 
@@ -254,6 +258,7 @@ pub fn refresh(config: &OAuthConfig, credentials: &Credentials) -> Result<Creden
         refresh_token: token.refresh_token,
         expires_at: now_unix() + token.expires_in,
         cloud_id: credentials.cloud_id.clone(),
+        site_url: credentials.site_url.clone(),
     })
 }
 
@@ -271,13 +276,14 @@ pub fn login_client_credentials(config: &OAuthConfig) -> Result<Credentials, Log
     });
 
     let token = request_token(&body)?;
-    let cloud_id = fetch_cloud_id(&token.access_token)?;
+    let resource = fetch_primary_resource(&token.access_token)?;
 
     Ok(Credentials {
         access_token: token.access_token,
         refresh_token: token.refresh_token,
         expires_at: now_unix() + token.expires_in,
-        cloud_id,
+        cloud_id: resource.id,
+        site_url: resource.url,
     })
 }
 
@@ -310,11 +316,10 @@ fn fetch_accessible_resources(access_token: &str) -> Result<Vec<AccessibleResour
         .map_err(|e| LoginError::TokenExchange(e.to_string()))
 }
 
-fn fetch_cloud_id(access_token: &str) -> Result<String, LoginError> {
+fn fetch_primary_resource(access_token: &str) -> Result<AccessibleResource, LoginError> {
     fetch_accessible_resources(access_token)?
         .into_iter()
         .next()
-        .map(|r| r.id)
         .ok_or(LoginError::NoAccessibleResources)
 }
 
@@ -419,6 +424,13 @@ pub struct Credentials {
     pub expires_at: u64,
     /// Atlassian Cloud site ID, resolved once at login via the accessible-resources endpoint.
     pub cloud_id: String,
+    /// Atlassian site's browsable base URL (e.g. "<https://mysite.atlassian.net>"),
+    /// resolved once at login via the accessible-resources endpoint's `url` field.
+    /// `None` for credentials saved before this field existed — re-run `auth login`
+    /// to populate it. Carried forward unchanged by `refresh()`, never re-fetched,
+    /// same as `cloud_id`.
+    #[serde(default)]
+    pub site_url: Option<String>,
 }
 
 /// Generates a PKCE code verifier: a random URL-safe string (43-128 chars per RFC 7636).

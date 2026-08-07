@@ -107,7 +107,7 @@ Two grant types, both using `client_id`/`client_secret` from `app.json`:
 
 ### App identity sourcing: 3LO app vs. Service Account
 
-`app.json`'s `client_id`/`client_secret` can come from either of two different Atlassian consoles, and this is what actually determines whether `client_credentials` needs a prior human step — not anything in this crate's code, which sends the identical request either way. Verified empirically against a real org: a Service Account's OAuth 2.0 credential works immediately with the existing `login_client_credentials()`/`fetch_cloud_id()` code, unmodified — `jira auth login` + `jira doctor` (all six checks) succeeded on the first try, no code change needed.
+`app.json`'s `client_id`/`client_secret` can come from either of two different Atlassian consoles, and this is what actually determines whether `client_credentials` needs a prior human step — not anything in this crate's code, which sends the identical request either way. Verified empirically against a real org: a Service Account's OAuth 2.0 credential works immediately with the existing `login_client_credentials()`/`fetch_primary_resource()` code, unmodified — `jira auth login` + `jira doctor` (all six checks) succeeded on the first try, no code change needed.
 
 | Source | Console | Site access provisioning | Can also do 3LO (`auth login --user`)? |
 |---|---|---|---|
@@ -116,7 +116,9 @@ Two grant types, both using `client_id`/`client_secret` from `app.json`:
 
 `jira init` always ends with the 3LO browser flow, so it only makes sense for the 3LO app path. Service Account setup skips `init` entirely: write `app.json` by hand, then run `jira auth login` directly (see README Setup, Option A).
 
-Both grants resolve `cloud_id` via the accessible-resources endpoint after obtaining the access token. `fetch_cloud_id` takes the first entry returned — this crate only supports a single Jira site per `app.json`/`credentials.json`. For the 3LO app path this requires the Atlassian app to be registered as **Resource-level** access type (not Account-level) in the developer console, so the 3LO consent screen limits the grant to one site (see README Setup, Option B). Supporting multiple sites (Account-level access, site selection) is a separate feature, not a config tweak.
+Both grants resolve `cloud_id` via the accessible-resources endpoint after obtaining the access token. `fetch_primary_resource` takes the first entry returned — this crate only supports a single Jira site per `app.json`/`credentials.json`. For the 3LO app path this requires the Atlassian app to be registered as **Resource-level** access type (not Account-level) in the developer console, so the 3LO consent screen limits the grant to one site (see README Setup, Option B). Supporting multiple sites (Account-level access, site selection) is a separate feature, not a config tweak.
+
+The same accessible-resources entry also carries a `url` field (the site's browsable base URL, e.g. `https://mysite.atlassian.net`), captured as `Credentials::site_url` alongside `cloud_id`. `JiraClient::site_url()` exposes it; `commands::issue::build_browse_url` uses it to add a `browse_url` field to `issue get`/`issue create`'s JSON output. `None` for credentials stored before this field existed — re-run `auth login` to populate it, no lazy fallback.
 
 - **Refresh tokens rotate**: Atlassian invalidates the previous refresh token on every use. The new token pair must be written to `credentials.json` immediately after each refresh.
 - **Transparent renewal**: `renew(config, credentials)` dispatches to `refresh()` (if `refresh_token` is `Some`) or re-runs `login_client_credentials()` (if `None`, service account). `refresh()` itself returns `LoginError::Internal` if called with `refresh_token: None`. Both `load_credentials()` and `doctor`'s `check_credentials` go through `renew()` (with a 60s expiry buffer) — never call `refresh()` directly on possibly-expired credentials.
@@ -142,7 +144,7 @@ Kept separate so automatic token writes never clobber the app identity.
   | `auth whoami` | yes | identity check, fixed/small |
   | `issue get` | **no** | issues carry arbitrary per-project custom fields — can be large even for one record |
   | `issue search` | **no** | paginated list, same custom-field risk multiplied |
-  | `issue create` | yes | `POST /issue` returns only `{id, key, self}` |
+  | `issue create` | yes | `POST /issue` returns only `{id, key, self}`, plus a synthesized `browse_url` when available — still small, fixed shape |
   | `issue delete` | yes | synthesized by us: `{"deleted": true, "key": ...}` |
   | `issue transitions` | yes | bounded workflow-state list, no `expand` requested |
   | `issue transition` | yes | synthesized by us: `{"transitioned": true, ...}` |

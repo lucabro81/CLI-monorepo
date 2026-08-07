@@ -111,6 +111,7 @@ fn credentials_round_trip_through_json() {
         refresh_token: Some("refresh".to_string()),
         expires_at: 1_700_000_000,
         cloud_id: "cloud-123".to_string(),
+        site_url: Some("https://mysite.atlassian.net".to_string()),
     };
 
     let json = serde_json::to_string(&creds).unwrap();
@@ -127,6 +128,7 @@ fn credentials_round_trip_with_no_refresh_token() {
         refresh_token: None,
         expires_at: 1_700_000_000,
         cloud_id: "cloud-123".to_string(),
+        site_url: Some("https://mysite.atlassian.net".to_string()),
     };
 
     let json = serde_json::to_string(&creds).unwrap();
@@ -148,6 +150,34 @@ fn credentials_without_refresh_token_field_deserializes_to_none() {
 }
 
 #[test]
+fn credentials_round_trip_with_no_site_url() {
+    let creds = Credentials {
+        access_token: "access".to_string(),
+        refresh_token: Some("refresh".to_string()),
+        expires_at: 1_700_000_000,
+        cloud_id: "cloud-123".to_string(),
+        site_url: None,
+    };
+
+    let json = serde_json::to_string(&creds).unwrap();
+    let parsed: Credentials = serde_json::from_str(&json).unwrap();
+
+    assert_eq!(parsed, creds);
+}
+
+#[test]
+fn credentials_without_site_url_field_deserializes_to_none() {
+    // Forward/backward compatibility: every credentials.json written before
+    // this field existed has no site_url key at all — must still parse, with
+    // site_url defaulting to None (browse_url is simply omitted downstream).
+    let json = r#"{"access_token": "at", "expires_at": 1000, "cloud_id": "cid"}"#;
+
+    let creds: Credentials = serde_json::from_str(json).unwrap();
+
+    assert_eq!(creds.site_url, None);
+}
+
+#[test]
 fn refresh_without_refresh_token_returns_internal_error() {
     // Service account credentials (refresh_token: None) cannot be renewed via
     // the refresh_token grant — refresh() must reject this before making any
@@ -162,6 +192,7 @@ fn refresh_without_refresh_token_returns_internal_error() {
         refresh_token: None,
         expires_at: 0,
         cloud_id: "cloud-123".to_string(),
+        site_url: None,
     };
 
     let result = refresh(&config, &creds);
@@ -306,6 +337,7 @@ fn credentials_json_field_names_are_stable() {
         refresh_token: Some("rt".to_string()),
         expires_at: 1_000,
         cloud_id: "cid".to_string(),
+        site_url: Some("https://example.atlassian.net".to_string()),
     };
 
     let json = serde_json::to_string(&creds).unwrap();
@@ -314,6 +346,7 @@ fn credentials_json_field_names_are_stable() {
     assert!(json.contains("\"refresh_token\""));
     assert!(json.contains("\"expires_at\""));
     assert!(json.contains("\"cloud_id\""));
+    assert!(json.contains("\"site_url\""));
 }
 
 #[test]
@@ -331,10 +364,12 @@ fn merge_scopes_for_cloud_id_unions_multiple_entries_with_the_same_id() {
         AccessibleResource {
             id: "site-1".to_string(),
             scopes: vec!["read:confluence-user".to_string(), "search:confluence".to_string()],
+            url: None,
         },
         AccessibleResource {
             id: "site-1".to_string(),
             scopes: vec!["read:jira-work".to_string()],
+            url: None,
         },
     ];
 
@@ -355,6 +390,7 @@ fn merge_scopes_for_cloud_id_returns_none_when_no_entry_matches() {
     let resources = vec![AccessibleResource {
         id: "other-site".to_string(),
         scopes: vec!["read:jira-work".to_string()],
+        url: None,
     }];
 
     assert_eq!(merge_scopes_for_cloud_id(&resources, "site-1"), None);
@@ -366,10 +402,12 @@ fn merge_scopes_for_cloud_id_dedupes_overlapping_scopes_across_entries() {
         AccessibleResource {
             id: "site-1".to_string(),
             scopes: vec!["read:jira-work".to_string()],
+            url: None,
         },
         AccessibleResource {
             id: "site-1".to_string(),
             scopes: vec!["read:jira-work".to_string(), "write:jira-work".to_string()],
+            url: None,
         },
     ];
 
@@ -389,6 +427,7 @@ fn merge_scopes_for_cloud_id_returns_some_empty_vec_when_entry_has_no_scopes() {
     let resources = vec![AccessibleResource {
         id: "site-1".to_string(),
         scopes: vec![],
+        url: None,
     }];
 
     assert_eq!(merge_scopes_for_cloud_id(&resources, "site-1"), Some(vec![]));
