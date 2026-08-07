@@ -4,7 +4,7 @@ Architecture and design notes for the `bitbucket` crate. Global rules (TDD, erro
 
 ## Status
 
-`init`, `doctor`, `auth login`, `auth whoami`, `repo get`, `repo list`, `repo create`, `repo delete`, `pr get`, `pr list`, `pr create`, `pr update`, `pr comment`, `pr approve`, `pr unapprove`, `pr decline`, `pr merge`, `pr diff`, `branch list`, `workspace members` implemented. Other commands not started yet.
+`init`, `doctor`, `auth login`, `auth whoami`, `repo get`, `repo list`, `repo create`, `repo delete`, `pr get`, `pr list`, `pr create`, `pr update`, `pr comment`, `pr approve`, `pr unapprove`, `pr decline`, `pr merge`, `pr diff`, `branch list`, `branch create`, `workspace members` implemented. Other commands not started yet.
 
 ## Module map (mirrors crates/jira)
 
@@ -18,7 +18,7 @@ src/
     repo.rs       — run(RepoCommand); dispatches all repo subcommands   [get, list, create, delete implemented]
     pr.rs         — run(PrCommand); dispatches all pr subcommands       [get, list, create, update, comment,
                     approve, unapprove, decline, merge, diff implemented]
-    branch.rs     — run(BranchCommand); dispatches all branch subcommands [list implemented]
+    branch.rs     — run(BranchCommand); dispatches all branch subcommands [list, create implemented]
     workspace.rs  — run(WorkspaceCommand); dispatches all workspace subcommands [members implemented]
   auth.rs         — OAuthConfig, Credentials, login_client_credentials(),
                     load_credentials()/save_credentials() [implemented]
@@ -126,6 +126,7 @@ Config layout, mirroring jira (`$XDG_CONFIG_HOME/bitbucket-cli/`, falling back t
 | `pr merge <workspace>/<repo_slug> <id> --confirm [--message --merge-strategy --close-source-branch]` | `POST /2.0/repositories/{workspace}/{repo_slug}/pullrequests/{id}/merge`, destructive, requires `--confirm`, supports `--select` |
 | `pr diff <workspace>/<repo_slug> <id> [--context --path]` | `GET /2.0/repositories/{workspace}/{repo_slug}/pullrequests/{id}/diff`, raw unified diff text (not JSON), `--select` has no effect |
 | `branch list <workspace>/<repo_slug> [--page]` | `GET /2.0/repositories/{workspace}/{repo_slug}/refs/branches`, paginated (`--page`), supports `--select` |
+| `branch create <workspace>/<repo_slug> <name> --target` | `POST /2.0/repositories/{workspace}/{repo_slug}/refs/branches`, `--target` is a branch name or commit hash to create the new branch from, supports `--select` |
 | `workspace members <workspace> [--page]` | `GET /2.0/workspaces/{workspace}/members`, paginated (`--page`), supports `--select`; the way to resolve a person to the `uuid` needed by `pr create --reviewers` |
 
 `doctor`/`init` are duplicated from jira's pattern (see "Future: shared Atlassian
@@ -165,6 +166,7 @@ scopes a command needs is documented per-command, not enforced by `doctor`.
   | `pr merge` | yes | single pull request object, fixed shape |
   | `pr diff` | N/A | raw diff text, not JSON, `--select` has no effect |
   | `branch list` | **no** | paginated collection |
+  | `branch create` | yes | single branch object, fixed shape |
   | `workspace members` | **no** | paginated collection |
 - Bitbucket Cloud REST API v2.0 base: `https://api.bitbucket.org/2.0`.
 - **Destructive commands** (e.g. `pr merge`, `pr decline`): no interactive prompts; require explicit `--confirm`, error message includes the exact retry command.

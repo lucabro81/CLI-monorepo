@@ -341,6 +341,19 @@ cargo run -p bitbucket -- branch list lucabrognaracode/my-repo --select values.n
 
 Requires the `repository` (read) scope.
 
+### `bitbucket branch create <workspace>/<repo_slug> <name>`
+
+Creates a new branch in a repository.
+
+```sh
+cargo run -p bitbucket -- branch create lucabrognaracode/my-repo feature/my-branch --target main
+```
+
+**Flags:**
+- `--target <TARGET>` — branch name or commit hash to create the new branch from (required)
+
+Requires the `repository:write` scope.
+
 ### `--select <PATHS>` (global flag)
 
 All commands that return JSON support a `--select` flag for client-side field projection. Pass a comma-separated list of dot-notation paths; only those paths are included in the output. If omitted, the full response from Bitbucket is printed.
