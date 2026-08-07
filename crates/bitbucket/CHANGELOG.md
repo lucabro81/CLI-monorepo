@@ -11,6 +11,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Other
 - Merge pull request #119 from lucabro81/issue118 ([#119](https://github.com/lucabro81/CLI-monorepo/pull/119))
+- Release
+- Merge pull request #117 from lucabro81/release/bitbucket ([#117](https://github.com/lucabro81/CLI-monorepo/pull/117))
+## [0.6.0](https://github.com/lucabro81/CLI-monorepo/compare/bitbucket-v0.5.0...bitbucket-v0.6.0) - 2026-08-07
+
+### Added
+- *(bitbucket)* add branch suggest-name command
+
+### Other
+- Merge pull request #119 from lucabro81/issue118 ([#119](https://github.com/lucabro81/CLI-monorepo/pull/119))
 ## [0.5.0](https://github.com/lucabro81/CLI-monorepo/compare/bitbucket-v0.4.0...bitbucket-v0.5.0) - 2026-08-07
 
 ### Added
