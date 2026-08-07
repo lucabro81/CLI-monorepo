@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.8.0](https://github.com/lucabro81/CLI-monorepo/compare/jira-v0.7.0...jira-v0.8.0) - 2026-08-07
+
+### Added
+- *(jira)* add browse_url to issue create/get via stored site URL
+
+### Other
+- *(jira)* document site_url/browse_url, fix stale fetch_cloud_id reference
+- Merge pull request #112 from lucabro81/issue111 ([#112](https://github.com/lucabro81/CLI-monorepo/pull/112))
 ## [0.7.0](https://github.com/lucabro81/CLI-monorepo/compare/jira-v0.6.0...jira-v0.7.0) - 2026-08-06
 
 ### Added
