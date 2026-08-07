@@ -14,8 +14,9 @@ pub struct Cli {
     /// command fails with an error reporting the byte size of the full response and
     /// its top-level field names, so you can retry with an informed --select. A few
     /// commands whose output is always small and fixed-shape (doctor, auth whoami,
-    /// repo get/create/delete, pr get/create/approve/unapprove/decline/merge/comment)
-    /// are exempt and print in full regardless — see that command's own --help.
+    /// repo get/create/delete, pr get/create/approve/unapprove/decline/merge/comment,
+    /// branch create) are exempt and print in full regardless — see that command's
+    /// own --help.
     /// Example: --select `uuid,display_name`
     #[arg(long, global = true, value_name = "PATHS", conflicts_with = "select_all")]
     pub select: Option<String>,
@@ -344,6 +345,20 @@ pub enum BranchCommand {
         /// Page number to fetch (Bitbucket pagination starts at 1)
         #[arg(long)]
         page: Option<u32>,
+    },
+    /// Create a new branch in a repository, as JSON
+    ///
+    /// Always prints its full result regardless of --select — a single
+    /// branch object, fixed-shape.
+    #[command(after_help = "Examples:\n  bitbucket branch create lucabrognaracode/my-repo feature/my-branch --target main\n  bitbucket branch create lucabrognaracode/my-repo feature/SBF-19-my-fix --target develop")]
+    Create {
+        /// Full repository identifier in the form `workspace/repo_slug`
+        repository: String,
+        /// Name for the new branch
+        name: String,
+        /// Branch name or commit hash to create the new branch from
+        #[arg(long)]
+        target: String,
     },
 }
 

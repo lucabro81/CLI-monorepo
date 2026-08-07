@@ -384,6 +384,25 @@ fn parses_branch_list_with_page() {
 }
 
 #[test]
+fn parses_branch_create() {
+    let cli = Cli::try_parse_from([
+        "bitbucket", "branch", "create", "lucabrognaracode/my-repo", "feature/my-branch",
+        "--target", "main",
+    ]).expect("should parse");
+
+    match cli.command {
+        Command::Branch {
+            command: BranchCommand::Create { repository, name, target },
+        } => {
+            assert_eq!(repository, "lucabrognaracode/my-repo");
+            assert_eq!(name, "feature/my-branch");
+            assert_eq!(target, "main");
+        }
+        other => panic!("expected Branch Create, got {other:?}"),
+    }
+}
+
+#[test]
 fn parses_pr_approve() {
     let cli = Cli::try_parse_from(["bitbucket", "pr", "approve", "lucabrognaracode/my-repo", "42"]).expect("should parse");
 

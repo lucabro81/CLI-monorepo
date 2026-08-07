@@ -16,5 +16,19 @@ pub fn run(command: BranchCommand, select: cli_fields::Select<'_>) -> Result<(),
                 })?;
             print_json(&value, select)
         }
+        BranchCommand::Create { repository, name, target } => {
+            let (workspace, repo_slug) = split_repository(&repository)?;
+            let body = serde_json::json!({
+                "name": name,
+                "target": { "hash": target }
+            });
+            let value = authenticated_client()?
+                .create_branch(workspace, repo_slug, &body)
+                .map_err(|e| CliError::ApiRequestFailed {
+                    reason: e.to_string(),
+                })?;
+            // Exempt: a single branch object, fixed shape.
+            print_json(&value, select.or_all())
+        }
     }
 }
