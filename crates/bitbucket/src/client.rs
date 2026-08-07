@@ -80,6 +80,12 @@ impl BitbucketClient {
         self.post_json(&endpoints::path_branches(workspace, repo_slug, None), body)
     }
 
+    /// Returns the effective branching model for `workspace`/`repo_slug`
+    /// (configured branch kinds, their prefixes, and enabled state), as raw JSON.
+    pub fn get_branching_model(&self, workspace: &str, repo_slug: &str) -> Result<serde_json::Value, ClientError> {
+        self.get_json(&endpoints::path_branching_model(workspace, repo_slug))
+    }
+
     /// Returns the pull request identified by `id` in `workspace`/`repo_slug`, as raw JSON.
     pub fn get_pull_request(&self, workspace: &str, repo_slug: &str, id: u64) -> Result<serde_json::Value, ClientError> {
         self.get_json(&endpoints::path_pull_request(workspace, repo_slug, id))

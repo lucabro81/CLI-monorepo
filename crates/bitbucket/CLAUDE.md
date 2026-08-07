@@ -4,7 +4,7 @@ Architecture and design notes for the `bitbucket` crate. Global rules (TDD, erro
 
 ## Status
 
-`init`, `doctor`, `auth login`, `auth whoami`, `repo get`, `repo list`, `repo create`, `repo delete`, `pr get`, `pr list`, `pr create`, `pr update`, `pr comment`, `pr approve`, `pr unapprove`, `pr decline`, `pr merge`, `pr diff`, `branch list`, `branch create`, `workspace members` implemented. Other commands not started yet.
+`init`, `doctor`, `auth login`, `auth whoami`, `repo get`, `repo list`, `repo create`, `repo delete`, `pr get`, `pr list`, `pr create`, `pr update`, `pr comment`, `pr approve`, `pr unapprove`, `pr decline`, `pr merge`, `pr diff`, `branch list`, `branch create`, `branch suggest-name`, `workspace members` implemented. Other commands not started yet.
 
 ## Module map (mirrors crates/jira)
 
@@ -18,7 +18,7 @@ src/
     repo.rs       — run(RepoCommand); dispatches all repo subcommands   [get, list, create, delete implemented]
     pr.rs         — run(PrCommand); dispatches all pr subcommands       [get, list, create, update, comment,
                     approve, unapprove, decline, merge, diff implemented]
-    branch.rs     — run(BranchCommand); dispatches all branch subcommands [list, create implemented]
+    branch.rs     — run(BranchCommand); dispatches all branch subcommands [list, create, suggest-name implemented]
     workspace.rs  — run(WorkspaceCommand); dispatches all workspace subcommands [members implemented]
   auth.rs         — OAuthConfig, Credentials, login_client_credentials(),
                     load_credentials()/save_credentials() [implemented]
@@ -48,10 +48,14 @@ src/
 ## Test file convention
 
 See root `CLAUDE.md` for the general `src/tests/` convention and the
-cli_tests/commands split. In this crate, `auth.rs`, `branch.rs`, and
-`workspace.rs` are the thin passthrough modules with no dedicated
-`tests/commands/` file — their coverage lives entirely in `cli_tests.rs`.
-`context.rs` also has a dedicated `tests/context_tests.rs`.
+cli_tests/commands split. In this crate, `auth.rs` and `workspace.rs` are
+the thin passthrough modules with no dedicated `tests/commands/` file —
+their coverage lives entirely in `cli_tests.rs`. `branch.rs` has a
+`tests/commands/branch_tests.rs` covering the pure `suggest-name` helpers
+(`infer_kind`, `resolve_prefix_from_branching_model`, `slugify`,
+`build_branch_name`); `list`/`create` have no logic to isolate beyond that,
+so their coverage stays in `cli_tests.rs`. `context.rs` also has a dedicated
+`tests/context_tests.rs`.
 
 ## Testing
 
@@ -127,6 +131,7 @@ Config layout, mirroring jira (`$XDG_CONFIG_HOME/bitbucket-cli/`, falling back t
 | `pr diff <workspace>/<repo_slug> <id> [--context --path]` | `GET /2.0/repositories/{workspace}/{repo_slug}/pullrequests/{id}/diff`, raw unified diff text (not JSON), `--select` has no effect |
 | `branch list <workspace>/<repo_slug> [--page]` | `GET /2.0/repositories/{workspace}/{repo_slug}/refs/branches`, paginated (`--page`), supports `--select` |
 | `branch create <workspace>/<repo_slug> <name> --target` | `POST /2.0/repositories/{workspace}/{repo_slug}/refs/branches`, `--target` is a branch name or commit hash to create the new branch from, supports `--select` |
+| `branch suggest-name --issue-key --issue-type --issue-summary [--repository --prefix]` | Computes a suggested branch name from a Jira issue; `--prefix` overrides, else `--repository` resolves the real prefix via `GET /2.0/repositories/{workspace}/{repo_slug}/branching-model` (requires auth), else falls back to a local Bug→bugfix/else→feature heuristic (no auth), supports `--select` |
 | `workspace members <workspace> [--page]` | `GET /2.0/workspaces/{workspace}/members`, paginated (`--page`), supports `--select`; the way to resolve a person to the `uuid` needed by `pr create --reviewers` |
 
 `doctor`/`init` are duplicated from jira's pattern (see "Future: shared Atlassian
@@ -167,6 +172,7 @@ scopes a command needs is documented per-command, not enforced by `doctor`.
   | `pr diff` | N/A | raw diff text, not JSON, `--select` has no effect |
   | `branch list` | **no** | paginated collection |
   | `branch create` | yes | single branch object, fixed shape |
+  | `branch suggest-name` | yes | small fixed-shape object |
   | `workspace members` | **no** | paginated collection |
 - Bitbucket Cloud REST API v2.0 base: `https://api.bitbucket.org/2.0`.
 - **Destructive commands** (e.g. `pr merge`, `pr decline`): no interactive prompts; require explicit `--confirm`, error message includes the exact retry command.

@@ -69,6 +69,11 @@ pub fn path_branches(workspace: &str, repo_slug: &str, page: Option<u32>) -> Str
     }
 }
 
+/// The effective branching model configured for a repository.
+pub fn path_branching_model(workspace: &str, repo_slug: &str) -> String {
+    format!("/repositories/{workspace}/{repo_slug}/branching-model")
+}
+
 /// The raw unified diff for a pull request, optionally with extra context lines
 /// around each change and/or restricted to a single file path.
 pub fn path_pull_request_diff(workspace: &str, repo_slug: &str, id: u64, context: Option<u32>, path: Option<&str>) -> String {
