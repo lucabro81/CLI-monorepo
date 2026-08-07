@@ -27,6 +27,8 @@ CLI for Bitbucket Cloud, designed to be driven by an LLM agent (output is JSON, 
   - [`bitbucket pr get <workspace>/<repo_slug> <id>`](#bitbucket-pr-get-workspacerepo_slug-id)
   - [`bitbucket pr list <workspace>/<repo_slug>`](#bitbucket-pr-list-workspacerepo_slug)
   - [`bitbucket branch list <workspace>/<repo_slug>`](#bitbucket-branch-list-workspacerepo_slug)
+  - [`bitbucket branch create <workspace>/<repo_slug> <name>`](#bitbucket-branch-create-workspacerepo_slug-name)
+  - [`bitbucket branch suggest-name --issue-key <KEY> --issue-type <TYPE> --issue-summary <SUMMARY>`](#bitbucket-branch-suggest-name---issue-key-key---issue-type-type---issue-summary-summary)
   - [`--select <PATHS>` (global flag)](#--select-paths-global-flag)
 - [Testing](#testing)
 - [Error design](#error-design)
