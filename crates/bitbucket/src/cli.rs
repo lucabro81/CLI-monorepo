@@ -15,8 +15,8 @@ pub struct Cli {
     /// its top-level field names, so you can retry with an informed --select. A few
     /// commands whose output is always small and fixed-shape (doctor, auth whoami,
     /// repo get/create/delete, pr get/create/approve/unapprove/decline/merge/comment,
-    /// branch create) are exempt and print in full regardless — see that command's
-    /// own --help.
+    /// branch create, branch suggest-name) are exempt and print in full
+    /// regardless — see that command's own --help.
     /// Example: --select `uuid,display_name`
     #[arg(long, global = true, value_name = "PATHS", conflicts_with = "select_all")]
     pub select: Option<String>,
@@ -359,6 +359,34 @@ pub enum BranchCommand {
         /// Branch name or commit hash to create the new branch from
         #[arg(long)]
         target: String,
+    },
+    /// Compute a suggested Bitbucket branch name from a Jira issue's
+    /// key/type/summary, as JSON
+    ///
+    /// Prefix resolution: --prefix wins if given (no network call). Else, if
+    /// --repository is given, looks up that repo's actual branching model
+    /// (GET .../branching-model) for the real configured prefix — requires
+    /// authentication. Else, falls back to a local heuristic (Bug -> bugfix,
+    /// anything else -> feature), no network call, no auth. Always prints its
+    /// full result regardless of --select — a small fixed-shape object.
+    #[command(after_help = "Examples:\n  bitbucket branch suggest-name --issue-key SBF-19 --issue-type Task --issue-summary \"Costruire griglia Smartlocker v2\"\n  bitbucket branch suggest-name --issue-key SBF-19 --issue-type Task --issue-summary \"...\" --repository lucabrognaracode/my-repo\n  bitbucket branch suggest-name --issue-key SBF-19 --issue-type Task --issue-summary \"...\" --prefix hotfix")]
+    SuggestName {
+        /// Jira issue key, e.g. SBF-19
+        #[arg(long)]
+        issue_key: String,
+        /// Jira issue type, e.g. Task, Bug, Story
+        #[arg(long)]
+        issue_type: String,
+        /// Jira issue summary
+        #[arg(long)]
+        issue_summary: String,
+        /// Repository to look up the real branching model from, in the form
+        /// `workspace/repo_slug`. Ignored if --prefix is also given.
+        #[arg(long)]
+        repository: Option<String>,
+        /// Explicit prefix override — skips both inference and any lookup
+        #[arg(long)]
+        prefix: Option<String>,
     },
 }
 

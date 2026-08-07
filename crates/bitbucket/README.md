@@ -354,6 +354,43 @@ cargo run -p bitbucket -- branch create lucabrognaracode/my-repo feature/my-bran
 
 Requires the `repository:write` scope.
 
+### `bitbucket branch suggest-name --issue-key <KEY> --issue-type <TYPE> --issue-summary <SUMMARY>`
+
+Computes a suggested Bitbucket branch name from a Jira issue's key/type/summary
+(useful when composing a branch name for `branch create` from a `jira issue
+create`/`jira issue get` result — see the root README for how the two CLIs
+are meant to be composed by an agent). The branch-type prefix (`feature/`,
+`bugfix/`, ...) is resolved in one of three ways, tried in order:
+
+1. `--prefix <PREFIX>` — explicit override, used verbatim. No lookup, no network call.
+2. `--repository <workspace>/<repo_slug>` — looks up that repository's actual
+   configured branching model (`GET /2.0/repositories/{workspace}/{repo_slug}/branching-model`)
+   for the real prefix. Requires authentication.
+3. Neither given — falls back to a local best-effort heuristic (`Bug` → `bugfix`,
+   anything else → `feature`), no network call, no auth needed. This is a guess,
+   not guaranteed to match a specific repo's actual branching model — use
+   `--repository` or `--prefix` for a reliable result.
+
+The response's `prefix_source` field (`"override"` / `"branching_model"` /
+`"heuristic"`) reports which of the three produced the prefix.
+
+```sh
+# offline heuristic
+cargo run -p bitbucket -- branch suggest-name --issue-key SBF-19 --issue-type Task --issue-summary "Costruire griglia Smartlocker v2"
+
+# real lookup against a repo's branching model
+cargo run -p bitbucket -- branch suggest-name --issue-key SBF-19 --issue-type Task --issue-summary "..." --repository lucabrognaracode/my-repo
+
+# explicit override
+cargo run -p bitbucket -- branch suggest-name --issue-key SBF-19 --issue-type Task --issue-summary "..." --prefix hotfix
+```
+
+**Flags:**
+- `--repository <workspace/repo_slug>` — optional; triggers the real branching-model lookup
+- `--prefix <PREFIX>` — optional; explicit override, skips inference and any lookup
+
+No auth/scope required unless `--repository` is used, in which case it requires the `repository` (read) scope (same as `branch list`).
+
 ### `--select <PATHS>` (global flag)
 
 All commands that return JSON support a `--select` flag for client-side field projection. Pass a comma-separated list of dot-notation paths; only those paths are included in the output. If omitted, the full response from Bitbucket is printed.

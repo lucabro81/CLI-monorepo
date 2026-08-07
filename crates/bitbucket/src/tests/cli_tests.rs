@@ -403,6 +403,71 @@ fn parses_branch_create() {
 }
 
 #[test]
+fn parses_branch_suggest_name_with_required_flags_only() {
+    let cli = Cli::try_parse_from([
+        "bitbucket", "branch", "suggest-name",
+        "--issue-key", "SBF-19",
+        "--issue-type", "Task",
+        "--issue-summary", "Costruire griglia Smartlocker v2",
+    ]).expect("should parse");
+
+    match cli.command {
+        Command::Branch {
+            command: BranchCommand::SuggestName { issue_key, issue_type, issue_summary, repository, prefix },
+        } => {
+            assert_eq!(issue_key, "SBF-19");
+            assert_eq!(issue_type, "Task");
+            assert_eq!(issue_summary, "Costruire griglia Smartlocker v2");
+            assert_eq!(repository, None);
+            assert_eq!(prefix, None);
+        }
+        other => panic!("expected Branch SuggestName, got {other:?}"),
+    }
+}
+
+#[test]
+fn parses_branch_suggest_name_with_repository() {
+    let cli = Cli::try_parse_from([
+        "bitbucket", "branch", "suggest-name",
+        "--issue-key", "SBF-19",
+        "--issue-type", "Task",
+        "--issue-summary", "Costruire griglia Smartlocker v2",
+        "--repository", "lucabrognaracode/my-repo",
+    ]).expect("should parse");
+
+    match cli.command {
+        Command::Branch {
+            command: BranchCommand::SuggestName { repository, prefix, .. },
+        } => {
+            assert_eq!(repository, Some("lucabrognaracode/my-repo".to_string()));
+            assert_eq!(prefix, None);
+        }
+        other => panic!("expected Branch SuggestName, got {other:?}"),
+    }
+}
+
+#[test]
+fn parses_branch_suggest_name_with_prefix() {
+    let cli = Cli::try_parse_from([
+        "bitbucket", "branch", "suggest-name",
+        "--issue-key", "SBF-19",
+        "--issue-type", "Task",
+        "--issue-summary", "Costruire griglia Smartlocker v2",
+        "--prefix", "hotfix",
+    ]).expect("should parse");
+
+    match cli.command {
+        Command::Branch {
+            command: BranchCommand::SuggestName { repository, prefix, .. },
+        } => {
+            assert_eq!(repository, None);
+            assert_eq!(prefix, Some("hotfix".to_string()));
+        }
+        other => panic!("expected Branch SuggestName, got {other:?}"),
+    }
+}
+
+#[test]
 fn parses_pr_approve() {
     let cli = Cli::try_parse_from(["bitbucket", "pr", "approve", "lucabrognaracode/my-repo", "42"]).expect("should parse");
 
