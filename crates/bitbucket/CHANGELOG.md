@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.8.0](https://github.com/lucabro81/CLI-monorepo/compare/bitbucket-v0.7.0...bitbucket-v0.8.0) - 2026-09-28
+
+### Added
+- *(bitbucket)* add pr list-comments and pr update-comment
+
+### Other
+- *(bitbucket)* document pr create --reviewers in README
+- *(bitbucket)* document pr list-comments and pr update-comment
+- *(bitbucket)* reject non-numeric comment id; clarify build_comment_body doc
+- Merge pull request #127 from lucabro81/issue125 ([#127](https://github.com/lucabro81/CLI-monorepo/pull/127))
 ## [0.7.0](https://github.com/lucabro81/CLI-monorepo/compare/bitbucket-v0.6.0...bitbucket-v0.7.0) - 2026-09-28
 
 ### Added
