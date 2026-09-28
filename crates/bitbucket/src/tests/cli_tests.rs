@@ -221,7 +221,7 @@ fn parses_pr_create_with_no_optional_flags() {
 
     match cli.command {
         Command::Pr {
-            command: PrCommand::Create { repository, title, source, destination, description, close_source_branch, reviewers },
+            command: PrCommand::Create { repository, title, source, destination, description, close_source_branch, reviewers, draft },
         } => {
             assert_eq!(repository, "lucabrognaracode/my-repo");
             assert_eq!(title, "My PR");
@@ -230,6 +230,7 @@ fn parses_pr_create_with_no_optional_flags() {
             assert_eq!(description, None);
             assert!(!close_source_branch);
             assert_eq!(reviewers, None);
+            assert!(!draft);
         }
         other => panic!("expected Pr Create, got {other:?}"),
     }
@@ -245,11 +246,12 @@ fn parses_pr_create_with_all_flags() {
         "--description", "does things",
         "--close-source-branch",
         "--reviewers", "{uuid-1},{uuid-2}",
+        "--draft",
     ]).expect("should parse");
 
     match cli.command {
         Command::Pr {
-            command: PrCommand::Create { repository, title, source, destination, description, close_source_branch, reviewers },
+            command: PrCommand::Create { repository, title, source, destination, description, close_source_branch, reviewers, draft },
         } => {
             assert_eq!(repository, "lucabrognaracode/my-repo");
             assert_eq!(title, "My PR");
@@ -258,6 +260,7 @@ fn parses_pr_create_with_all_flags() {
             assert_eq!(description, Some("does things".to_string()));
             assert!(close_source_branch);
             assert_eq!(reviewers, Some("{uuid-1},{uuid-2}".to_string()));
+            assert!(draft);
         }
         other => panic!("expected Pr Create, got {other:?}"),
     }
@@ -271,7 +274,7 @@ fn parses_pr_update_with_no_optional_flags() {
 
     match cli.command {
         Command::Pr {
-            command: PrCommand::Update { repository, id, title, description, destination, reviewers },
+            command: PrCommand::Update { repository, id, title, description, destination, reviewers, draft, ready_for_review },
         } => {
             assert_eq!(repository, "lucabrognaracode/my-repo");
             assert_eq!(id, 42);
@@ -279,6 +282,8 @@ fn parses_pr_update_with_no_optional_flags() {
             assert_eq!(description, None);
             assert_eq!(destination, None);
             assert_eq!(reviewers, None);
+            assert!(!draft);
+            assert!(!ready_for_review);
         }
         other => panic!("expected Pr Update, got {other:?}"),
     }
@@ -292,11 +297,12 @@ fn parses_pr_update_with_all_flags() {
         "--description", "New description",
         "--destination", "develop",
         "--reviewers", "{uuid-1},{uuid-2}",
+        "--draft",
     ]).expect("should parse");
 
     match cli.command {
         Command::Pr {
-            command: PrCommand::Update { repository, id, title, description, destination, reviewers },
+            command: PrCommand::Update { repository, id, title, description, destination, reviewers, draft, ready_for_review },
         } => {
             assert_eq!(repository, "lucabrognaracode/my-repo");
             assert_eq!(id, 42);
@@ -304,9 +310,39 @@ fn parses_pr_update_with_all_flags() {
             assert_eq!(description, Some("New description".to_string()));
             assert_eq!(destination, Some("develop".to_string()));
             assert_eq!(reviewers, Some("{uuid-1},{uuid-2}".to_string()));
+            assert!(draft);
+            assert!(!ready_for_review);
         }
         other => panic!("expected Pr Update, got {other:?}"),
     }
+}
+
+#[test]
+fn parses_pr_update_with_ready_for_review_only() {
+    let cli = Cli::try_parse_from([
+        "bitbucket", "pr", "update", "lucabrognaracode/my-repo", "42",
+        "--ready-for-review",
+    ]).expect("should parse");
+
+    match cli.command {
+        Command::Pr {
+            command: PrCommand::Update { draft, ready_for_review, .. },
+        } => {
+            assert!(!draft);
+            assert!(ready_for_review);
+        }
+        other => panic!("expected Pr Update, got {other:?}"),
+    }
+}
+
+#[test]
+fn rejects_pr_update_with_both_draft_and_ready_for_review() {
+    let err = Cli::try_parse_from([
+        "bitbucket", "pr", "update", "lucabrognaracode/my-repo", "42",
+        "--draft", "--ready-for-review",
+    ]).expect_err("--draft and --ready-for-review are mutually exclusive");
+
+    assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
 }
 
 #[test]

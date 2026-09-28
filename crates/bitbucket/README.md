@@ -193,6 +193,7 @@ Creates a new pull request.
 cargo run -p bitbucket -- pr create lucabrognaracode/my-repo --title "My PR" --source feature-branch
 cargo run -p bitbucket -- pr create lucabrognaracode/my-repo --title "My PR" --source feature-branch --destination main --description "does things"
 cargo run -p bitbucket -- pr create lucabrognaracode/my-repo --title "My PR" --source feature-branch --close-source-branch
+cargo run -p bitbucket -- pr create lucabrognaracode/my-repo --title "WIP: My PR" --source feature-branch --draft
 ```
 
 **Flags:**
@@ -201,18 +202,21 @@ cargo run -p bitbucket -- pr create lucabrognaracode/my-repo --title "My PR" --s
 - `--destination <BRANCH>` — destination branch name. If omitted, Bitbucket uses the repository's main branch.
 - `--description <TEXT>` — pull request description
 - `--close-source-branch` — close the source branch after the pull request is merged
+- `--draft` — create the pull request as a draft; publish it later with `pr update --ready-for-review`
 
 Requires the `pullrequest:write` scope. Reviewers are not yet supported (see CLAUDE.md backlog).
 
 ### `bitbucket pr update <workspace>/<repo_slug> <id>`
 
-Updates an open pull request's title, description, destination branch, or reviewers. Only the fields you pass are changed, with one exception: `--reviewers` replaces the entire reviewer list rather than adding to it.
+Updates an open pull request's title, description, destination branch, reviewers, or draft status. Only the fields you pass are changed, with one exception: `--reviewers` replaces the entire reviewer list rather than adding to it.
 
 ```sh
 cargo run -p bitbucket -- pr update lucabrognaracode/my-repo 42 --title "New title"
 cargo run -p bitbucket -- pr update lucabrognaracode/my-repo 42 --description "Updated description"
 cargo run -p bitbucket -- pr update lucabrognaracode/my-repo 42 --destination develop
 cargo run -p bitbucket -- pr update lucabrognaracode/my-repo 42 --reviewers "{504c3b62-8120-4f0c-a7bc-87800b9d6f70}"
+cargo run -p bitbucket -- pr update lucabrognaracode/my-repo 42 --draft
+cargo run -p bitbucket -- pr update lucabrognaracode/my-repo 42 --ready-for-review
 ```
 
 **Flags** (at least one required):
@@ -220,6 +224,8 @@ cargo run -p bitbucket -- pr update lucabrognaracode/my-repo 42 --reviewers "{50
 - `--description <TEXT>` — new pull request description
 - `--destination <BRANCH>` — new destination branch name
 - `--reviewers <UUIDS>` — comma-separated reviewer UUIDs, same format as `pr create --reviewers`; replaces the full reviewer list
+- `--draft` — convert the pull request to a draft (mutually exclusive with `--ready-for-review`)
+- `--ready-for-review` — mark a draft pull request as ready for review (mutually exclusive with `--draft`)
 
 Requires the `pullrequest:write` scope.
 
