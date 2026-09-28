@@ -167,7 +167,7 @@ pub enum PrCommand {
     ///
     /// Always prints its full result regardless of --select — a single pull
     /// request object, fixed-shape.
-    #[command(after_help = "Examples:\n  bitbucket pr create lucabrognaracode/my-repo --title \"My PR\" --source feature-branch\n  bitbucket pr create lucabrognaracode/my-repo --title \"My PR\" --source feature-branch --destination main --description \"does things\"\n  bitbucket pr create lucabrognaracode/my-repo --title \"My PR\" --source feature-branch --close-source-branch\n  bitbucket pr create lucabrognaracode/my-repo --title \"My PR\" --source feature-branch --reviewers \"{504c3b62-8120-4f0c-a7bc-87800b9d6f70}\"")]
+    #[command(after_help = "Examples:\n  bitbucket pr create lucabrognaracode/my-repo --title \"My PR\" --source feature-branch\n  bitbucket pr create lucabrognaracode/my-repo --title \"My PR\" --source feature-branch --destination main --description \"does things\"\n  bitbucket pr create lucabrognaracode/my-repo --title \"My PR\" --source feature-branch --close-source-branch\n  bitbucket pr create lucabrognaracode/my-repo --title \"My PR\" --source feature-branch --reviewers \"{504c3b62-8120-4f0c-a7bc-87800b9d6f70}\"\n  bitbucket pr create lucabrognaracode/my-repo --title \"WIP: My PR\" --source feature-branch --draft")]
     Create {
         /// Full repository identifier in the form `workspace/repo_slug`
         repository: String,
@@ -191,16 +191,20 @@ pub enum PrCommand {
         /// `bitbucket workspace members <workspace>`.
         #[arg(long)]
         reviewers: Option<String>,
+        /// Create the pull request as a draft (not yet ready for review).
+        /// Publish it later with `bitbucket pr update <repository> <id> --ready-for-review`.
+        #[arg(long)]
+        draft: bool,
     },
-    /// Update an open pull request's title, description, destination branch, or
-    /// reviewers, as JSON
+    /// Update an open pull request's title, description, destination branch,
+    /// reviewers, or draft status, as JSON
     ///
     /// The pull request must be open. Only the fields you pass are changed, with
     /// one exception: --reviewers replaces the entire reviewer list rather than
     /// adding to it — to add a reviewer to an existing list, pass all current
     /// reviewer UUIDs plus the new one. Always prints its full result regardless
     /// of --select — a single pull request object, fixed shape.
-    #[command(after_help = "Examples:\n  bitbucket pr update lucabrognaracode/my-repo 42 --title \"New title\"\n  bitbucket pr update lucabrognaracode/my-repo 42 --description \"Updated description\"\n  bitbucket pr update lucabrognaracode/my-repo 42 --destination develop\n  bitbucket pr update lucabrognaracode/my-repo 42 --reviewers \"{504c3b62-8120-4f0c-a7bc-87800b9d6f70}\"")]
+    #[command(after_help = "Examples:\n  bitbucket pr update lucabrognaracode/my-repo 42 --title \"New title\"\n  bitbucket pr update lucabrognaracode/my-repo 42 --description \"Updated description\"\n  bitbucket pr update lucabrognaracode/my-repo 42 --destination develop\n  bitbucket pr update lucabrognaracode/my-repo 42 --reviewers \"{504c3b62-8120-4f0c-a7bc-87800b9d6f70}\"\n  bitbucket pr update lucabrognaracode/my-repo 42 --draft\n  bitbucket pr update lucabrognaracode/my-repo 42 --ready-for-review")]
     Update {
         /// Full repository identifier in the form `workspace/repo_slug`
         repository: String,
@@ -221,6 +225,13 @@ pub enum PrCommand {
         /// list rather than adding to it.
         #[arg(long)]
         reviewers: Option<String>,
+        /// Convert the pull request to a draft. Cannot be combined with --ready-for-review.
+        #[arg(long, conflicts_with = "ready_for_review")]
+        draft: bool,
+        /// Mark a draft pull request as ready for review (publish it). Cannot be
+        /// combined with --draft.
+        #[arg(long)]
+        ready_for_review: bool,
     },
     /// Approve a pull request, as JSON
     ///

@@ -9,10 +9,10 @@ use crate::error::CliError;
 /// Dispatches a `PrCommand` variant to the appropriate Bitbucket API call.
 pub fn run(command: PrCommand, select: cli_fields::Select<'_>) -> Result<(), CliError> {
     match command {
-        PrCommand::Create { repository, title, source, destination, description, close_source_branch, reviewers } => {
+        PrCommand::Create { repository, title, source, destination, description, close_source_branch, reviewers, draft } => {
             let (workspace, repo_slug) = split_repository(&repository)?;
             let reviewer_uuids = split_reviewers(reviewers.as_deref());
-            let body = build_create_body(&title, &source, destination, description, close_source_branch, reviewer_uuids);
+            let body = build_create_body(&title, &source, destination, description, close_source_branch, reviewer_uuids, draft);
             let value = authenticated_client()?
                 .create_pull_request(workspace, repo_slug, &body)
                 .map_err(|e| CliError::ApiRequestFailed {
@@ -21,8 +21,9 @@ pub fn run(command: PrCommand, select: cli_fields::Select<'_>) -> Result<(), Cli
             // Exempt: a single pull request object, fixed shape.
             print_json(&value, select.or_all())
         }
-        PrCommand::Update { repository, id, title, description, destination, reviewers } => {
-            run_update(&repository, id, title, description, destination, reviewers.as_deref(), select)
+        PrCommand::Update { repository, id, title, description, destination, reviewers, draft, ready_for_review } => {
+            let body = update_body_from_flags(title, description, destination, reviewers.as_deref(), draft, ready_for_review)?;
+            run_update(&repository, id, &body, select)
         }
         PrCommand::Approve { repository, id } => {
             let (workspace, repo_slug) = split_repository(&repository)?;
@@ -124,6 +125,7 @@ fn build_create_body(
     description: Option<String>,
     close_source_branch: bool,
     reviewers: Vec<String>,
+    draft: bool,
 ) -> Value {
     let mut body = json!({
         "title": title,
@@ -146,27 +148,35 @@ fn build_create_body(
         let reviewer_objects: Vec<Value> = reviewers.into_iter().map(|uuid| json!({"uuid": uuid})).collect();
         map.insert("reviewers".to_string(), Value::Array(reviewer_objects));
     }
+    if draft {
+        map.insert("draft".to_string(), Value::Bool(true));
+    }
 
     body
 }
 
-/// Handles `PrCommand::Update`: parses reviewers, validates at least one field was
-/// passed, builds the request body, and calls `PUT .../pullrequests/{id}`.
-fn run_update(
-    repository: &str,
-    id: u64,
+/// Turns `pr update`'s flags into a validated `PUT .../pullrequests/{id}` body: parses
+/// reviewers, resolves draft status, and rejects an update with no fields set.
+fn update_body_from_flags(
     title: Option<String>,
     description: Option<String>,
     destination: Option<String>,
     reviewers: Option<&str>,
-    select: cli_fields::Select<'_>,
-) -> Result<(), CliError> {
-    let (workspace, repo_slug) = split_repository(repository)?;
+    draft: bool,
+    ready_for_review: bool,
+) -> Result<Value, CliError> {
     let reviewer_uuids = split_reviewers(reviewers);
-    validate_update_has_field(title.as_deref(), description.as_deref(), destination.as_deref(), &reviewer_uuids)?;
-    let body = build_update_body(title, description, destination, reviewer_uuids);
+    let draft = draft_status(draft, ready_for_review);
+    validate_update_has_field(title.as_deref(), description.as_deref(), destination.as_deref(), &reviewer_uuids, draft)?;
+    Ok(build_update_body(title, description, destination, reviewer_uuids, draft))
+}
+
+/// Handles `PrCommand::Update` once the body is built and validated: calls
+/// `PUT .../pullrequests/{id}` and prints the updated pull request.
+fn run_update(repository: &str, id: u64, body: &Value, select: cli_fields::Select<'_>) -> Result<(), CliError> {
+    let (workspace, repo_slug) = split_repository(repository)?;
     let value = authenticated_client()?
-        .update_pull_request(workspace, repo_slug, id, &body)
+        .update_pull_request(workspace, repo_slug, id, body)
         .map_err(|e| CliError::ApiRequestFailed {
             reason: e.to_string(),
         })?;
@@ -182,6 +192,19 @@ fn split_reviewers(reviewers: Option<&str>) -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// Maps `pr update`'s mutually exclusive `--draft` / `--ready-for-review` flags to the
+/// `draft` body field: `Some(true)`, `Some(false)`, or `None` (leave draft status as is).
+/// clap's `conflicts_with` guarantees both are never set together.
+fn draft_status(draft: bool, ready_for_review: bool) -> Option<bool> {
+    if draft {
+        Some(true)
+    } else if ready_for_review {
+        Some(false)
+    } else {
+        None
+    }
+}
+
 /// Validates that at least one updatable field was provided for `pr update` — an
 /// empty body would be a no-op `PUT` request.
 fn validate_update_has_field(
@@ -189,10 +212,11 @@ fn validate_update_has_field(
     description: Option<&str>,
     destination: Option<&str>,
     reviewers: &[String],
+    draft: Option<bool>,
 ) -> Result<(), CliError> {
-    if title.is_none() && description.is_none() && destination.is_none() && reviewers.is_empty() {
+    if title.is_none() && description.is_none() && destination.is_none() && reviewers.is_empty() && draft.is_none() {
         return Err(CliError::InvalidInput {
-            reason: "at least one of --title, --description, --destination, or --reviewers must be set".to_string(),
+            reason: "at least one of --title, --description, --destination, --reviewers, --draft, or --ready-for-review must be set".to_string(),
         });
     }
     Ok(())
@@ -201,11 +225,13 @@ fn validate_update_has_field(
 /// Builds the `PUT /2.0/repositories/{workspace}/{repo_slug}/pullrequests/{id}` request
 /// body. Only the fields passed as `Some`/non-empty are included, so the request only
 /// changes what was asked. `reviewers`, if non-empty, replaces the entire reviewer list.
+/// `draft`, if set, is sent as-is — `Some(false)` explicitly publishes a draft.
 fn build_update_body(
     title: Option<String>,
     description: Option<String>,
     destination: Option<String>,
     reviewers: Vec<String>,
+    draft: Option<bool>,
 ) -> Value {
     let mut body = json!({});
     let map = body.as_object_mut().unwrap_or_else(|| {
@@ -224,6 +250,9 @@ fn build_update_body(
     if !reviewers.is_empty() {
         let reviewer_objects: Vec<Value> = reviewers.into_iter().map(|uuid| json!({"uuid": uuid})).collect();
         map.insert("reviewers".to_string(), Value::Array(reviewer_objects));
+    }
+    if let Some(draft) = draft {
+        map.insert("draft".to_string(), Value::Bool(draft));
     }
 
     body
