@@ -4,7 +4,7 @@ Architecture and design notes for the `bitbucket` crate. Global rules (TDD, erro
 
 ## Status
 
-`init`, `doctor`, `auth login`, `auth whoami`, `repo get`, `repo list`, `repo create`, `repo delete`, `pr get`, `pr list`, `pr create`, `pr update`, `pr comment`, `pr approve`, `pr unapprove`, `pr decline`, `pr merge`, `pr diff`, `branch list`, `branch create`, `branch suggest-name`, `workspace members` implemented. Other commands not started yet.
+`init`, `doctor`, `auth login`, `auth whoami`, `repo get`, `repo list`, `repo create`, `repo delete`, `pr get`, `pr list`, `pr create`, `pr update`, `pr comment`, `pr list-comments`, `pr update-comment`, `pr approve`, `pr unapprove`, `pr decline`, `pr merge`, `pr diff`, `branch list`, `branch create`, `branch suggest-name`, `workspace members` implemented. Other commands not started yet.
 
 ## Module map (mirrors crates/jira)
 
@@ -17,7 +17,7 @@ src/
     init.rs       — run_init(), write_app_config(); human onboarding flow [implemented]
     repo.rs       — run(RepoCommand); dispatches all repo subcommands   [get, list, create, delete implemented]
     pr.rs         — run(PrCommand); dispatches all pr subcommands       [get, list, create, update, comment,
-                    approve, unapprove, decline, merge, diff implemented]
+                    list-comments, update-comment, approve, unapprove, decline, merge, diff implemented]
     branch.rs     — run(BranchCommand); dispatches all branch subcommands [list, create, suggest-name implemented]
     workspace.rs  — run(WorkspaceCommand); dispatches all workspace subcommands [members implemented]
   auth.rs         — OAuthConfig, Credentials, login_client_credentials(),
@@ -26,7 +26,8 @@ src/
                     Bitbucket REST API v2.0 methods [get_current_user, get_repository,
                     list_repositories, create_repository, delete_repository, list_pull_requests,
                     get_pull_request, create_pull_request, update_pull_request,
-                    create_pull_request_comment, approve_pull_request, unapprove_pull_request,
+                    create_pull_request_comment, list_pull_request_comments,
+                    update_pull_request_comment, approve_pull_request, unapprove_pull_request,
                     decline_pull_request, merge_pull_request, get_pull_request_diff, list_branches,
                     list_workspace_members implemented]
   cli.rs          — clap structs: Cli (--select global), Command, AuthCommand, RepoCommand,
@@ -124,6 +125,8 @@ Config layout, mirroring jira (`$XDG_CONFIG_HOME/bitbucket-cli/`, falling back t
 | `pr create <workspace>/<repo_slug> --title --source [--destination --description --close-source-branch --reviewers --draft]` | `POST /2.0/repositories/{workspace}/{repo_slug}/pullrequests`, `--reviewers` is a comma-separated list of reviewer UUIDs (find them with `workspace members`), `--draft` sends `"draft": true`, supports `--select` |
 | `pr update <workspace>/<repo_slug> <id> [--title --description --destination --reviewers --draft --ready-for-review]` | `PUT /2.0/repositories/{workspace}/{repo_slug}/pullrequests/{id}`, pull request must be open, at least one flag required, `--reviewers` replaces the full reviewer list (not additive, same format as `pr create --reviewers`), `--draft`/`--ready-for-review` are mutually exclusive and send `"draft": true`/`"draft": false`, supports `--select` |
 | `pr comment <workspace>/<repo_slug> <id> --content [--path --line]` | `POST /2.0/repositories/{workspace}/{repo_slug}/pullrequests/{id}/comments`, `--path`/`--line` for inline comments (both or neither), supports `--select` |
+| `pr list-comments <workspace>/<repo_slug> <id> [--page]` | `GET /2.0/repositories/{workspace}/{repo_slug}/pullrequests/{id}/comments`, paginated (`--page`), returns all comments including deleted ones (`deleted: true`) and replies, no client-side filtering, supports `--select` |
+| `pr update-comment <workspace>/<repo_slug> <id> <comment_id> --content` | `PUT /2.0/repositories/{workspace}/{repo_slug}/pullrequests/{id}/comments/{comment_id}`, replaces the comment text only (inline position unchanged), usually author-only on Bitbucket's side, supports `--select` |
 | `pr approve <workspace>/<repo_slug> <id>` | `POST /2.0/repositories/{workspace}/{repo_slug}/pullrequests/{id}/approve`, supports `--select` |
 | `pr unapprove <workspace>/<repo_slug> <id>` | `DELETE /2.0/repositories/{workspace}/{repo_slug}/pullrequests/{id}/approve`, synthesizes `{"unapproved": true, "id": ...}`, supports `--select` |
 | `pr decline <workspace>/<repo_slug> <id> --confirm` | `POST /2.0/repositories/{workspace}/{repo_slug}/pullrequests/{id}/decline`, destructive, requires `--confirm`, supports `--select` |
@@ -165,6 +168,8 @@ scopes a command needs is documented per-command, not enforced by `doctor`.
   | `pr create` | yes | single pull request object, fixed shape |
   | `pr update` | yes | single pull request object, fixed shape |
   | `pr comment` | yes | single comment object, fixed shape |
+  | `pr list-comments` | **no** | paginated collection |
+  | `pr update-comment` | yes | single comment object, fixed shape |
   | `pr approve` | yes | small approval object |
   | `pr unapprove` | yes | synthesized by us: `{"unapproved": true, "id": ...}` |
   | `pr decline` | yes | single pull request object, fixed shape |

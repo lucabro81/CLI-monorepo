@@ -24,6 +24,8 @@ CLI for Bitbucket Cloud, designed to be driven by an LLM agent (output is JSON, 
   - [`bitbucket pr merge <workspace>/<repo_slug> <id>`](#bitbucket-pr-merge-workspacerepo_slug-id)
   - [`bitbucket pr diff <workspace>/<repo_slug> <id>`](#bitbucket-pr-diff-workspacerepo_slug-id)
   - [`bitbucket pr comment <workspace>/<repo_slug> <id>`](#bitbucket-pr-comment-workspacerepo_slug-id)
+  - [`bitbucket pr list-comments <workspace>/<repo_slug> <id>`](#bitbucket-pr-list-comments-workspacerepo_slug-id)
+  - [`bitbucket pr update-comment <workspace>/<repo_slug> <id> <comment_id>`](#bitbucket-pr-update-comment-workspacerepo_slug-id-comment_id)
   - [`bitbucket pr get <workspace>/<repo_slug> <id>`](#bitbucket-pr-get-workspacerepo_slug-id)
   - [`bitbucket pr list <workspace>/<repo_slug>`](#bitbucket-pr-list-workspacerepo_slug)
   - [`bitbucket branch list <workspace>/<repo_slug>`](#bitbucket-branch-list-workspacerepo_slug)
@@ -35,7 +37,7 @@ CLI for Bitbucket Cloud, designed to be driven by an LLM agent (output is JSON, 
 
 ## Status
 
-`init`, `doctor`, `auth login`/`auth whoami`, `repo get`, `repo list`, `repo create`, `repo delete`, `pr get`, `pr list`, `pr create`, `pr update`, `pr comment`, `pr approve`, `pr unapprove`, `pr decline`, `pr merge`, `branch list` implemented. See [CLAUDE.md](CLAUDE.md) for architecture and the planned command list.
+`init`, `doctor`, `auth login`/`auth whoami`, `repo get`, `repo list`, `repo create`, `repo delete`, `pr get`, `pr list`, `pr create`, `pr update`, `pr comment`, `pr list-comments`, `pr update-comment`, `pr approve`, `pr unapprove`, `pr decline`, `pr merge`, `branch list` implemented. See [CLAUDE.md](CLAUDE.md) for architecture and the planned command list.
 
 ## Setup
 
@@ -305,6 +307,33 @@ cargo run -p bitbucket -- pr comment lucabrognaracode/my-repo 42 --content "Fix 
 **Flags:**
 - `--content <TEXT>` — comment text, Markdown (required)
 - `--path <PATH>` and `--line <N>` — attach the comment to a line in a file (the new version's line number). Both or neither must be set.
+
+Requires the `pullrequest:write` scope.
+
+### `bitbucket pr list-comments <workspace>/<repo_slug> <id>`
+
+Lists every comment on a pull request, oldest first: general comments, inline comments and replies. Deleted comments are included too, marked with `deleted: true`, so no filtering happens on the client side. Replies carry `parent.id`, and inline comments carry `inline.path` and `inline.to`. `--select` is required because the list is paginated and unbounded.
+
+```sh
+cargo run -p bitbucket -- pr list-comments lucabrognaracode/my-repo 42 --select values.id,values.content.raw,values.user.display_name,values.deleted,values.inline.path
+cargo run -p bitbucket -- pr list-comments lucabrognaracode/my-repo 42 --page 2 --select values.id,values.content.raw
+```
+
+**Flags:**
+- `--page <N>` — page to fetch (Bitbucket pagination starts at 1)
+
+Requires the `pullrequest` (read) scope.
+
+### `bitbucket pr update-comment <workspace>/<repo_slug> <id> <comment_id>`
+
+Replaces the text of an existing pull request comment. Only the text changes: an inline comment keeps its file and line. Bitbucket normally lets only the comment's author edit it. Use `pr list-comments` to find comment IDs.
+
+```sh
+cargo run -p bitbucket -- pr update-comment lucabrognaracode/my-repo 42 123456 --content "Updated: looks good to me"
+```
+
+**Flags:**
+- `--content <TEXT>` — new comment text, Markdown (required). It replaces the existing text entirely.
 
 Requires the `pullrequest:write` scope.
 
