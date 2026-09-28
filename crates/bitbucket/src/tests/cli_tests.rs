@@ -390,6 +390,90 @@ fn parses_pr_comment_with_inline_flags() {
 }
 
 #[test]
+fn parses_pr_list_comments_without_page() {
+    let cli = Cli::try_parse_from(["bitbucket", "pr", "list-comments", "lucabrognaracode/my-repo", "42"]).expect("should parse");
+
+    match cli.command {
+        Command::Pr {
+            command: PrCommand::ListComments { repository, id, page },
+        } => {
+            assert_eq!(repository, "lucabrognaracode/my-repo");
+            assert_eq!(id, 42);
+            assert_eq!(page, None);
+        }
+        other => panic!("expected Pr ListComments, got {other:?}"),
+    }
+}
+
+#[test]
+fn parses_pr_list_comments_with_page() {
+    let cli = Cli::try_parse_from(["bitbucket", "pr", "list-comments", "lucabrognaracode/my-repo", "42", "--page", "3"])
+        .expect("should parse");
+
+    match cli.command {
+        Command::Pr {
+            command: PrCommand::ListComments { repository, id, page },
+        } => {
+            assert_eq!(repository, "lucabrognaracode/my-repo");
+            assert_eq!(id, 42);
+            assert_eq!(page, Some(3));
+        }
+        other => panic!("expected Pr ListComments, got {other:?}"),
+    }
+}
+
+#[test]
+fn rejects_pr_list_comments_without_id() {
+    let err = Cli::try_parse_from(["bitbucket", "pr", "list-comments", "lucabrognaracode/my-repo"]).expect_err("should fail");
+
+    assert_eq!(err.kind(), clap::error::ErrorKind::MissingRequiredArgument);
+}
+
+#[test]
+fn parses_pr_update_comment() {
+    let cli = Cli::try_parse_from([
+        "bitbucket", "pr", "update-comment", "lucabrognaracode/my-repo", "42", "7",
+        "--content", "Edited text",
+    ]).expect("should parse");
+
+    match cli.command {
+        Command::Pr {
+            command: PrCommand::UpdateComment { repository, id, comment_id, content },
+        } => {
+            assert_eq!(repository, "lucabrognaracode/my-repo");
+            assert_eq!(id, 42);
+            assert_eq!(comment_id, 7);
+            assert_eq!(content, "Edited text");
+        }
+        other => panic!("expected Pr UpdateComment, got {other:?}"),
+    }
+}
+
+#[test]
+fn rejects_pr_update_comment_without_content() {
+    let err = Cli::try_parse_from(["bitbucket", "pr", "update-comment", "lucabrognaracode/my-repo", "42", "7"])
+        .expect_err("should fail");
+
+    assert_eq!(err.kind(), clap::error::ErrorKind::MissingRequiredArgument);
+}
+
+#[test]
+fn rejects_pr_update_comment_with_non_numeric_comment_id() {
+    let err = Cli::try_parse_from(["bitbucket", "pr", "update-comment", "lucabrognaracode/my-repo", "42", "abc", "--content", "x"])
+        .expect_err("should fail");
+
+    assert_eq!(err.kind(), clap::error::ErrorKind::ValueValidation);
+}
+
+#[test]
+fn rejects_pr_update_comment_without_comment_id() {
+    let err = Cli::try_parse_from(["bitbucket", "pr", "update-comment", "lucabrognaracode/my-repo", "42", "--content", "x"])
+        .expect_err("should fail");
+
+    assert_eq!(err.kind(), clap::error::ErrorKind::MissingRequiredArgument);
+}
+
+#[test]
 fn parses_branch_list_without_page() {
     let cli = Cli::try_parse_from(["bitbucket", "branch", "list", "lucabrognaracode/my-repo"]).expect("should parse");
 

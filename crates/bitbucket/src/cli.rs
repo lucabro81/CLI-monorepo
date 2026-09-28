@@ -14,7 +14,7 @@ pub struct Cli {
     /// command fails with an error reporting the byte size of the full response and
     /// its top-level field names, so you can retry with an informed --select. A few
     /// commands whose output is always small and fixed-shape (doctor, auth whoami,
-    /// repo get/create/delete, pr get/create/approve/unapprove/decline/merge/comment,
+    /// repo get/create/delete, pr get/create/approve/unapprove/decline/merge/comment/update-comment,
     /// branch create, branch suggest-name) are exempt and print in full
     /// regardless — see that command's own --help.
     /// Example: --select `uuid,display_name`
@@ -312,6 +312,39 @@ pub enum PrCommand {
         /// Line number in the new version of the file to attach an inline comment to. Requires --path.
         #[arg(long)]
         line: Option<u64>,
+    },
+    /// List all comments on a pull request, as JSON
+    ///
+    /// Returns general comments, inline comments, and replies, oldest first.
+    /// Deleted comments are included too, marked with `deleted: true`. Replies
+    /// carry `parent.id`; inline comments carry `inline.path` and `inline.to`.
+    #[command(after_help = "Examples:\n  bitbucket pr list-comments lucabrognaracode/my-repo 42 --select values.id,values.content.raw,values.user.display_name,values.deleted,values.inline.path\n  bitbucket pr list-comments lucabrognaracode/my-repo 42 --page 2 --select values.id,values.content.raw")]
+    ListComments {
+        /// Full repository identifier in the form `workspace/repo_slug`
+        repository: String,
+        /// Pull request ID
+        id: u64,
+        /// Page number to fetch (Bitbucket pagination starts at 1)
+        #[arg(long)]
+        page: Option<u32>,
+    },
+    /// Replace the text of an existing pull request comment, as JSON
+    ///
+    /// Only the comment text changes; an inline comment keeps its file and line.
+    /// Bitbucket normally lets only the comment's author edit it. Find comment
+    /// IDs with `bitbucket pr list-comments`. Always prints its full result
+    /// regardless of --select — a single comment object, fixed shape.
+    #[command(after_help = "Example:\n  bitbucket pr update-comment lucabrognaracode/my-repo 42 123456 --content \"Updated: looks good to me\"")]
+    UpdateComment {
+        /// Full repository identifier in the form `workspace/repo_slug`
+        repository: String,
+        /// Pull request ID
+        id: u64,
+        /// Comment ID (the `id` field from `bitbucket pr list-comments`)
+        comment_id: u64,
+        /// New comment text (Markdown). Replaces the existing text entirely.
+        #[arg(long)]
+        content: String,
     },
     /// List pull requests in a repository, as JSON
     #[command(after_help = "Examples:\n  bitbucket pr list lucabrognaracode/my-repo\n  bitbucket pr list lucabrognaracode/my-repo --state MERGED\n  bitbucket pr list lucabrognaracode/my-repo --page 2\n  bitbucket pr list lucabrognaracode/my-repo --select values.title,values.state")]

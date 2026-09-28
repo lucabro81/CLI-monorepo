@@ -33,9 +33,17 @@ pub fn path_pull_request(workspace: &str, repo_slug: &str, id: u64) -> String {
     format!("/repositories/{workspace}/{repo_slug}/pullrequests/{id}")
 }
 
-/// Comments on a single pull request, identified by its numeric ID.
-pub fn path_pull_request_comments(workspace: &str, repo_slug: &str, id: u64) -> String {
-    format!("/repositories/{workspace}/{repo_slug}/pullrequests/{id}/comments")
+/// Comments on a single pull request, identified by its numeric ID, optionally paginated.
+pub fn path_pull_request_comments(workspace: &str, repo_slug: &str, id: u64, page: Option<u32>) -> String {
+    match page {
+        Some(page) => format!("/repositories/{workspace}/{repo_slug}/pullrequests/{id}/comments?page={page}"),
+        None => format!("/repositories/{workspace}/{repo_slug}/pullrequests/{id}/comments"),
+    }
+}
+
+/// A single comment on a pull request. `PUT` to update its text.
+pub fn path_pull_request_comment(workspace: &str, repo_slug: &str, id: u64, comment_id: u64) -> String {
+    format!("/repositories/{workspace}/{repo_slug}/pullrequests/{id}/comments/{comment_id}")
 }
 
 /// The current user's approval of a pull request. `POST` to approve, `DELETE` to unapprove.
