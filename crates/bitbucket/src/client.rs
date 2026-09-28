@@ -144,7 +144,33 @@ impl BitbucketClient {
         id: u64,
         body: &serde_json::Value,
     ) -> Result<serde_json::Value, ClientError> {
-        self.post_json(&endpoints::path_pull_request_comments(workspace, repo_slug, id), body)
+        self.post_json(&endpoints::path_pull_request_comments(workspace, repo_slug, id, None), body)
+    }
+
+    /// Returns a page of comments (including deleted ones and replies) on the pull
+    /// request identified by `id` in `workspace`/`repo_slug`, as raw JSON.
+    pub fn list_pull_request_comments(
+        &self,
+        workspace: &str,
+        repo_slug: &str,
+        id: u64,
+        page: Option<u32>,
+    ) -> Result<serde_json::Value, ClientError> {
+        self.get_json(&endpoints::path_pull_request_comments(workspace, repo_slug, id, page))
+    }
+
+    /// Updates the comment identified by `comment_id` on pull request `id` in
+    /// `workspace`/`repo_slug` with the given JSON body. Returns the updated
+    /// comment, as raw JSON.
+    pub fn update_pull_request_comment(
+        &self,
+        workspace: &str,
+        repo_slug: &str,
+        id: u64,
+        comment_id: u64,
+        body: &serde_json::Value,
+    ) -> Result<serde_json::Value, ClientError> {
+        self.put_json(&endpoints::path_pull_request_comment(workspace, repo_slug, id, comment_id), body)
     }
 
     /// Approves the pull request identified by `id` in `workspace`/`repo_slug`.

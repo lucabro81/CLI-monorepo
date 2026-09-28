@@ -73,16 +73,8 @@ pub fn run(command: PrCommand, select: cli_fields::Select<'_>) -> Result<(), Cli
             print_json(&value, select.or_all())
         }
         PrCommand::Comment { repository, id, content, path, line } => {
-            let (workspace, repo_slug) = split_repository(&repository)?;
             let inline = validate_inline_location(path, line)?;
-            let body = build_comment_body(&content, inline);
-            let value = authenticated_client()?
-                .create_pull_request_comment(workspace, repo_slug, id, &body)
-                .map_err(|e| CliError::ApiRequestFailed {
-                    reason: e.to_string(),
-                })?;
-            // Exempt: a single comment object, fixed shape.
-            print_json(&value, select.or_all())
+            run_create_comment(&repository, id, &content, inline, select)
         }
         PrCommand::Get { repository, id } => {
             let (workspace, repo_slug) = split_repository(&repository)?;
@@ -104,6 +96,10 @@ pub fn run(command: PrCommand, select: cli_fields::Select<'_>) -> Result<(), Cli
             print!("{diff}");
             Ok(())
         }
+        PrCommand::ListComments { repository, id, page } => run_list_comments(&repository, id, page, select),
+        PrCommand::UpdateComment { repository, id, comment_id, content } => {
+            run_update_comment(&repository, id, comment_id, &content, select)
+        }
         PrCommand::List { repository, state, page } => {
             let (workspace, repo_slug) = split_repository(&repository)?;
             let value = authenticated_client()?
@@ -114,6 +110,46 @@ pub fn run(command: PrCommand, select: cli_fields::Select<'_>) -> Result<(), Cli
             print_json(&value, select)
         }
     }
+}
+
+fn run_create_comment(
+    repository: &str,
+    id: u64,
+    content: &str,
+    inline: Option<(String, u64)>,
+    select: cli_fields::Select<'_>,
+) -> Result<(), CliError> {
+    let (workspace, repo_slug) = split_repository(repository)?;
+    let body = build_comment_body(content, inline);
+    let value = authenticated_client()?
+        .create_pull_request_comment(workspace, repo_slug, id, &body)
+        .map_err(|e| CliError::ApiRequestFailed {
+            reason: e.to_string(),
+        })?;
+    // Exempt: a single comment object, fixed shape.
+    print_json(&value, select.or_all())
+}
+
+fn run_list_comments(repository: &str, id: u64, page: Option<u32>, select: cli_fields::Select<'_>) -> Result<(), CliError> {
+    let (workspace, repo_slug) = split_repository(repository)?;
+    let value = authenticated_client()?
+        .list_pull_request_comments(workspace, repo_slug, id, page)
+        .map_err(|e| CliError::ApiRequestFailed {
+            reason: e.to_string(),
+        })?;
+    print_json(&value, select)
+}
+
+fn run_update_comment(repository: &str, id: u64, comment_id: u64, content: &str, select: cli_fields::Select<'_>) -> Result<(), CliError> {
+    let (workspace, repo_slug) = split_repository(repository)?;
+    let body = build_comment_body(content, None);
+    let value = authenticated_client()?
+        .update_pull_request_comment(workspace, repo_slug, id, comment_id, &body)
+        .map_err(|e| CliError::ApiRequestFailed {
+            reason: e.to_string(),
+        })?;
+    // Exempt: a single comment object, fixed shape.
+    print_json(&value, select.or_all())
 }
 
 /// Builds the `POST /2.0/repositories/{workspace}/{repo_slug}/pullrequests` request body.
