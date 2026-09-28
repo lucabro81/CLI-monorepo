@@ -458,6 +458,14 @@ fn rejects_pr_update_comment_without_content() {
 }
 
 #[test]
+fn rejects_pr_update_comment_with_non_numeric_comment_id() {
+    let err = Cli::try_parse_from(["bitbucket", "pr", "update-comment", "lucabrognaracode/my-repo", "42", "abc", "--content", "x"])
+        .expect_err("should fail");
+
+    assert_eq!(err.kind(), clap::error::ErrorKind::ValueValidation);
+}
+
+#[test]
 fn rejects_pr_update_comment_without_comment_id() {
     let err = Cli::try_parse_from(["bitbucket", "pr", "update-comment", "lucabrognaracode/my-repo", "42", "--content", "x"])
         .expect_err("should fail");

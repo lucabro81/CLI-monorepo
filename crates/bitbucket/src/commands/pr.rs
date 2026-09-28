@@ -329,8 +329,9 @@ fn validate_inline_location(path: Option<String>, line: Option<u64>) -> Result<O
     }
 }
 
-/// Builds the `POST /2.0/repositories/{workspace}/{repo_slug}/pullrequests/{id}/comments`
-/// request body. `inline` adds an `inline` object with `path` and `to` (line number).
+/// Builds the comment request body for `POST .../pullrequests/{id}/comments` (create) and
+/// `PUT .../pullrequests/{id}/comments/{comment_id}` (update, always with `inline = None`).
+/// `inline` adds an `inline` object with `path` and `to` (line number).
 fn build_comment_body(content: &str, inline: Option<(String, u64)>) -> Value {
     let mut body = json!({
         "content": {"raw": content},
