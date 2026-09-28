@@ -193,6 +193,7 @@ Creates a new pull request.
 cargo run -p bitbucket -- pr create lucabrognaracode/my-repo --title "My PR" --source feature-branch
 cargo run -p bitbucket -- pr create lucabrognaracode/my-repo --title "My PR" --source feature-branch --destination main --description "does things"
 cargo run -p bitbucket -- pr create lucabrognaracode/my-repo --title "My PR" --source feature-branch --close-source-branch
+cargo run -p bitbucket -- pr create lucabrognaracode/my-repo --title "My PR" --source feature-branch --reviewers "{504c3b62-8120-4f0c-a7bc-87800b9d6f70}"
 cargo run -p bitbucket -- pr create lucabrognaracode/my-repo --title "WIP: My PR" --source feature-branch --draft
 ```
 
@@ -202,9 +203,10 @@ cargo run -p bitbucket -- pr create lucabrognaracode/my-repo --title "WIP: My PR
 - `--destination <BRANCH>` — destination branch name. If omitted, Bitbucket uses the repository's main branch.
 - `--description <TEXT>` — pull request description
 - `--close-source-branch` — close the source branch after the pull request is merged
+- `--reviewers <UUIDS>` — comma-separated reviewer UUIDs, each in curly braces (e.g. `{504c3b62-...}`); find them with `bitbucket workspace members <workspace>`
 - `--draft` — create the pull request as a draft; publish it later with `pr update --ready-for-review`
 
-Requires the `pullrequest:write` scope. Reviewers are not yet supported (see CLAUDE.md backlog).
+Requires the `pullrequest:write` scope.
 
 ### `bitbucket pr update <workspace>/<repo_slug> <id>`
 
