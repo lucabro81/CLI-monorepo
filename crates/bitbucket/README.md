@@ -297,16 +297,18 @@ Requires the `pullrequest` (read) scope.
 
 ### `bitbucket pr comment <workspace>/<repo_slug> <id>`
 
-Adds a comment to a pull request — general or inline (attached to a file/line).
+Adds a comment to a pull request — general, inline (attached to a file/line), or a reply to an existing comment.
 
 ```sh
 cargo run -p bitbucket -- pr comment lucabrognaracode/my-repo 42 --content "Looks good to me"
 cargo run -p bitbucket -- pr comment lucabrognaracode/my-repo 42 --content "Fix this" --path src/main.rs --line 10
+cargo run -p bitbucket -- pr comment lucabrognaracode/my-repo 42 --content "Done, fixed" --parent 123456
 ```
 
 **Flags:**
 - `--content <TEXT>` — comment text, Markdown (required)
 - `--path <PATH>` and `--line <N>` — attach the comment to a line in a file (the new version's line number). Both or neither must be set.
+- `--parent <COMMENT_ID>` — reply to an existing comment (IDs from `pr list-comments`). A reply to an inline comment stays on the parent's file and line, so `--parent` cannot be combined with `--path`/`--line`.
 
 Requires the `pullrequest:write` scope.
 
