@@ -278,7 +278,7 @@ fn build_merge_body_combines_all_fields() {
 
 #[test]
 fn build_comment_body_general_comment() {
-    let body = build_comment_body("Looks good to me", None);
+    let body = build_comment_body("Looks good to me", None, None);
 
     assert_eq!(
         body,
@@ -290,13 +290,26 @@ fn build_comment_body_general_comment() {
 
 #[test]
 fn build_comment_body_inline_comment() {
-    let body = build_comment_body("Fix this", Some(("src/main.rs".to_string(), 10)));
+    let body = build_comment_body("Fix this", Some(("src/main.rs".to_string(), 10)), None);
 
     assert_eq!(
         body,
         serde_json::json!({
             "content": {"raw": "Fix this"},
             "inline": {"path": "src/main.rs", "to": 10}
+        })
+    );
+}
+
+#[test]
+fn build_comment_body_reply() {
+    let body = build_comment_body("Done, fixed", None, Some(123_456));
+
+    assert_eq!(
+        body,
+        serde_json::json!({
+            "content": {"raw": "Done, fixed"},
+            "parent": {"id": 123_456}
         })
     );
 }

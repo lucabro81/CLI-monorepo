@@ -293,11 +293,11 @@ pub enum PrCommand {
         #[arg(long)]
         confirm: bool,
     },
-    /// Add a comment to a pull request, as JSON
+    /// Add a comment (general, inline, or a reply) to a pull request, as JSON
     ///
     /// Always prints its full result regardless of --select — a single comment
     /// object, fixed-shape.
-    #[command(after_help = "Examples:\n  bitbucket pr comment lucabrognaracode/my-repo 42 --content \"Looks good to me\"\n  bitbucket pr comment lucabrognaracode/my-repo 42 --content \"Fix this\" --path src/main.rs --line 10")]
+    #[command(after_help = "Examples:\n  bitbucket pr comment lucabrognaracode/my-repo 42 --content \"Looks good to me\"\n  bitbucket pr comment lucabrognaracode/my-repo 42 --content \"Fix this\" --path src/main.rs --line 10\n  bitbucket pr comment lucabrognaracode/my-repo 42 --content \"Done, fixed\" --parent 123456")]
     Comment {
         /// Full repository identifier in the form `workspace/repo_slug`
         repository: String,
@@ -312,6 +312,11 @@ pub enum PrCommand {
         /// Line number in the new version of the file to attach an inline comment to. Requires --path.
         #[arg(long)]
         line: Option<u64>,
+        /// ID of the comment to reply to (the `id` field from `bitbucket pr list-comments`).
+        /// The reply goes into the parent's thread; a reply to an inline comment stays on
+        /// the parent's file and line, so this cannot be combined with --path/--line.
+        #[arg(long, conflicts_with_all = ["path", "line"])]
+        parent: Option<u64>,
     },
     /// List all comments on a pull request, as JSON
     ///

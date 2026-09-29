@@ -354,13 +354,14 @@ fn parses_pr_comment_with_no_optional_flags() {
 
     match cli.command {
         Command::Pr {
-            command: PrCommand::Comment { repository, id, content, path, line },
+            command: PrCommand::Comment { repository, id, content, path, line, parent },
         } => {
             assert_eq!(repository, "lucabrognaracode/my-repo");
             assert_eq!(id, 42);
             assert_eq!(content, "Looks good to me");
             assert_eq!(path, None);
             assert_eq!(line, None);
+            assert_eq!(parent, None);
         }
         other => panic!("expected Pr Comment, got {other:?}"),
     }
@@ -377,16 +378,70 @@ fn parses_pr_comment_with_inline_flags() {
 
     match cli.command {
         Command::Pr {
-            command: PrCommand::Comment { repository, id, content, path, line },
+            command: PrCommand::Comment { repository, id, content, path, line, parent },
         } => {
             assert_eq!(repository, "lucabrognaracode/my-repo");
             assert_eq!(id, 42);
             assert_eq!(content, "Fix this");
             assert_eq!(path, Some("src/main.rs".to_string()));
             assert_eq!(line, Some(10));
+            assert_eq!(parent, None);
         }
         other => panic!("expected Pr Comment, got {other:?}"),
     }
+}
+
+#[test]
+fn parses_pr_comment_with_parent() {
+    let cli = Cli::try_parse_from([
+        "bitbucket", "pr", "comment", "lucabrognaracode/my-repo", "42",
+        "--content", "Done, fixed",
+        "--parent", "123456",
+    ]).expect("should parse");
+
+    match cli.command {
+        Command::Pr {
+            command: PrCommand::Comment { repository, id, content, path, line, parent },
+        } => {
+            assert_eq!(repository, "lucabrognaracode/my-repo");
+            assert_eq!(id, 42);
+            assert_eq!(content, "Done, fixed");
+            assert_eq!(path, None);
+            assert_eq!(line, None);
+            assert_eq!(parent, Some(123_456));
+        }
+        other => panic!("expected Pr Comment, got {other:?}"),
+    }
+}
+
+#[test]
+fn rejects_pr_comment_parent_with_path() {
+    let err = Cli::try_parse_from([
+        "bitbucket", "pr", "comment", "lucabrognaracode/my-repo", "42",
+        "--content", "Done", "--parent", "123456", "--path", "src/main.rs",
+    ]).expect_err("--parent conflicts with --path");
+
+    assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
+}
+
+#[test]
+fn rejects_pr_comment_parent_with_line() {
+    let err = Cli::try_parse_from([
+        "bitbucket", "pr", "comment", "lucabrognaracode/my-repo", "42",
+        "--content", "Done", "--parent", "123456", "--line", "10",
+    ]).expect_err("--parent conflicts with --line");
+
+    assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
+}
+
+#[test]
+fn rejects_pr_comment_with_non_numeric_parent() {
+    let err = Cli::try_parse_from([
+        "bitbucket", "pr", "comment", "lucabrognaracode/my-repo", "42",
+        "--content", "Done", "--parent", "abc",
+    ]).expect_err("--parent must be a numeric comment id");
+
+    assert_eq!(err.kind(), clap::error::ErrorKind::ValueValidation);
 }
 
 #[test]
