@@ -72,9 +72,9 @@ pub fn run(command: PrCommand, select: cli_fields::Select<'_>) -> Result<(), Cli
             // Exempt: a single pull request object, fixed shape.
             print_json(&value, select.or_all())
         }
-        PrCommand::Comment { repository, id, content, path, line } => {
+        PrCommand::Comment { repository, id, content, path, line, parent } => {
             let inline = validate_inline_location(path, line)?;
-            run_create_comment(&repository, id, &content, inline, select)
+            run_create_comment(&repository, id, &content, inline, parent, select)
         }
         PrCommand::Get { repository, id } => {
             let (workspace, repo_slug) = split_repository(&repository)?;
@@ -117,10 +117,11 @@ fn run_create_comment(
     id: u64,
     content: &str,
     inline: Option<(String, u64)>,
+    parent: Option<u64>,
     select: cli_fields::Select<'_>,
 ) -> Result<(), CliError> {
     let (workspace, repo_slug) = split_repository(repository)?;
-    let body = build_comment_body(content, inline);
+    let body = build_comment_body(content, inline, parent);
     let value = authenticated_client()?
         .create_pull_request_comment(workspace, repo_slug, id, &body)
         .map_err(|e| CliError::ApiRequestFailed {
@@ -142,7 +143,7 @@ fn run_list_comments(repository: &str, id: u64, page: Option<u32>, select: cli_f
 
 fn run_update_comment(repository: &str, id: u64, comment_id: u64, content: &str, select: cli_fields::Select<'_>) -> Result<(), CliError> {
     let (workspace, repo_slug) = split_repository(repository)?;
-    let body = build_comment_body(content, None);
+    let body = build_comment_body(content, None, None);
     let value = authenticated_client()?
         .update_pull_request_comment(workspace, repo_slug, id, comment_id, &body)
         .map_err(|e| CliError::ApiRequestFailed {
@@ -330,9 +331,10 @@ fn validate_inline_location(path: Option<String>, line: Option<u64>) -> Result<O
 }
 
 /// Builds the comment request body for `POST .../pullrequests/{id}/comments` (create) and
-/// `PUT .../pullrequests/{id}/comments/{comment_id}` (update, always with `inline = None`).
-/// `inline` adds an `inline` object with `path` and `to` (line number).
-fn build_comment_body(content: &str, inline: Option<(String, u64)>) -> Value {
+/// `PUT .../pullrequests/{id}/comments/{comment_id}` (update, always with `inline = None`
+/// and `parent = None`). `inline` adds an `inline` object with `path` and `to` (line number);
+/// `parent` adds a `parent` object with the `id` of the comment being replied to.
+fn build_comment_body(content: &str, inline: Option<(String, u64)>, parent: Option<u64>) -> Value {
     let mut body = json!({
         "content": {"raw": content},
     });
@@ -342,6 +344,10 @@ fn build_comment_body(content: &str, inline: Option<(String, u64)>) -> Value {
 
     if let Some((path, line)) = inline {
         map.insert("inline".to_string(), json!({"path": path, "to": line}));
+    }
+
+    if let Some(parent_id) = parent {
+        map.insert("parent".to_string(), json!({"id": parent_id}));
     }
 
     body
