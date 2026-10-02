@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.10.0](https://github.com/lucabro81/CLI-monorepo/compare/bitbucket-v0.9.0...bitbucket-v0.10.0) - 2026-10-02
+
+### Added
+- *(bitbucket)* add auth login --user (authorization_code grant)
+
+### Other
+- *(bitbucket)* document auth login --user and the callback URL
+- Merge pull request #135 from lucabro81/issue96 ([#135](https://github.com/lucabro81/CLI-monorepo/pull/135))
 ## [0.9.0](https://github.com/lucabro81/CLI-monorepo/compare/bitbucket-v0.8.0...bitbucket-v0.9.0) - 2026-09-29
 
 ### Added
