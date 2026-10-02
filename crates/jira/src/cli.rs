@@ -119,7 +119,7 @@ pub enum AuthCommand {
 #[derive(Debug, Subcommand)]
 pub enum IssueCommand {
     /// Fetch a single issue by key (e.g. PROJ-123) and print it as JSON
-    #[command(after_help = "Examples:\n  jira issue get PROJ-123\n  jira issue get PROJ-123 --select fields.summary,fields.status.name,fields.assignee.displayName,fields.priority.name")]
+    #[command(after_help = "Examples:\n  jira issue get PROJ-123 --select key,fields.summary,fields.status.name\n  jira issue get PROJ-123 --select fields.summary,fields.status.name,fields.assignee.displayName,fields.priority.name")]
     Get {
         /// Issue key, e.g. PROJ-123
         key: String,
@@ -139,7 +139,7 @@ pub enum IssueCommand {
         key: String,
     },
     /// Search issues using JQL (Jira Query Language) and return matching issues as JSON
-    #[command(after_help = "Examples:\n  jira issue search --jql \"project=KAN AND status=\\\"In Progress\\\"\"\n  jira issue search --jql \"assignee=currentUser() ORDER BY created DESC\" --max-results 10\n  jira issue search --jql \"project=KAN\" --fields summary,status,priority\n  jira issue search --jql \"project=KAN AND status!=Done\" --stale-days 14\n  jira issue search --jql \"project=KAN\" --select issues.fields.summary,issues.fields.status.name\n\nPagination: the response includes a nextPageToken field when more results exist.\nPass its value to --page-token on the next call to fetch the following page.\n\n--stale-days N adds \"AND updated <= -Nd\" to --jql (inserted before ORDER BY, if present) to\nfind issues that have not been updated in at least N days.")]
+    #[command(after_help = "Examples:\n  jira issue search --jql \"project=KAN AND status=\\\"In Progress\\\"\" --select issues.key,issues.fields.summary\n  jira issue search --jql \"assignee=currentUser() ORDER BY created DESC\" --max-results 10 --select issues.key,issues.fields.summary,nextPageToken\n  jira issue search --jql \"project=KAN\" --fields summary,status,priority --select issues.key,issues.fields.summary,issues.fields.status.name,issues.fields.priority.name\n  jira issue search --jql \"project=KAN AND status!=Done\" --stale-days 14 --select issues.key,issues.fields.summary,issues.fields.updated\n  jira issue search --jql \"project=KAN\" --select issues.fields.summary,issues.fields.status.name\n\nPagination: the response includes a nextPageToken field when more results exist.\nPass its value to --page-token on the next call to fetch the following page.\n\n--stale-days N adds \"AND updated <= -Nd\" to --jql (inserted before ORDER BY, if present) to\nfind issues that have not been updated in at least N days.")]
     Search {
         /// JQL query string, e.g. "project=KAN AND status=\"Done\""
         #[arg(long)]
@@ -285,7 +285,7 @@ pub enum UserCommand {
     /// Requires the "Browse users and groups" global permission. Without it, Jira
     /// does not return an error — it silently returns an empty match list. Check
     /// `jira doctor`'s permissions report if searches unexpectedly return nothing.
-    #[command(after_help = "Examples:\n  jira user search --query \"Jane Doe\"\n  jira user search --query jane.doe@example.com --select accountId,displayName,emailAddress\n\nUse the accountId from the result as the ID for --mention on `issue comment add`.")]
+    #[command(after_help = "Examples:\n  jira user search --query \"Jane Doe\" --select accountId,displayName\n  jira user search --query jane.doe@example.com --select accountId,displayName,emailAddress\n\nUse the accountId from the result as the ID for --mention on `issue comment add`.")]
     Search {
         /// Name or email fragment to search for
         #[arg(long)]
@@ -300,7 +300,7 @@ pub enum ProjectCommand {
     /// `--query` is a literal substring/prefix filter (case-insensitive) against
     /// both the project key and name — not a query language. Use this to find a
     /// project's key when you only know (part of) its name.
-    #[command(after_help = "Examples:\n  jira project search --query Mercury\n  jira project search --query mercur --select values.key,values.name\n\nUse the key from the result as the --project value for `issue create` or in JQL.")]
+    #[command(after_help = "Examples:\n  jira project search --query Mercury --select values.key,values.name\n  jira project search --query mercur --select values.key,values.name\n\nUse the key from the result as the --project value for `issue create` or in JQL.")]
     Search {
         /// Name or key fragment to search for
         #[arg(long)]
