@@ -785,3 +785,55 @@ fn assign_missing_target_error_message_contains_key_and_both_retry_flags() {
         "error must include both exact retry commands"
     );
 }
+
+/// Commands whose output is NOT exempt from the mandatory `--select` (they call
+/// `print_json(&value, select)`, not `select.or_all()`). Keep in sync with the
+/// "Exempt?" table in this crate's CLAUDE.md.
+const NON_EXEMPT_COMMANDS: &[&[&str]] = &[
+    &["issue", "get"],
+    &["issue", "search"],
+    &["user", "search"],
+    &["project", "search"],
+];
+
+/// Lines of a command's `after_help` that are runnable example invocations.
+fn help_example_lines(path: &[&str]) -> Vec<String> {
+    use clap::CommandFactory;
+
+    let mut command = Cli::command();
+    for name in path {
+        command = command
+            .find_subcommand(name)
+            .unwrap_or_else(|| panic!("no subcommand {name:?} in {path:?}"))
+            .clone();
+    }
+    let after_help = command
+        .get_after_help()
+        .unwrap_or_else(|| panic!("{path:?} has no after_help examples"))
+        .to_string();
+
+    after_help
+        .lines()
+        .map(|line| line.trim().trim_start_matches("Example:").trim())
+        .filter(|line| line.starts_with("jira "))
+        .map(str::to_string)
+        .collect()
+}
+
+#[test]
+fn every_help_example_of_a_non_exempt_command_passes_select() {
+    // Regression test for issue #133: after --select became mandatory, the
+    // --help examples of non-exempt commands kept showing invocations without
+    // it, which the CLI refuses to run — an agent copying them got an error.
+    for path in NON_EXEMPT_COMMANDS {
+        let examples = help_example_lines(path);
+        assert!(!examples.is_empty(), "{path:?} has no example lines");
+
+        for example in examples {
+            assert!(
+                example.contains("--select ") || example.contains("--select-all"),
+                "{path:?} help example runs without --select and would be refused: {example}"
+            );
+        }
+    }
+}
