@@ -12,6 +12,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Other
 - *(bitbucket)* document auth login --user and the callback URL
 - Merge pull request #135 from lucabro81/issue96 ([#135](https://github.com/lucabro81/CLI-monorepo/pull/135))
+- Release
+- Merge pull request #132 from lucabro81/release/bitbucket ([#132](https://github.com/lucabro81/CLI-monorepo/pull/132))
+## [0.10.0](https://github.com/lucabro81/CLI-monorepo/compare/bitbucket-v0.9.0...bitbucket-v0.10.0) - 2026-10-02
+
+### Added
+- *(bitbucket)* add auth login --user (authorization_code grant)
+
+### Other
+- *(bitbucket)* document auth login --user and the callback URL
+- Merge pull request #135 from lucabro81/issue96 ([#135](https://github.com/lucabro81/CLI-monorepo/pull/135))
 ## [0.9.0](https://github.com/lucabro81/CLI-monorepo/compare/bitbucket-v0.8.0...bitbucket-v0.9.0) - 2026-09-29
 
 ### Added
