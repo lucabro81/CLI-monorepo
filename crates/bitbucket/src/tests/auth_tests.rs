@@ -69,7 +69,8 @@ fn parse_token_response_includes_raw_body_on_invalid_json() {
     // field name, as happened with "scope" vs "scopes"), the error must
     // include the raw body so the failure is self-diagnosing instead of
     // requiring a manual curl to see what the server actually sent.
-    let body = r#"{"access_token":"tok","expires_in":7200,"unexpected_field":"x"}"#;
+    // No access_token: still invalid now that "scope"/"scopes" is optional.
+    let body = r#"{"expires_in":7200,"unexpected_field":"x"}"#;
 
     let err = parse_token_response(body).expect_err("should fail to parse");
 
@@ -94,6 +95,7 @@ fn credentials_round_trip_through_json() {
         access_token: "token123".to_string(),
         expires_at: 1_700_000_000,
         scopes: vec!["repository:read".to_string(), "pullrequest:write".to_string()],
+        refresh_token: Some("refresh123".to_string()),
     };
 
     let json = serde_json::to_string(&creds).expect("should serialize");
@@ -112,6 +114,7 @@ fn save_and_load_credentials_roundtrip_without_expiry() {
         // Far in the future, so load_credentials doesn't try to renew over the network.
         expires_at: u64::MAX,
         scopes: vec!["repository:read".to_string()],
+        refresh_token: None,
     };
     save_credentials(&path, &creds).expect("should save");
 
@@ -122,4 +125,249 @@ fn save_and_load_credentials_roundtrip_without_expiry() {
     let loaded = load_credentials(&config, &path).expect("should load without renewing");
 
     assert_eq!(loaded, creds);
+}
+
+fn test_config() -> OAuthConfig {
+    OAuthConfig {
+        client_id: "abc".to_string(),
+        client_secret: "def".to_string(),
+    }
+}
+
+fn token(refresh_token: Option<&str>) -> TokenResponse {
+    TokenResponse {
+        access_token: "new-access".to_string(),
+        expires_in: 3600,
+        scope: "repository pullrequest:write".to_string(),
+        refresh_token: refresh_token.map(str::to_string),
+    }
+}
+
+// ── authorization_code (auth login --user) ─────────────────────────────────
+
+#[test]
+fn authorization_url_has_exact_bitbucket_params() {
+    let url = authorization_url(&test_config(), "state123").expect("should build");
+
+    assert_eq!(
+        url,
+        "https://bitbucket.org/site/oauth2/authorize?client_id=abc&response_type=code&state=state123"
+    );
+}
+
+#[test]
+fn authorization_url_encodes_query_values() {
+    let config = OAuthConfig {
+        client_id: "a b&c".to_string(),
+        client_secret: "ignored".to_string(),
+    };
+
+    let url = authorization_url(&config, "s=1").expect("should build");
+
+    assert_eq!(
+        url,
+        "https://bitbucket.org/site/oauth2/authorize?client_id=a+b%26c&response_type=code&state=s%3D1"
+    );
+}
+
+#[test]
+fn generate_state_is_url_safe_and_unique() {
+    let first = generate_state();
+    let second = generate_state();
+
+    assert!(first.len() >= 32, "state too short: {first}");
+    assert!(
+        first.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'),
+        "state not URL-safe: {first}"
+    );
+    assert_ne!(first, second);
+}
+
+#[test]
+fn parses_callback_with_code_and_state() {
+    let params = parse_callback_request_line("GET /callback?code=XYZ&state=abc HTTP/1.1")
+        .expect("should parse");
+
+    assert_eq!(
+        params,
+        CallbackParams {
+            code: "XYZ".to_string(),
+            state: "abc".to_string()
+        }
+    );
+}
+
+#[test]
+fn parses_callback_with_url_encoded_values() {
+    let params = parse_callback_request_line("GET /callback?state=a%2Bb&code=c%3Dd HTTP/1.1")
+        .expect("should parse");
+
+    assert_eq!(params.code, "c=d");
+    assert_eq!(params.state, "a+b");
+}
+
+#[test]
+fn callback_without_code_is_missing_param() {
+    let result = parse_callback_request_line("GET /callback?state=abc HTTP/1.1");
+
+    assert_eq!(result, Err(CallbackError::MissingParam("code")));
+}
+
+#[test]
+fn callback_without_state_is_missing_param() {
+    // Bitbucket doesn't document echoing `state`; if it ever drops it, the
+    // login must fail loudly rather than skip the CSRF check.
+    let result = parse_callback_request_line("GET /callback?code=XYZ HTTP/1.1");
+
+    assert_eq!(result, Err(CallbackError::MissingParam("state")));
+}
+
+#[test]
+fn callback_with_error_is_denied_with_description() {
+    let result = parse_callback_request_line(
+        "GET /callback?error=access_denied&error_description=User+denied+access&state=abc HTTP/1.1",
+    );
+
+    assert_eq!(
+        result,
+        Err(CallbackError::Denied {
+            error: "access_denied".to_string(),
+            description: Some("User denied access".to_string()),
+        })
+    );
+}
+
+#[test]
+fn callback_with_error_takes_precedence_over_code() {
+    let result = parse_callback_request_line("GET /callback?error=access_denied&code=XYZ&state=abc HTTP/1.1");
+
+    assert_eq!(
+        result,
+        Err(CallbackError::Denied {
+            error: "access_denied".to_string(),
+            description: None,
+        })
+    );
+}
+
+#[test]
+fn callback_without_query_is_malformed() {
+    let result = parse_callback_request_line("GET /favicon.ico HTTP/1.1");
+
+    assert_eq!(result, Err(CallbackError::MalformedRequestLine));
+}
+
+#[test]
+fn callback_with_garbage_request_line_is_malformed() {
+    assert_eq!(parse_callback_request_line(""), Err(CallbackError::MalformedRequestLine));
+    assert_eq!(parse_callback_request_line("GET"), Err(CallbackError::MalformedRequestLine));
+}
+
+#[test]
+fn authorization_code_form_has_grant_and_code() {
+    assert_eq!(
+        authorization_code_form("XYZ"),
+        vec![("grant_type", "authorization_code".to_string()), ("code", "XYZ".to_string())]
+    );
+}
+
+// ── token responses ────────────────────────────────────────────────────────
+
+#[test]
+fn deserializes_token_response_with_plural_scopes_and_refresh_token() {
+    // Bitbucket's documented authorization_code/refresh_token responses use
+    // "scopes" (plural), while the observed client_credentials response uses
+    // "scope". Both must be accepted.
+    let body = r#"{"access_token":"tok","scopes":"repository account","expires_in":3600,"refresh_token":"ref","token_type":"bearer","state":"authorization_code"}"#;
+
+    let token = parse_token_response(body).expect("should parse");
+
+    assert_eq!(token.scope, "repository account");
+    assert_eq!(token.refresh_token.as_deref(), Some("ref"));
+}
+
+#[test]
+fn deserializes_token_response_without_any_scope_field() {
+    let body = r#"{"access_token":"tok","expires_in":3600}"#;
+
+    let token = parse_token_response(body).expect("should parse");
+
+    assert_eq!(token.scope, "");
+    assert_eq!(token.refresh_token, None);
+}
+
+#[test]
+fn credentials_from_token_computes_expiry_and_splits_scopes() {
+    let credentials = credentials_from_token(token(Some("new-refresh")), 1_000, None);
+
+    assert_eq!(
+        credentials,
+        Credentials {
+            access_token: "new-access".to_string(),
+            expires_at: 4_600,
+            scopes: vec!["repository".to_string(), "pullrequest:write".to_string()],
+            refresh_token: Some("new-refresh".to_string()),
+        }
+    );
+}
+
+#[test]
+fn credentials_from_token_prefers_rotated_refresh_token() {
+    let credentials = credentials_from_token(token(Some("rotated")), 0, Some("old".to_string()));
+
+    assert_eq!(credentials.refresh_token.as_deref(), Some("rotated"));
+}
+
+#[test]
+fn credentials_from_token_keeps_previous_refresh_token_when_absent() {
+    // Guards against a silent identity switch: if a refresh response ever
+    // omitted refresh_token, dropping the old one would make the next renewal
+    // fall back to client_credentials — i.e. quietly start acting as the app
+    // instead of the human who ran `auth login --user`.
+    let credentials = credentials_from_token(token(None), 0, Some("old".to_string()));
+
+    assert_eq!(credentials.refresh_token.as_deref(), Some("old"));
+}
+
+#[test]
+fn deserializes_legacy_credentials_without_refresh_token() {
+    // credentials.json files written before `auth login --user` existed have
+    // no refresh_token field and must keep loading as app credentials.
+    let json = r#"{"access_token":"tok","expires_at":123,"scopes":["repository"]}"#;
+
+    let credentials: Credentials = serde_json::from_str(json).expect("should parse legacy file");
+
+    assert_eq!(credentials.refresh_token, None);
+}
+
+// ── renewal ────────────────────────────────────────────────────────────────
+
+#[test]
+fn renewal_form_uses_refresh_token_for_user_credentials() {
+    let credentials = Credentials {
+        access_token: "tok".to_string(),
+        expires_at: 0,
+        scopes: vec![],
+        refresh_token: Some("ref".to_string()),
+    };
+
+    assert_eq!(
+        renewal_form(&credentials),
+        vec![("grant_type", "refresh_token".to_string()), ("refresh_token", "ref".to_string())]
+    );
+}
+
+#[test]
+fn renewal_form_uses_client_credentials_for_app_credentials() {
+    let credentials = Credentials {
+        access_token: "tok".to_string(),
+        expires_at: 0,
+        scopes: vec![],
+        refresh_token: None,
+    };
+
+    assert_eq!(
+        renewal_form(&credentials),
+        vec![("grant_type", "client_credentials".to_string())]
+    );
 }

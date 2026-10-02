@@ -10,9 +10,35 @@ fn parses_auth_login() {
     assert!(matches!(
         cli.command,
         Command::Auth {
-            command: AuthCommand::Login
+            command: AuthCommand::Login { user: false }
         }
     ));
+}
+
+#[test]
+fn parses_auth_login_with_user() {
+    let cli = Cli::try_parse_from(["bitbucket", "auth", "login", "--user"]).expect("should parse");
+
+    assert!(matches!(
+        cli.command,
+        Command::Auth {
+            command: AuthCommand::Login { user: true }
+        }
+    ));
+}
+
+#[test]
+fn rejects_auth_login_short_user_flag() {
+    let result = Cli::try_parse_from(["bitbucket", "auth", "login", "-u"]);
+
+    assert!(result.is_err());
+}
+
+#[test]
+fn rejects_auth_login_user_with_value() {
+    let result = Cli::try_parse_from(["bitbucket", "auth", "login", "--user", "someone"]);
+
+    assert!(result.is_err());
 }
 
 #[test]

@@ -38,7 +38,9 @@ pub enum CliError {
 
     #[error(
         "failed to refresh authentication token: {reason}. \
-        Check that the OAuth consumer credentials in app.json are still valid."
+        If you logged in with `bitbucket auth login --user`, the refresh token may have expired \
+        (unused for 3 months): run `bitbucket auth login --user` again. Otherwise check that the \
+        OAuth consumer credentials in app.json are still valid."
     )]
     TokenRefreshFailed { reason: String },
 

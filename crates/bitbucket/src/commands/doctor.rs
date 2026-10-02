@@ -5,8 +5,10 @@
 //! 1. `app_config` — verifies that `app.json` exists at the expected path and
 //!    contains valid OAuth consumer credentials.
 //! 2. `credentials` — verifies that `credentials.json` exists and holds a
-//!    non-expired token. If the token is expired, a renewal is attempted via
-//!    `client_credentials` and the result (success or failure) is reported.
+//!    non-expired token, and reports its `identity` (`"user"` after
+//!    `auth login --user`, `"app"` after `auth login`). If the token is expired,
+//!    a renewal is attempted through the matching grant (`refresh_token` or
+//!    `client_credentials`) and the result (success or failure) is reported.
 //! 3. `api` — makes a live call to `/2.0/user` to confirm the Bitbucket API
 //!    is reachable with the current token.
 //! 4. `permissions` — lists the OAuth scopes granted to the consumer, taken
@@ -120,35 +122,48 @@ fn check_credentials(
         .unwrap_or_default()
         .as_secs();
 
+    let identity = identity(&credentials);
+
     if now >= credentials.expires_at {
-        return match auth::login_client_credentials(oauth_config) {
+        return match auth::renew(oauth_config, &credentials) {
             Ok(renewed) => {
                 let _ = auth::save_credentials(&path, &renewed);
                 (
                     json!({
                         "status": "ok",
                         "path": path_str,
+                        "identity": identity,
                         "expires_at": renewed.expires_at,
                         "note": "token was expired and has been renewed"
                     }),
                     Some(renewed),
                 )
             }
-            Err(e) => (
-                json!({
-                    "status": "error",
-                    "path": path_str,
-                    "message": format!("token expired and renewal failed: {e}. Run: bitbucket auth login")
-                }),
-                None,
-            ),
+            Err(e) => {
+                let login = if identity == "user" { "bitbucket auth login --user" } else { "bitbucket auth login" };
+                (
+                    json!({
+                        "status": "error",
+                        "path": path_str,
+                        "identity": identity,
+                        "message": format!("token expired and renewal failed: {e}. Run: {login}")
+                    }),
+                    None,
+                )
+            }
         };
     }
 
     (
-        json!({"status": "ok", "path": path_str, "expires_at": credentials.expires_at}),
+        json!({"status": "ok", "path": path_str, "identity": identity, "expires_at": credentials.expires_at}),
         Some(credentials),
     )
+}
+
+/// Which identity `credentials` act as: `"user"` for `auth login --user`
+/// (has a refresh token), `"app"` for `client_credentials`.
+fn identity(credentials: &auth::Credentials) -> &'static str {
+    if credentials.refresh_token.is_some() { "user" } else { "app" }
 }
 
 fn check_api(credentials: &auth::Credentials) -> Value {
