@@ -46,7 +46,7 @@ CLI for Bitbucket Cloud, designed to be driven by an LLM agent (output is JSON, 
 In your Bitbucket workspace, go to **Settings → Apps and features → OAuth clients → Create OAuth client**:
 
 - **Name**: anything descriptive, e.g. `bitbucket-cli`
-- **Callback URL**: leave empty — the `client_credentials` grant doesn't use it
+- **Callback URL**: `http://localhost:8080/callback` — needed only for `auth login --user`; the default `client_credentials` login doesn't use it
 - **Permissions**: grant whatever scopes the commands you intend to use need (e.g. Account Read, Repositories Read/Write, Pull requests Read/Write)
 
 After saving, note down the consumer's **Key** (`client_id`) and **Secret** (`client_secret`).
@@ -70,7 +70,7 @@ This file is static and hand-written — the CLI never modifies it. It's kept se
 cargo run -p bitbucket -- auth login
 ```
 
-This exchanges the consumer's Key/Secret for an access token via `client_credentials` — no browser, no human interaction. Run this once per machine; tokens are renewed automatically after that.
+This exchanges the consumer's Key/Secret for an access token via `client_credentials` — no browser, no human interaction, every action attributed to the OAuth app. To act as yourself instead, run `auth login --user` (see below). Run this once per machine; tokens are renewed automatically after that.
 
 ### `bitbucket init` does all of the above
 
@@ -91,7 +91,7 @@ Bitbucket Cloud's native OAuth `client_credentials` grant is used — not the un
 
 ### Automatic renewal
 
-Before each API call, the CLI checks whether the access token is expired (or about to expire within 60s). There is no `refresh_token` — the access token is short-lived and is simply re-requested via the same `client_credentials` exchange when expired, and `credentials.json` is overwritten with the new values.
+Before each API call, the CLI checks whether the access token is expired (or about to expire within 60s). After `auth login` there is no `refresh_token`: the token is re-requested via the same `client_credentials` exchange. After `auth login --user` the stored `refresh_token` is used (Bitbucket rotates it on every use; an unused one expires after 3 months, then run `auth login --user` again). Either way `credentials.json` is overwritten with the new values.
 
 ## Usage
 
@@ -117,17 +117,21 @@ The `permissions` check reports `granted_scopes` as-is from the token response �
 
 ### `bitbucket auth login`
 
-Stores credentials locally. Runs the non-interactive `client_credentials` flow — no browser, no human interaction.
+Stores credentials locally. Two modes, same credentials file (the last login decides the identity every later command uses):
+
+- default — non-interactive `client_credentials` flow, no browser. Every action is attributed to the **OAuth app** (bot identity): the mode for agents.
+- `--user` — interactive `authorization_code` flow: opens the browser on Bitbucket's consent page, receives the callback on `localhost:8080`, stores a refresh token. Every action is attributed to **your own account**. Requires the consumer's callback URL to be `http://localhost:8080/callback`.
 
 ```sh
 cargo run -p bitbucket -- auth login
+cargo run -p bitbucket -- auth login --user
 ```
 
-Run this once per machine, or again if `credentials.json` is lost or revoked.
+Run this once per machine, again if `credentials.json` is lost or revoked, or to switch identity. `doctor` reports the active one as `credentials.identity` (`app` or `user`).
 
 ### `bitbucket auth whoami`
 
-Prints the currently authenticated identity as JSON. With `client_credentials`, this is the **workspace** itself (`type: "team"`), not a personal user.
+Prints the currently authenticated identity as JSON. With `client_credentials`, this is the OAuth app's identity, not a personal user; after `auth login --user`, it's your own account.
 
 ```sh
 cargo run -p bitbucket -- auth whoami

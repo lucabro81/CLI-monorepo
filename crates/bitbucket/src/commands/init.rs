@@ -30,7 +30,8 @@ const INSTRUCTIONS: &str = "\
 
 Step 1: Go to your Bitbucket workspace -> Settings -> OAuth consumers -> Add consumer.
 Step 2: Give it a name (e.g. \"bitbucket-cli\").
-Step 3: Leave the callback URL empty (not used by the client_credentials grant).
+Step 3: Set the callback URL to http://localhost:8080/callback (used only by
+        `auth login --user`; the default login ignores it).
 Step 4: Grant the permissions your commands need (e.g. Account: Read,
         Repositories: Read/Write, Pull requests: Read/Write).
 Step 5: Save, then copy the consumer's Key (client_id) and Secret (client_secret).

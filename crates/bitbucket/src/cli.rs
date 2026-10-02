@@ -79,16 +79,29 @@ pub enum Command {
 
 #[derive(Debug, Subcommand)]
 pub enum AuthCommand {
-    /// Run the OAuth 2.0 `client_credentials` flow and store credentials locally
+    /// Run the OAuth 2.0 login flow and store credentials locally
     ///
-    /// Exchanges the OAuth consumer's `client_id`/`client_secret` (from app.json) for
-    /// an access token via HTTP Basic auth. No browser, no user interaction. The
-    /// token has no `refresh_token` — it is renewed automatically by re-running the
-    /// same exchange when expired.
+    /// By default runs the `client_credentials` flow: exchanges the OAuth consumer's
+    /// `client_id`/`client_secret` (from app.json) for an access token. No browser,
+    /// no user interaction. Every action is attributed to the OAuth app (bot
+    /// identity) — the expected mode for agent-driven usage.
     ///
-    /// Run this once per machine; tokens are renewed automatically after that.
-    #[command(after_help = "Example:\n  bitbucket auth login\n\nRequires app.json to exist at ~/.config/bitbucket-cli/app.json with the OAuth\nconsumer's Key/Secret: {\"client_id\": \"...\", \"client_secret\": \"...\"}")]
-    Login,
+    /// Pass --user for the interactive `authorization_code` flow: opens the browser
+    /// on Bitbucket's consent page, receives the callback on localhost:8080, and
+    /// stores a `refresh_token` for automatic renewal. Every action is attributed
+    /// to the human Bitbucket account that approved the consent page. Requires the
+    /// OAuth consumer's callback URL to be `http://localhost:8080/callback`.
+    ///
+    /// Both modes write the same credentials file: the last login decides which
+    /// identity every later command uses. Run this once per machine (or per
+    /// identity switch); tokens are renewed automatically after that.
+    #[command(after_help = "Examples:\n  bitbucket auth login           # act as the OAuth app (bot)\n  bitbucket auth login --user    # act as yourself, via browser consent\n\nRequires app.json to exist at ~/.config/bitbucket-cli/app.json with the OAuth\nconsumer's Key/Secret: {\"client_id\": \"...\", \"client_secret\": \"...\"}")]
+    Login {
+        /// Log in as a human Bitbucket account via browser consent (`authorization_code`)
+        /// instead of as the OAuth app (`client_credentials`)
+        #[arg(long)]
+        user: bool,
+    },
     /// Print the currently authenticated account as JSON
     ///
     /// Always prints its full result regardless of --select — an identity check,

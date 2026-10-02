@@ -48,6 +48,13 @@ pub fn authenticated_client() -> Result<BitbucketClient, CliError> {
         auth::LoginError::TokenExchange(reason) | auth::LoginError::Internal(reason) => {
             CliError::TokenRefreshFailed { reason }
         }
+        // Login-only failures (callback/listener); unreachable while renewing,
+        // mapped anyway rather than panicking.
+        other @ (auth::LoginError::CallbackListener { .. }
+        | auth::LoginError::Callback(_)
+        | auth::LoginError::StateMismatch) => CliError::TokenRefreshFailed {
+            reason: other.to_string(),
+        },
     })?;
     Ok(BitbucketClient::new(&credentials))
 }

@@ -1,8 +1,13 @@
 //! Handlers for the `auth` command group (`auth login`, `auth whoami`).
 //!
-//! `run_login` exchanges the OAuth consumer's `client_id`/`client_secret` from
-//! `app.json` for an access token via `client_credentials` and saves it to
-//! `credentials.json`. No browser, no user interaction.
+//! `run_login` saves credentials to `credentials.json` using one of two grants:
+//!
+//! - `user = false` (default) — OAuth 2.0 `client_credentials`: exchanges the
+//!   OAuth consumer's `client_id`/`client_secret` from `app.json` directly for an
+//!   access token. No browser, no user interaction. Acts as the OAuth app.
+//! - `user = true` — OAuth 2.0 `authorization_code`: opens the browser, waits for
+//!   the local callback, exchanges the code for tokens. Acts as the human who
+//!   approved the consent page.
 //!
 //! `run_whoami` makes a single API call to `/2.0/user` and prints the
 //! authenticated account as JSON. It is the quickest sanity-check after login.
@@ -11,11 +16,18 @@ use crate::auth;
 use crate::context::{authenticated_client, config_dir, load_oauth_config, print_json};
 use crate::error::CliError;
 
-/// Runs the OAuth 2.0 `client_credentials` flow and saves credentials to disk.
-pub fn run_login() -> Result<(), CliError> {
+/// Runs the OAuth 2.0 login flow and saves credentials to disk.
+/// `user = true` runs the interactive `authorization_code` flow; otherwise runs
+/// the non-interactive `client_credentials` flow.
+pub fn run_login(user: bool) -> Result<(), CliError> {
     let oauth_config = load_oauth_config()?;
     let path = auth::credentials_path(&config_dir()?);
-    let credentials = auth::login_client_credentials(&oauth_config).map_err(|e| CliError::LoginFailed {
+    let credentials = if user {
+        auth::login(&oauth_config)
+    } else {
+        auth::login_client_credentials(&oauth_config)
+    }
+    .map_err(|e| CliError::LoginFailed {
         reason: e.to_string(),
     })?;
     auth::save_credentials(&path, &credentials).map_err(|e| CliError::SaveCredentialsFailed {

@@ -1,6 +1,6 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use super::check_permissions;
+use super::{check_permissions, identity};
 use crate::auth::Credentials;
 
 fn credentials_with_scopes(scopes: Vec<&str>) -> Credentials {
@@ -8,7 +8,25 @@ fn credentials_with_scopes(scopes: Vec<&str>) -> Credentials {
         access_token: "token".to_string(),
         expires_at: u64::MAX,
         scopes: scopes.into_iter().map(str::to_string).collect(),
+        refresh_token: None,
     }
+}
+
+#[test]
+fn identity_is_app_for_client_credentials() {
+    let credentials = credentials_with_scopes(vec!["repository"]);
+
+    assert_eq!(identity(&credentials), "app");
+}
+
+#[test]
+fn identity_is_user_for_authorization_code_credentials() {
+    let credentials = Credentials {
+        refresh_token: Some("refresh".to_string()),
+        ..credentials_with_scopes(vec!["repository"])
+    };
+
+    assert_eq!(identity(&credentials), "user");
 }
 
 #[test]
