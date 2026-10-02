@@ -20,8 +20,9 @@ src/
                     list-comments, update-comment, approve, unapprove, decline, merge, diff implemented]
     branch.rs     — run(BranchCommand); dispatches all branch subcommands [list, create, suggest-name implemented]
     workspace.rs  — run(WorkspaceCommand); dispatches all workspace subcommands [members implemented]
-  auth.rs         — OAuthConfig, Credentials, login_client_credentials(),
-                    load_credentials()/save_credentials() [implemented]
+  auth.rs         — OAuthConfig, Credentials, login_client_credentials(), login()
+                    (authorization_code, --user), renew(), load_credentials()/
+                    save_credentials(), callback parsing [implemented]
   client.rs       — BitbucketClient (blocking reqwest); get_json/post_json/put_json/delete helpers;
                     Bitbucket REST API v2.0 methods [get_current_user, get_repository,
                     list_repositories, create_repository, delete_repository, list_pull_requests,
@@ -84,11 +85,21 @@ Decision trail: service accounts can't get scoped API tokens for Bitbucket
 Workspace/Repository Access Tokens are Premium-only. The unified
 developer.atlassian.com OAuth 2.0 (3LO) app (used for `jira`) also does **not** offer a
 Bitbucket API permission to add. So `bitbucket` uses Bitbucket's own **native OAuth
-consumer** with the `client_credentials` grant — no human consent step, no browser,
-no refresh token.
+consumer**, with two grants on the same consumer:
+
+- `auth login` (default) — `client_credentials`: no human consent step, no browser,
+  no refresh token. Every action is attributed to the OAuth app. **Intentional** for
+  bot/agent usage: bot actions must be visibly a bot's.
+- `auth login --user` — `authorization_code`: browser consent, callback on
+  `127.0.0.1:8080` (the consumer's callback URL must be
+  `http://localhost:8080/callback`), stores a `refresh_token`. Every action is
+  attributed to the human who consented. For a human using the CLI instead of the UI.
+
+Both write the same `credentials.json`: the last login decides the identity.
 
 - **OAuth consumer**: created in the Bitbucket workspace (Settings → OAuth consumers →
-  Add consumer), **without** a callback URL. Produces a `Key` (client_id) and `Secret`
+  Add consumer). Callback URL `http://localhost:8080/callback` is needed only for
+  `--user`; it doesn't affect `client_credentials`. Produces a `Key` (client_id) and `Secret`
   (client_secret). The token's identity is whichever account created the consumer —
   in production this should be a dedicated `bot@<domain>` account added as a workspace
   member, not a personal account.
@@ -97,24 +108,31 @@ no refresh token.
     client_id/client_secret, `grant_type=client_credentials`)
   - API base: `https://api.bitbucket.org/2.0` (workspace slug used directly in paths,
     no `cloud_id` resolution step like jira)
-- **Flow**: `client_credentials` grant only. No PKCE, no authorization code, no
-  `refresh_token` — the access token is short-lived and is simply re-requested via the
-  same exchange when expired (60s leeway, see `auth::load_credentials`).
+- **Renewal** (60s leeway, see `auth::load_credentials`/`auth::renew`): credentials
+  with a `refresh_token` (`--user`) renew via the `refresh_token` grant (Bitbucket
+  rotates it on every use; a response without one keeps the old one, so a user
+  session never silently becomes the app); without one, via `client_credentials`
+  again. Access tokens last 1 hour; an unused refresh token expires after 3 months.
+- **`--user` specifics** (from Bitbucket's docs): no PKCE and no `redirect_uri`
+  parameter — Bitbucket always redirects to the consumer's callback URL. `state` is
+  sent and checked for CSRF. The token response may name the scope field `scope` or
+  `scopes`; both are accepted.
 
 Config layout, mirroring jira (`$XDG_CONFIG_HOME/bitbucket-cli/`, falling back to
 `~/.config/bitbucket-cli/`):
 
 - `app.json` — `{"client_id": "...", "client_secret": "..."}` (the OAuth consumer's
   Key/Secret). Static, written by hand.
-- `credentials.json` — `access_token`, `expires_at`. Fully managed by the CLI.
+- `credentials.json` — `access_token`, `expires_at`, `scopes`, `refresh_token`
+  (only after `--user`). Fully managed by the CLI.
 
 ## Implemented commands
 
 | Command | Notes |
 |---------|-------|
 | `init [--client-id --client-secret]` | Human onboarding; only command with narrative output |
-| `doctor` | Cascading JSON health check (app_config, credentials, api, permissions); exit non-zero on any failure |
-| `auth login` | runs `client_credentials` exchange, stores `credentials.json` |
+| `doctor` | Cascading JSON health check (app_config, credentials, api, permissions); `credentials.identity` is `user` or `app`; exit non-zero on any failure |
+| `auth login [--user]` | default: `client_credentials` exchange (acts as the app); `--user`: browser `authorization_code` flow (acts as the human). Stores `credentials.json` |
 | `auth whoami` | `GET /2.0/user`, supports `--select` |
 | `repo get <workspace>/<repo_slug>` | `GET /2.0/repositories/{workspace}/{repo_slug}`, supports `--select` |
 | `repo list <workspace> [--page]` | `GET /2.0/repositories/{workspace}`, paginated (`--page`), supports `--select` |
@@ -186,7 +204,7 @@ scopes a command needs is documented per-command, not enforced by `doctor`.
 
 `auth.rs` here duplicates patterns from `crates/jira/src/auth.rs` (config file
 layout, `OAuthConfig`/`Credentials`/`LoginError` naming, `now_unix()` helper) but is
-simplified for `client_credentials` (no PKCE, no `refresh_token`, no `cloud_id`).
+Bitbucket-specific (native endpoints, Basic-auth token requests, no PKCE, no `cloud_id`).
 Once both crates are stable, consider extracting shared OAuth/config-path code into a
 common workspace library — deferred until there is a second real use case to validate
 the abstraction.
