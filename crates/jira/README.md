@@ -187,10 +187,11 @@ cargo run -p jira -- auth whoami
 
 ### `jira issue get <KEY>`
 
-Fetches a single issue by its key (e.g. `KAN-4`) and prints the full Jira API response as pretty-printed JSON to stdout.
+Fetches a single issue by its key (e.g. `KAN-4`) and prints it as pretty-printed JSON to stdout. `--select` is required: issues carry arbitrary per-project custom fields, so even one issue can be large (see [`--select`](#--select-paths-global-flag)).
 
 ```sh
-cargo run -p jira -- issue get KAN-4
+cargo run -p jira -- issue get KAN-4 --select key,fields.summary,fields.status.name
+cargo run -p jira -- issue get KAN-4 --select fields.summary,fields.status.name,fields.assignee.displayName,browse_url
 ```
 
 On error (issue not found, not authenticated, etc.), prints a message to stderr and exits non-zero. If not authenticated, the hint points you to `jira auth login`.
@@ -293,12 +294,15 @@ cargo run -p jira -- issue comment remove KAN-4 10033
 
 ### `jira issue search --jql <QUERY>`
 
-Searches issues using JQL (Jira Query Language). Returns the raw response including `issues`, `isLast`, and `nextPageToken` (when more pages exist).
+Searches issues using JQL (Jira Query Language). The response has `issues`, `isLast`, and `nextPageToken` (when more pages exist). `--select` is required (see [`--select`](#--select-paths-global-flag)); `--fields` does not replace it.
 
 ```sh
-cargo run -p jira -- issue search --jql "project=KAN AND status=\"In Progress\""
-cargo run -p jira -- issue search --jql "project=KAN" --fields summary,status,priority --max-results 10
-cargo run -p jira -- issue search --jql "project=KAN AND status!=Done" --stale-days 14
+cargo run -p jira -- issue search --jql "project=KAN AND status=\"In Progress\"" \
+  --select issues.key,issues.fields.summary
+cargo run -p jira -- issue search --jql "project=KAN" --fields summary,status,priority --max-results 10 \
+  --select issues.key,issues.fields.summary,issues.fields.status.name,issues.fields.priority.name,nextPageToken
+cargo run -p jira -- issue search --jql "project=KAN AND status!=Done" --stale-days 14 \
+  --select issues.key,issues.fields.summary,issues.fields.updated
 ```
 
 **Flags:**
@@ -317,10 +321,10 @@ cargo run -p jira -- issue search --jql "project=KAN" \
 
 ### `jira user search --query <TEXT>`
 
-Searches for Jira users by name or email fragment. Returns the raw JSON array of matches (up to Jira's own limit of the first 1000 users).
+Searches for Jira users by name or email fragment. Returns a JSON array of matches (up to Jira's own limit of the first 1000 users). `--select` is required.
 
 ```sh
-cargo run -p jira -- user search --query "Jane Doe"
+cargo run -p jira -- user search --query "Jane Doe" --select accountId,displayName
 cargo run -p jira -- user search --query jane.doe@example.com --select accountId,displayName,emailAddress
 ```
 
@@ -330,8 +334,10 @@ Requires the "Browse users and groups" global permission. Without it, Jira does 
 
 Searches for Jira projects by name or key fragment — use this to find a project's key when you only know (part of) its name. `--query` is a literal substring/prefix filter (case-insensitive) against both key and name, not a query language; JQL's `project = <value>` clause can also resolve a project's *exact, full* name to its key, but does not do fragment/substring matching (verified live: `project = Mercury` resolves, `project = mercur` returns zero results).
 
+`--select` is required.
+
 ```sh
-cargo run -p jira -- project search --query Mercury
+cargo run -p jira -- project search --query Mercury --select values.key,values.name
 cargo run -p jira -- project search --query mercur --select values.key,values.name
 ```
 
@@ -339,7 +345,13 @@ Use the `key` from the result as the `--project` value for `issue create` or in 
 
 ### `--select <PATHS>` (global flag)
 
-All commands that return JSON support a `--select` flag for client-side field projection. Pass a comma-separated list of dot-notation paths; only those paths are included in the output. If omitted, the full response from Jira is printed.
+Client-side field projection: pass a comma-separated list of dot-notation paths and only those paths are printed. The nested shape is kept, and arrays are projected element-wise.
+
+**`--select` is mandatory** on commands whose output can be large: `issue get`, `issue search`, `user search`, `project search`. Without it they print nothing and exit non-zero, reporting the response's byte size and top-level field names so you can retry with an informed `--select`. To print the whole response anyway, pass `--select-all`. It is still refused above 30000 bytes, and the error reports the actual size and top-level fields.
+
+All other commands are **exempt** and always print their full (small, fixed-shape) result: `doctor`, `auth whoami`, `issue create`, `issue delete`, `issue transitions`, `issue transition`, `issue assign`, `issue comment add`, `issue comment remove`. `--select` still narrows their output if passed.
+
+Paths are relative to the top level of the response and must match its exact structure: a path that doesn't exist is silently dropped, not an error. For example, `issue get KAN-4 --select summary` prints `{}` with exit 0, because the summary lives under `fields.summary`. Use the top-level field names from the refusal message to build the right path.
 
 ```sh
 # compact transitions list
