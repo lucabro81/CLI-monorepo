@@ -179,7 +179,7 @@ Run this once per machine, or again if `credentials.json` is lost or revoked. If
 
 ### `jira auth whoami`
 
-Prints the currently authenticated user as JSON. Useful to verify that authentication is working and to discover the `accountId` of the authenticated user (needed to filter issues by assignee).
+Prints the currently authenticated user as JSON. Useful to verify that authentication is working and to see which account the CLI acts as. That account is also what JQL's `currentUser()` resolves to — the bot/service account when the CLI runs on someone else's behalf — so to filter issues by a person, look up their `accountId` with [`jira user search`](#jira-user-search---query-text) and use it explicitly (e.g. `--jql "assignee=5b10ac8d82e05b22cc7d4ef5"`).
 
 ```sh
 cargo run -p jira -- auth whoami
