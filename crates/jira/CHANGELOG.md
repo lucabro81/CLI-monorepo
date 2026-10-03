@@ -12,6 +12,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Other
 - *(jira)* steer assignee filtering away from currentUser() in README
 - Merge pull request #139 from lucabro81/issue138 ([#139](https://github.com/lucabro81/CLI-monorepo/pull/139))
+- Release
+- Merge pull request #137 from lucabro81/release/jira ([#137](https://github.com/lucabro81/CLI-monorepo/pull/137))
+## [0.8.2](https://github.com/lucabro81/CLI-monorepo/compare/jira-v0.8.1...jira-v0.8.2) - 2026-10-03
+
+### Fixed
+- *(jira)* drop currentUser() from issue search --help example
+
+### Other
+- *(jira)* steer assignee filtering away from currentUser() in README
+- Merge pull request #139 from lucabro81/issue138 ([#139](https://github.com/lucabro81/CLI-monorepo/pull/139))
 ## [0.8.1](https://github.com/lucabro81/CLI-monorepo/compare/jira-v0.8.0...jira-v0.8.1) - 2026-10-02
 
 ### Fixed
