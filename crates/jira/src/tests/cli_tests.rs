@@ -821,6 +821,47 @@ fn help_example_lines(path: &[&str]) -> Vec<String> {
 }
 
 #[test]
+fn no_help_example_depends_on_the_authenticated_identity() {
+    // Regression test for issue #138: `issue search --help` showed
+    // `assignee=currentUser()`. currentUser() resolves to whoever the CLI is
+    // authenticated as — the bot/service account when an agent runs it on
+    // someone's behalf — so a model copying the example silently searched the
+    // bot's issues instead of the person's.
+    // Only example invocations are checked: prose in the same help text may
+    // name currentUser() to warn against it.
+    fn collect_examples(command: &clap::Command, out: &mut Vec<String>) {
+        if let Some(after_help) = command.get_after_help() {
+            out.extend(
+                after_help
+                    .to_string()
+                    .lines()
+                    .map(str::trim)
+                    .filter(|line| line.starts_with("jira "))
+                    .map(str::to_string),
+            );
+        }
+        for sub in command.get_subcommands() {
+            collect_examples(sub, out);
+        }
+    }
+    use clap::CommandFactory;
+
+    let mut examples = Vec::new();
+    collect_examples(&Cli::command(), &mut examples);
+    assert!(
+        examples.iter().any(|e| e.starts_with("jira issue search ")),
+        "example collection must reach nested subcommands like issue search"
+    );
+
+    for example in examples {
+        assert!(
+            !example.to_lowercase().contains("currentuser()"),
+            "help example depends on the authenticated identity: {example}"
+        );
+    }
+}
+
+#[test]
 fn every_help_example_of_a_non_exempt_command_passes_select() {
     // Regression test for issue #133: after --select became mandatory, the
     // --help examples of non-exempt commands kept showing invocations without
