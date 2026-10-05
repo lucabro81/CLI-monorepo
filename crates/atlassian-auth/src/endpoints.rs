@@ -18,3 +18,8 @@ pub const ATLASSIAN_AUTHORIZE_URL: &str = "https://auth.atlassian.com/authorize"
 /// Resolves the `cloud_id`(s) of the Atlassian site(s) accessible with a given access token.
 pub const ATLASSIAN_ACCESSIBLE_RESOURCES_URL: &str =
     "https://api.atlassian.com/oauth/token/accessible-resources";
+
+/// Loopback address and path the 3LO login listens on; together they match
+/// `OAuthConfig::REDIRECT_URI` (`http://localhost:8080/callback`).
+pub const CALLBACK_LISTEN_ADDR: &str = "127.0.0.1:8080";
+pub const CALLBACK_PATH: &str = "/callback";

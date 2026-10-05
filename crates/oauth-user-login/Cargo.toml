@@ -1,0 +1,15 @@
+[package]
+name = "oauth-user-login"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+rand = "0.8"
+sha2 = "0.10"
+base64 = "0.22"
+serde_urlencoded = "0.7"
+thiserror = "1"

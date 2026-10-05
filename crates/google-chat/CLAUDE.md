@@ -27,7 +27,8 @@ src/
     users.rs      — run(UsersCommand); dispatches to PeopleClient
   auth.rs         — OAuth infrastructure: OAuthConfig, Credentials, login(),
                     refresh(), renew(), save_credentials(), load_credentials(),
-                    path helpers
+                    path helpers; PKCE and the callback listener come from
+                    crates/oauth-user-login
   client.rs       — GoogleChatClient (blocking reqwest); get_json/post_json/
                     patch_json helpers; all Chat API methods: list_spaces,
                     list_messages, list_members, create_message,
@@ -124,8 +125,9 @@ Two grant types, mirroring jira's pattern but with Google-specific mechanics:
   This is the expected mode for agent-driven usage.
 - **Authorization Code + PKCE** (`auth login --user`) — interactive consent
   flow for a human Google account: PKCE challenge generation, browser
-  launch, one-shot local HTTP server for the callback, authorization code
-  exchange. Returns `Credentials` with `refresh_token: Some(...)`.
+  launch, local listener for the callback (bound before the browser opens;
+  stray requests get a 404; from `crates/oauth-user-login`), authorization
+  code exchange. Returns `Credentials` with `refresh_token: Some(...)`.
 
 Both grants request the same scopes and call the same Chat API surface —
 unlike jira there's no separate `audience`/cloud-id concept, since Google
@@ -185,11 +187,12 @@ genuinely fresh interactive `auth login --user`; if that keeps returning the
 old scope set, check the local OAuth callback server actually completed
 rather than assuming a Google-side propagation delay — a stale process still
 bound to `localhost:8080` from an earlier aborted login makes every
-subsequent attempt fail immediately with `Address already in use (os error
-48)` *before* writing a new `credentials.json`, so a caller re-checking the
-token afterward keeps seeing the same stale scopes and can easily mistake it
-for slow propagation on Google's end (this cost real time diagnosing —
-check for a stray bound process first). `chat.memberships.readonly`/`pubsub`
+subsequent attempt fail *before* writing a new `credentials.json`, so a
+caller re-checking the token afterward keeps seeing the same stale scopes
+and can easily mistake it for slow propagation on Google's end (this cost
+real time diagnosing). Since #143 the login binds the port before opening
+the browser and fails with "cannot listen for the login callback on
+127.0.0.1:8080 ... (find it with `lsof -i :8080`)", which names the cause. `chat.memberships.readonly`/`pubsub`
 were added for `subscription create`/`listen` — verified live:
 `chat.spaces.readonly` + `chat.memberships.readonly` are sufficient
 for Workspace Events subscriptions, no extra scope needed.

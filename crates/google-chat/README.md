@@ -162,11 +162,13 @@ safe.
    with these, the requested scopes, and
    `redirect_uri=http://localhost:8080/callback`, then opens it in the
    browser.
-2. **Local callback** — the CLI binds a TCP listener on `127.0.0.1:8080` and
-   waits for exactly one request. After you approve access in the browser,
-   Google redirects to `http://localhost:8080/callback?code=...&state=...`.
-   The CLI parses this, checks `state` matches (aborting on mismatch), and
-   replies with a small HTML confirmation page.
+2. **Local callback** — the CLI binds a TCP listener on `127.0.0.1:8080`
+   (before opening the browser, so a busy port fails right away) and waits
+   for the callback. After you approve access in the browser, Google
+   redirects to `http://localhost:8080/callback?code=...&state=...`. Stray
+   requests such as `/favicon.ico` get a 404 and the CLI keeps waiting. The
+   CLI checks `state` matches (aborting on mismatch), reports a denied
+   consent as such, and replies with a short plain-text page.
 3. **Token exchange** — the CLI POSTs (form-urlencoded) the authorization
    `code`, the PKCE `code_verifier`, and the app's
    `client_id`/`client_secret` to `https://oauth2.googleapis.com/token`,

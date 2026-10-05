@@ -2,52 +2,12 @@
 
 use std::path::{Path, PathBuf};
 
+use oauth_user_login::{bind_listener, CallbackError, WaitError};
+
 use super::{
-    app_config_path, authorization_url, code_challenge, credentials_path, generate_code_verifier,
-    generate_state, jwt_claims, parse_callback_request_line, refresh, CallbackError,
-    CallbackParams, Credentials, LoginError, OAuthConfig, OAuthConfigError, ServiceAccountConfig,
+    app_config_path, authorization_url, credentials_path, jwt_claims, refresh, Credentials,
+    LoginError, OAuthConfig, OAuthConfigError, ServiceAccountConfig,
 };
-
-#[test]
-fn code_verifier_is_url_safe_and_long_enough() {
-    let verifier = generate_code_verifier();
-
-    assert!(verifier.len() >= 43 && verifier.len() <= 128);
-    assert!(verifier
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'));
-}
-
-#[test]
-fn code_verifiers_are_random() {
-    assert_ne!(generate_code_verifier(), generate_code_verifier());
-}
-
-#[test]
-fn code_challenge_matches_known_rfc7636_example() {
-    // From RFC 7636 appendix B.
-    let verifier = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk";
-
-    assert_eq!(
-        code_challenge(verifier),
-        "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
-    );
-}
-
-#[test]
-fn code_challenge_is_url_safe_and_unpadded() {
-    // RFC 7636 §4.2: base64url encoding without padding; no +, /, or = characters.
-    let challenge = code_challenge("any-verifier");
-
-    assert!(!challenge.contains('='), "must not contain padding '='");
-    assert!(!challenge.contains('+'), "must not contain '+'");
-    assert!(!challenge.contains('/'), "must not contain '/'");
-}
-
-#[test]
-fn state_values_are_random() {
-    assert_ne!(generate_state(), generate_state());
-}
 
 #[test]
 fn builds_authorization_url_with_required_params() {
@@ -74,78 +34,37 @@ fn builds_authorization_url_with_required_params() {
     assert!(url.contains("https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fdirectory.readonly"));
 }
 
-#[test]
-fn parses_valid_callback_request_line() {
-    let line = "GET /callback?code=abc123&state=xyz789 HTTP/1.1";
+// PKCE and callback parsing are tested in crates/oauth-user-login; here only
+// the wrapping, which must add this CLI's retry command.
 
-    let params = parse_callback_request_line(line).expect("should parse");
+// Regression: a denied consent (`error=access_denied`) used to surface as a
+// missing `code`, as in jira's #70. The parsing fix is tested in
+// crates/oauth-user-login; this checks the message keeps the retry command.
+#[test]
+fn denied_consent_ends_with_the_retry_command() {
+    let err = LoginError::Callback(WaitError::Callback(CallbackError::Denied {
+        error: "access_denied".to_string(),
+        description: None,
+    }));
 
     assert_eq!(
-        params,
-        CallbackParams {
-            code: "abc123".to_string(),
-            state: "xyz789".to_string(),
-        }
+        err.to_string(),
+        "authorization denied: access_denied. Approve the consent page to log in, then retry the \
+        login: google-chat auth login --user"
     );
 }
 
+// A stale process on the callback port used to fail with a bare "Address
+// already in use" after the browser had opened. The port is now bound first
+// (auth::login); this checks the message names the port and the retry command.
 #[test]
-fn rejects_callback_missing_code() {
-    let line = "GET /callback?state=xyz789 HTTP/1.1";
+fn a_busy_callback_port_names_the_port_and_the_retry_command() {
+    let busy = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = busy.local_addr().unwrap().to_string();
+    let err = LoginError::CallbackListener(bind_listener(&address).unwrap_err());
 
-    assert_eq!(
-        parse_callback_request_line(line),
-        Err(CallbackError::MissingParam("code"))
-    );
-}
-
-#[test]
-fn rejects_callback_missing_state() {
-    let line = "GET /callback?code=abc123 HTTP/1.1";
-
-    assert_eq!(
-        parse_callback_request_line(line),
-        Err(CallbackError::MissingParam("state"))
-    );
-}
-
-#[test]
-fn rejects_malformed_request_line() {
-    assert_eq!(
-        parse_callback_request_line("not a request line"),
-        Err(CallbackError::MalformedRequestLine)
-    );
-}
-
-#[test]
-fn callback_without_query_string_is_malformed() {
-    // No '?' at all — must be MalformedRequestLine, not MissingParam.
-    let line = "GET /callback HTTP/1.1";
-
-    assert_eq!(
-        parse_callback_request_line(line),
-        Err(CallbackError::MalformedRequestLine)
-    );
-}
-
-#[test]
-fn callback_with_extra_query_params_extracts_code_and_state() {
-    // Google may append extra params (e.g. scope) — must be ignored.
-    let line = "GET /callback?code=abc123&state=xyz789&scope=chat.messages HTTP/1.1";
-
-    let params = parse_callback_request_line(line).expect("should parse");
-
-    assert_eq!(params.code, "abc123");
-    assert_eq!(params.state, "xyz789");
-}
-
-#[test]
-fn callback_with_url_encoded_code_is_decoded() {
-    let line = "GET /callback?code=abc%2B123&state=xyz HTTP/1.1";
-
-    let params = parse_callback_request_line(line).expect("should parse");
-
-    assert_eq!(params.code, "abc+123");
+    assert!(err.to_string().starts_with(&format!("cannot listen for the login callback on {address}")), "got {err}");
+    assert!(err.to_string().ends_with("and retry: google-chat auth login --user"), "got {err}");
 }
 
 #[test]
@@ -335,4 +254,14 @@ fn jwt_claims_carry_impersonation_and_scopes() {
     assert_eq!(claims.aud, "https://oauth2.googleapis.com/token");
     assert_eq!(claims.iat, 1_700_000_000);
     assert_eq!(claims.exp, 1_700_003_600);
+}
+
+// Guard: the listener only accepts requests on CALLBACK_PATH at
+// CALLBACK_LISTEN_ADDR's port, so the redirect URI sent to the provider must
+// point exactly there, or the login gets a 404 / WrongPath instead of the code.
+#[test]
+fn redirect_uri_points_at_the_callback_listener() {
+    let port = crate::endpoints::CALLBACK_LISTEN_ADDR.rsplit_once(':').unwrap().1;
+
+    assert_eq!(OAuthConfig::REDIRECT_URI, format!("http://localhost:{port}{}", crate::endpoints::CALLBACK_PATH));
 }

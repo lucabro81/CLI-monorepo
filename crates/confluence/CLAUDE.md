@@ -25,8 +25,9 @@ src/
                     Credentials, login(), login_client_credentials(), renew(),
                     save_credentials(), load_credentials(), path helpers,
                     get_granted_scopes(). The actual OAuth 2.0 (3LO + PKCE /
-                    client_credentials) implementation, PKCE helpers, callback
-                    parsing, and cloud_id resolution live in `atlassian_auth`
+                    client_credentials) implementation and cloud_id resolution
+                    live in `atlassian_auth` (PKCE and the callback listener in
+                    turn come from `oauth_user_login`)
                     (workspace-local, shared with `jira` — see root CLAUDE.md's
                     "Shared library: crates/atlassian-auth")
   client.rs       — ConfluenceClient (blocking reqwest); get_json/post_json/put_json/delete

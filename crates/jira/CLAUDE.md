@@ -26,8 +26,9 @@ src/
                     Credentials, login(), login_client_credentials(), renew(),
                     save_credentials(), load_credentials(), path helpers,
                     get_granted_scopes(). The actual OAuth 2.0 (3LO + PKCE /
-                    client_credentials) implementation, PKCE helpers, callback
-                    parsing, and cloud_id resolution live in `atlassian_auth`
+                    client_credentials) implementation and cloud_id resolution
+                    live in `atlassian_auth` (PKCE and the callback listener in
+                    turn come from `oauth_user_login`)
                     (workspace-local, shared with `confluence` — see root
                     CLAUDE.md's "Shared library: crates/atlassian-auth")
   client.rs       — JiraClient (blocking reqwest); get_json/post_json helpers;
@@ -103,7 +104,7 @@ command that's a thin passthrough, covered entirely by `cli_tests.rs`.
 Two grant types, both using `client_id`/`client_secret` from `app.json`:
 
 - **`client_credentials`** (default, `auth login`) — `login_client_credentials()` POSTs `grant_type=client_credentials` + `audience=api.atlassian.com`, no browser. Returns `Credentials` with `refresh_token: None`. Expected mode for agent-driven usage; resulting account has `accountType: "app"`.
-- **3LO + PKCE** (`auth login --user`, also used by `init`) — `login()` builds the authorization URL, opens the browser, runs a one-shot TCP server on `localhost:8080` for the callback, exchanges the code for tokens, resolves `cloud_id` via the accessible-resources endpoint. Returns `Credentials` with `refresh_token: Some(...)`.
+- **3LO + PKCE** (`auth login --user`, also used by `init`) — `login()` builds the authorization URL, binds `127.0.0.1:8080`, opens the browser, waits for the callback (stray requests get a 404; listener from `crates/oauth-user-login`), exchanges the code for tokens, resolves `cloud_id` via the accessible-resources endpoint. Returns `Credentials` with `refresh_token: Some(...)`.
 
 ### App identity sourcing: 3LO app vs. Service Account
 

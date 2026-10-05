@@ -2,42 +2,14 @@
 
 use std::path::{Path, PathBuf};
 
+use oauth_user_login::{CallbackError, WaitError};
+
 use super::{
-    app_config_path, authorization_url, code_challenge, credentials_path, generate_code_verifier,
-    generate_state, merge_scopes_for_cloud_id, parse_callback_request_line, refresh,
-    AccessibleResource, CallbackError, CallbackParams, Credentials, LoginError, OAuthConfig,
-    OAuthConfigError,
+    app_config_path, authorization_url, credentials_path, merge_scopes_for_cloud_id, refresh,
+    AccessibleResource, Credentials, LoginError, OAuthConfig, OAuthConfigError,
 };
 
 const TEST_SCOPES: &str = "read:example write:example offline_access";
-
-#[test]
-fn code_verifier_is_url_safe_and_long_enough() {
-    let verifier = generate_code_verifier();
-
-    assert!(verifier.len() >= 43 && verifier.len() <= 128);
-    assert!(verifier
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'));
-}
-
-#[test]
-fn code_verifiers_are_random() {
-    assert_ne!(generate_code_verifier(), generate_code_verifier());
-}
-
-#[test]
-fn code_challenge_matches_known_rfc7636_example() {
-    // From RFC 7636 appendix B.
-    let verifier = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk";
-
-    assert_eq!(code_challenge(verifier), "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM");
-}
-
-#[test]
-fn state_values_are_random() {
-    assert_ne!(generate_state(), generate_state());
-}
 
 #[test]
 fn builds_authorization_url_with_required_params() {
@@ -61,46 +33,21 @@ fn builds_authorization_url_with_required_params() {
     assert!(url.contains("scope=read%3Aexample+write%3Aexample+offline_access"));
 }
 
-#[test]
-fn parses_valid_callback_request_line() {
-    let line = "GET /callback?code=abc123&state=xyz789 HTTP/1.1";
+// PKCE and callback parsing are tested in crates/oauth-user-login.
 
-    let params = parse_callback_request_line(line).expect("should parse");
+// Regression for #70: a denied consent (`error=access_denied` on the callback)
+// used to surface as a confusing "missing code" error.
+#[test]
+fn denied_consent_surfaces_the_providers_error() {
+    let err = LoginError::Callback(WaitError::Callback(CallbackError::Denied {
+        error: "access_denied".to_string(),
+        description: Some("User did not authorize the request".to_string()),
+    }));
 
     assert_eq!(
-        params,
-        CallbackParams {
-            code: "abc123".to_string(),
-            state: "xyz789".to_string(),
-        }
-    );
-}
-
-#[test]
-fn rejects_callback_missing_code() {
-    let line = "GET /callback?state=xyz789 HTTP/1.1";
-
-    assert_eq!(
-        parse_callback_request_line(line),
-        Err(CallbackError::MissingParam("code"))
-    );
-}
-
-#[test]
-fn rejects_callback_missing_state() {
-    let line = "GET /callback?code=abc123 HTTP/1.1";
-
-    assert_eq!(
-        parse_callback_request_line(line),
-        Err(CallbackError::MissingParam("state"))
-    );
-}
-
-#[test]
-fn rejects_malformed_request_line() {
-    assert_eq!(
-        parse_callback_request_line("not a request line"),
-        Err(CallbackError::MalformedRequestLine)
+        err.to_string(),
+        "authorization denied: access_denied (User did not authorize the request). Approve the \
+        consent page to log in, then retry the login"
     );
 }
 
@@ -278,58 +225,6 @@ fn accepts_app_json_with_extra_fields() {
 }
 
 #[test]
-fn code_challenge_is_url_safe_and_unpadded() {
-    // RFC 7636 §4.2: base64url encoding without padding; no +, /, or = characters.
-    let challenge = code_challenge("any-verifier");
-
-    assert!(!challenge.contains('='), "must not contain padding '='");
-    assert!(!challenge.contains('+'), "must not contain '+'");
-    assert!(!challenge.contains('/'), "must not contain '/'");
-}
-
-#[test]
-fn callback_with_extra_query_params_extracts_code_and_state() {
-    // Atlassian may append extra params — must be ignored.
-    let line = "GET /callback?code=abc123&state=xyz789&scope=read%3Aexample HTTP/1.1";
-
-    let params = parse_callback_request_line(line).expect("should parse");
-
-    assert_eq!(params.code, "abc123");
-    assert_eq!(params.state, "xyz789");
-}
-
-#[test]
-fn callback_with_url_encoded_code_is_decoded() {
-    // Authorization codes can contain characters that get percent-encoded in the redirect.
-    let line = "GET /callback?code=abc%2B123&state=xyz HTTP/1.1";
-
-    let params = parse_callback_request_line(line).expect("should parse");
-
-    assert_eq!(params.code, "abc+123");
-}
-
-#[test]
-fn callback_without_query_string_is_malformed() {
-    // No '?' at all — must be MalformedRequestLine, not MissingParam.
-    let line = "GET /callback HTTP/1.1";
-
-    assert_eq!(
-        parse_callback_request_line(line),
-        Err(CallbackError::MalformedRequestLine)
-    );
-}
-
-#[test]
-fn callback_with_empty_query_string_missing_code() {
-    let line = "GET /callback? HTTP/1.1";
-
-    assert_eq!(
-        parse_callback_request_line(line),
-        Err(CallbackError::MissingParam("code"))
-    );
-}
-
-#[test]
 fn credentials_json_field_names_are_stable() {
     // Regression guard: if serde field names change, existing credentials.json files break.
     let creds = Credentials {
@@ -431,4 +326,14 @@ fn merge_scopes_for_cloud_id_returns_some_empty_vec_when_entry_has_no_scopes() {
     }];
 
     assert_eq!(merge_scopes_for_cloud_id(&resources, "site-1"), Some(vec![]));
+}
+
+// Guard: the listener only accepts requests on CALLBACK_PATH at
+// CALLBACK_LISTEN_ADDR's port, so the redirect URI sent to the provider must
+// point exactly there, or the login gets a 404 / WrongPath instead of the code.
+#[test]
+fn redirect_uri_points_at_the_callback_listener() {
+    let port = crate::endpoints::CALLBACK_LISTEN_ADDR.rsplit_once(':').unwrap().1;
+
+    assert_eq!(OAuthConfig::REDIRECT_URI, format!("http://localhost:{port}{}", crate::endpoints::CALLBACK_PATH));
 }

@@ -22,7 +22,8 @@ src/
     workspace.rs  — run(WorkspaceCommand); dispatches all workspace subcommands [members implemented]
   auth.rs         — OAuthConfig, Credentials, login_client_credentials(), login()
                     (authorization_code, --user), renew(), load_credentials()/
-                    save_credentials(), callback parsing [implemented]
+                    save_credentials() [implemented]; state and the callback
+                    listener come from crates/oauth-user-login
   client.rs       — BitbucketClient (blocking reqwest); get_json/post_json/put_json/delete helpers;
                     Bitbucket REST API v2.0 methods [get_current_user, get_repository,
                     list_repositories, create_repository, delete_repository, list_pull_requests,

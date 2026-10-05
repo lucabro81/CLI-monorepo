@@ -170,97 +170,40 @@ fn authorization_url_encodes_query_values() {
     );
 }
 
-#[test]
-fn generate_state_is_url_safe_and_unique() {
-    let first = generate_state();
-    let second = generate_state();
-
-    assert!(first.len() >= 32, "state too short: {first}");
-    assert!(
-        first.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'),
-        "state not URL-safe: {first}"
-    );
-    assert_ne!(first, second);
-}
+// State and callback parsing are tested in crates/oauth-user-login; here only
+// the wrapping, which must add this CLI's retry command.
 
 #[test]
-fn parses_callback_with_code_and_state() {
-    let params = parse_callback_request_line("GET /callback?code=XYZ&state=abc HTTP/1.1")
-        .expect("should parse");
-
-    assert_eq!(
-        params,
-        CallbackParams {
-            code: "XYZ".to_string(),
-            state: "abc".to_string()
-        }
-    );
-}
-
-#[test]
-fn parses_callback_with_url_encoded_values() {
-    let params = parse_callback_request_line("GET /callback?state=a%2Bb&code=c%3Dd HTTP/1.1")
-        .expect("should parse");
-
-    assert_eq!(params.code, "c=d");
-    assert_eq!(params.state, "a+b");
-}
-
-#[test]
-fn callback_without_code_is_missing_param() {
-    let result = parse_callback_request_line("GET /callback?state=abc HTTP/1.1");
-
-    assert_eq!(result, Err(CallbackError::MissingParam("code")));
-}
-
-#[test]
-fn callback_without_state_is_missing_param() {
-    // Bitbucket doesn't document echoing `state`; if it ever drops it, the
-    // login must fail loudly rather than skip the CSRF check.
-    let result = parse_callback_request_line("GET /callback?code=XYZ HTTP/1.1");
-
-    assert_eq!(result, Err(CallbackError::MissingParam("state")));
-}
-
-#[test]
-fn callback_with_error_is_denied_with_description() {
-    let result = parse_callback_request_line(
-        "GET /callback?error=access_denied&error_description=User+denied+access&state=abc HTTP/1.1",
-    );
-
-    assert_eq!(
-        result,
-        Err(CallbackError::Denied {
+fn denied_consent_ends_with_the_retry_command() {
+    let err = LoginError::Callback(oauth_user_login::WaitError::Callback(
+        oauth_user_login::CallbackError::Denied {
             error: "access_denied".to_string(),
             description: Some("User denied access".to_string()),
-        })
-    );
-}
-
-#[test]
-fn callback_with_error_takes_precedence_over_code() {
-    let result = parse_callback_request_line("GET /callback?error=access_denied&code=XYZ&state=abc HTTP/1.1");
+        },
+    ));
 
     assert_eq!(
-        result,
-        Err(CallbackError::Denied {
-            error: "access_denied".to_string(),
-            description: None,
-        })
+        err.to_string(),
+        "authorization denied: access_denied (User denied access). Approve the consent page to \
+        log in, then retry the login: bitbucket auth login --user"
     );
 }
 
 #[test]
-fn callback_without_query_is_malformed() {
-    let result = parse_callback_request_line("GET /favicon.ico HTTP/1.1");
+fn state_mismatch_ends_with_the_retry_command() {
+    let err = LoginError::Callback(oauth_user_login::WaitError::StateMismatch);
 
-    assert_eq!(result, Err(CallbackError::MalformedRequestLine));
+    assert!(err.to_string().ends_with("Login aborted: retry it: bitbucket auth login --user"), "got {err}");
 }
 
 #[test]
-fn callback_with_garbage_request_line_is_malformed() {
-    assert_eq!(parse_callback_request_line(""), Err(CallbackError::MalformedRequestLine));
-    assert_eq!(parse_callback_request_line("GET"), Err(CallbackError::MalformedRequestLine));
+fn a_busy_callback_port_names_the_port_and_the_retry_command() {
+    let busy = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = busy.local_addr().unwrap().to_string();
+    let err = LoginError::CallbackListener(oauth_user_login::bind_listener(&address).unwrap_err());
+
+    assert!(err.to_string().starts_with(&format!("cannot listen for the login callback on {address}")), "got {err}");
+    assert!(err.to_string().ends_with("and retry: bitbucket auth login --user"), "got {err}");
 }
 
 #[test]

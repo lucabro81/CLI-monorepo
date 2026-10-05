@@ -3,8 +3,8 @@
 //! grant types:
 //!
 //! - **3LO + PKCE** (`login`) — interactive consent flow for a human Atlassian
-//!   account: PKCE challenge generation, browser launch, one-shot local HTTP
-//!   server for the callback, authorization code exchange, and cloud ID
+//!   account: PKCE challenge generation, browser launch, local listener for the
+//!   callback (PKCE and listener from `crates/oauth-user-login`), authorization code exchange, and cloud ID
 //!   resolution via the accessible-resources endpoint. Issues a `refresh_token`.
 //! - **`client_credentials`** (`login_client_credentials`) — non-interactive flow
 //!   for a service account: exchanges `client_id`/`client_secret` directly for
@@ -106,10 +106,10 @@ impl std::fmt::Display for OAuthConfigError {
 pub enum LoginError {
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
-    #[error("invalid OAuth callback: {0:?}")]
-    Callback(CallbackError),
-    #[error("OAuth state mismatch — possible CSRF attack, login aborted")]
-    StateMismatch,
+    #[error("{0}")]
+    CallbackListener(oauth_user_login::ListenerError),
+    #[error("{0}")]
+    Callback(oauth_user_login::WaitError),
     #[error("token exchange failed: {0}")]
     TokenExchange(String),
     #[error("no accessible Atlassian resources found for this account")]
@@ -146,15 +146,20 @@ struct AccessibleResource {
 /// `scopes` is a space-separated OAuth scope string, product-specific
 /// (e.g. Jira's `"read:jira-work ..."` vs Confluence's `"read:confluence-content.all ..."`).
 pub fn login(config: &OAuthConfig, scopes: &str) -> Result<Credentials, LoginError> {
-    let verifier = generate_code_verifier();
-    let challenge = code_challenge(&verifier);
-    let state = generate_state();
+    let verifier = oauth_user_login::generate_code_verifier();
+    let challenge = oauth_user_login::code_challenge(&verifier);
+    let state = oauth_user_login::generate_state();
 
     let url = authorization_url(config, &challenge, &state, scopes)?;
+    // Bind before opening the browser, so a busy port fails before the person
+    // has consented.
+    let listener = oauth_user_login::bind_listener(endpoints::CALLBACK_LISTEN_ADDR)
+        .map_err(LoginError::CallbackListener)?;
     eprintln!("Opening browser for Atlassian authorization:\n{url}\n");
     let _ = webbrowser::open(&url);
 
-    let params = wait_for_callback(&state)?;
+    let params = oauth_user_login::wait_for_callback(&listener, endpoints::CALLBACK_PATH, &state)
+        .map_err(LoginError::Callback)?;
 
     let token = exchange_code_for_token(config, &params.code, &verifier)?;
     let resource = fetch_primary_resource(&token.access_token)?;
@@ -176,39 +181,6 @@ fn now_unix() -> u64 {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs()
-}
-
-/// Listens once on the redirect URI's address for the authorization callback,
-/// validates the `state`, and replies with a small confirmation page.
-fn wait_for_callback(expected_state: &str) -> Result<CallbackParams, LoginError> {
-    use std::io::{BufRead, BufReader, Write};
-    use std::net::TcpListener;
-
-    let listener = TcpListener::bind("127.0.0.1:8080").map_err(LoginError::Io)?;
-    let (stream, _) = listener.accept().map_err(LoginError::Io)?;
-
-    let mut reader = BufReader::new(&stream);
-    let mut request_line = String::new();
-    reader
-        .read_line(&mut request_line)
-        .map_err(LoginError::Io)?;
-
-    let params = parse_callback_request_line(request_line.trim_end())
-        .map_err(LoginError::Callback)?;
-
-    let mut stream = stream;
-    let body = "<html><body>Login complete — you can close this window and return to the terminal.</body></html>";
-    let response = format!(
-        "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-        body.len()
-    );
-    let _ = stream.write_all(response.as_bytes());
-
-    if params.state != expected_state {
-        return Err(LoginError::StateMismatch);
-    }
-
-    Ok(params)
 }
 
 fn exchange_code_for_token(
@@ -398,18 +370,6 @@ pub fn save_credentials(path: &Path, credentials: &Credentials) -> Result<(), Lo
     std::fs::write(path, json).map_err(LoginError::Io)
 }
 
-#[derive(Debug, PartialEq, Eq)]
-pub struct CallbackParams {
-    pub code: String,
-    pub state: String,
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub enum CallbackError {
-    MalformedRequestLine,
-    MissingParam(&'static str),
-}
-
 /// Dynamic session credentials persisted to `credentials.json`.
 /// Fully managed by the CLI — never edit by hand. Refreshed transparently before expiry.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -431,34 +391,6 @@ pub struct Credentials {
     /// same as `cloud_id`.
     #[serde(default)]
     pub site_url: Option<String>,
-}
-
-/// Generates a PKCE code verifier: a random URL-safe string (43-128 chars per RFC 7636).
-pub fn generate_code_verifier() -> String {
-    random_url_safe_string(64)
-}
-
-/// Derives the PKCE code challenge (S256 method): base64url(sha256(verifier)), no padding.
-pub fn code_challenge(verifier: &str) -> String {
-    use base64::Engine;
-    use sha2::{Digest, Sha256};
-
-    let digest = Sha256::digest(verifier.as_bytes());
-    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(digest)
-}
-
-/// Generates a random opaque state string used to protect against CSRF in the OAuth flow.
-pub fn generate_state() -> String {
-    random_url_safe_string(32)
-}
-
-fn random_url_safe_string(byte_len: usize) -> String {
-    use base64::Engine;
-    use rand::RngCore;
-
-    let mut bytes = vec![0u8; byte_len];
-    rand::thread_rng().fill_bytes(&mut bytes);
-    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes)
 }
 
 /// Builds the Atlassian authorization URL the user must open in a browser.
@@ -483,35 +415,6 @@ pub fn authorization_url(
     let query = serde_urlencoded::to_string(params)
         .map_err(|e| LoginError::Internal(format!("failed to encode authorization URL: {e}")))?;
     Ok(format!("{}?{query}", endpoints::ATLASSIAN_AUTHORIZE_URL))
-}
-
-/// Parses the first line of the local callback HTTP request, e.g.
-/// `GET /callback?code=XYZ&state=abc HTTP/1.1`, extracting `code` and `state`.
-pub fn parse_callback_request_line(line: &str) -> Result<CallbackParams, CallbackError> {
-    let mut parts = line.split_whitespace();
-    let (Some(_method), Some(target), Some(_version)) = (parts.next(), parts.next(), parts.next())
-    else {
-        return Err(CallbackError::MalformedRequestLine);
-    };
-
-    let query = target
-        .split_once('?')
-        .map(|(_, query)| query)
-        .ok_or(CallbackError::MalformedRequestLine)?;
-
-    let pairs: std::collections::HashMap<String, String> =
-        serde_urlencoded::from_str(query).map_err(|_| CallbackError::MalformedRequestLine)?;
-
-    Ok(CallbackParams {
-        code: pairs
-            .get("code")
-            .cloned()
-            .ok_or(CallbackError::MissingParam("code"))?,
-        state: pairs
-            .get("state")
-            .cloned()
-            .ok_or(CallbackError::MissingParam("state"))?,
-    })
 }
 
 #[cfg(test)]

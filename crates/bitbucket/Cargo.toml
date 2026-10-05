@@ -12,6 +12,7 @@ workspace = true
 
 [dependencies]
 cli-fields = { path = "../cli-fields" }
+oauth-user-login = { path = "../oauth-user-login" }
 clap = { version = "4", features = ["derive"] }
 reqwest = { version = "0.12", features = ["blocking", "json"] }
 serde = { version = "1", features = ["derive"] }
@@ -20,8 +21,6 @@ dirs = "5"
 thiserror = "1"
 webbrowser = "1"
 serde_urlencoded = "0.7"
-rand = "0.8"
-base64 = "0.22"
 
 [dev-dependencies]
 tempfile = "3"

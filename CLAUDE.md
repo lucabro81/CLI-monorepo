@@ -16,7 +16,7 @@ Monorepo: single Cargo workspace holding many CLI tools, one per external servic
 ## Development approach
 
 - Build CLIs incrementally: start with the smallest useful command set, add new commands only when a concrete need arises. Don't pre-build a full surface area for a service.
-- Each CLI lives as its own crate/binary in the workspace, named after the service it wraps, under `crates/<service>/`. The exceptions are `crates/cli-fields` and `crates/atlassian-auth`, shared libraries (not binaries, no service of their own) — see "Shared library: crates/cli-fields" and "Shared library: crates/atlassian-auth" below.
+- Each CLI lives as its own crate/binary in the workspace, named after the service it wraps, under `crates/<service>/`. The exceptions are `crates/cli-fields`, `crates/atlassian-auth` and `crates/oauth-user-login`, shared libraries (not binaries, no service of their own) — see the "Shared library: ..." sections below.
 - Update this CLAUDE.md, the crate's own CLAUDE.md, and project memory after every significant addition or change — keep them in sync with codebase state.
 - When adding a new crate, add a row for it to the table in the root [README.md](README.md).
 - To add a new CLI crate from scratch, use the `new-cli-crate` skill (`.claude/skills/new-cli-crate/`). To add a command/subcommand to an existing crate, use `add-cli-command` (`.claude/skills/add-cli-command/`). Both skills open a tracking GitHub issue and a linked branch before writing any code — see "Feature workflow" below.
@@ -46,7 +46,7 @@ Applies to work driven by the `new-cli-crate` and `add-cli-command` skills (see 
 Known edge cases, deferred fixes, and design notes (documented tradeoffs that aren't scheduled) are tracked as GitHub issues, labeled instead of using an ID prefix per crate:
 
 - **Type** (pick one): `bug`, `enhancement`, `tech-debt` (internal robustness/coverage improvement, not user-facing), `design-note` (a decision already made and documented, not scheduled to change), `needs-verification` (implemented but not confirmed live).
-- **Scope** (pick one): the crate name (`jira`, `bitbucket`, `google-chat`, `cli-fields`, `atlassian-auth`, `atlassian-admin`, `confluence`, `zitadel`) or `cross-crate` for anything spanning multiple crates or repo-wide tooling/CI.
+- **Scope** (pick one): the crate name (`jira`, `bitbucket`, `google-chat`, `cli-fields`, `atlassian-auth`, `oauth-user-login`, `atlassian-admin`, `confluence`, `zitadel`) or `cross-crate` for anything spanning multiple crates or repo-wide tooling/CI.
 
 ```sh
 gh issue create --title "<crate>: <short description>" --label "<type>,<scope>" --body "<what was found, current behaviour, why deferred, what a fix would look like>"
@@ -91,9 +91,15 @@ Command handlers live in `commands/`; infrastructure (HTTP client, auth, error t
 
 ## Shared library: `crates/atlassian-auth`
 
-OAuth 2.0 authentication against the Atlassian Cloud identity platform (`auth.atlassian.com` / `api.atlassian.com`) is implemented once, in `crates/atlassian-auth` (workspace-local, `path = "../atlassian-auth"` dependency, not published). It provides `OAuthConfig`, `Credentials`, `login()` (3LO + PKCE), `login_client_credentials()`, `refresh()`/`renew()`, `load_credentials()`/`save_credentials()`, `get_granted_scopes()`, PKCE helpers, callback parsing, and `cloud_id` resolution via the accessible-resources endpoint. Every function that varies by product (OAuth scopes, config directory name) takes those as parameters rather than hardcoding them — `login(config, scopes)`, `app_config_path(config_dir, cli_dir)` — so each crate's own `auth.rs` becomes a thin wrapper fixing its product-specific values (see `jira`'s `auth.rs` for the pattern; `confluence` follows the same shape).
+OAuth 2.0 authentication against the Atlassian Cloud identity platform (`auth.atlassian.com` / `api.atlassian.com`) is implemented once, in `crates/atlassian-auth` (workspace-local, `path = "../atlassian-auth"` dependency, not published). It provides `OAuthConfig`, `Credentials`, `login()` (3LO + PKCE), `login_client_credentials()`, `refresh()`/`renew()`, `load_credentials()`/`save_credentials()`, `get_granted_scopes()`, and `cloud_id` resolution via the accessible-resources endpoint. Every function that varies by product (OAuth scopes, config directory name) takes those as parameters rather than hardcoding them — `login(config, scopes)`, `app_config_path(config_dir, cli_dir)` — so each crate's own `auth.rs` becomes a thin wrapper fixing its product-specific values (see `jira`'s `auth.rs` for the pattern; `confluence` follows the same shape).
 
 **Used by**: `jira` and `confluence` — the two crates that actually authenticate against this exact platform with this exact flow (3LO+PKCE / `client_credentials`, `cloud_id` resolution). **Not used by**: `bitbucket` (its own native OAuth consumer — different token endpoint, HTTP Basic auth, no PKCE, no `cloud_id`) or `atlassian-admin` (a static Organization API key, no OAuth grant at all) — both are genuinely different auth models, not further instances of the duplication this library was extracted to eliminate.
+
+## Shared library: `crates/oauth-user-login`
+
+The provider-agnostic half of every human login (`auth login --user`) lives once, in `crates/oauth-user-login` (workspace-local, not published): PKCE (`generate_code_verifier`, `code_challenge`), `generate_state`, and the loopback callback — `bind_listener(addr)` (bind *before* opening the browser, so a busy port fails before the person consents), `wait_for_callback(&listener, callback_path, expected_state)` (answers 404 to stray requests such as `/favicon.ico` and keeps waiting; 400 plus an error on a denial, a missing parameter or a `state` mismatch), and `parse_callback_request_line`. Its errors are generic and end with a retry instruction; each crate wraps them in its own `LoginError`, appending its exact command (`#[error("{0}: <cli> auth login --user")]`) unless its `CliError` already adds one (`zitadel`) or it is product-agnostic (`atlassian-auth`). An OAuth redirect on a path other than `callback_path` fails with `CallbackError::WrongPath` naming the expected path, instead of a 404 that would wait forever.
+
+Provider-specific parts stay in each crate: the authorize URL's parameters, the token endpoint and its auth style (Basic vs public PKCE client), scopes, and refresh semantics. **Used by**: `atlassian-auth` (hence `jira` and `confluence`), `bitbucket` (state and listener only — Bitbucket has no PKCE), `google-chat`, `zitadel`.
 
 ## Test file convention
 

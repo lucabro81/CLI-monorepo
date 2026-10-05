@@ -7,7 +7,7 @@
 //!   `refresh_token`: renewal signs a fresh assertion.
 //! - **Human, authorization code + PKCE** (`login_user`, `auth login --user`) —
 //!   opens the browser on the Native app's authorize URL, waits for the redirect
-//!   on a loopback listener, exchanges the code. Issues a `refresh_token`;
+//!   on a loopback listener (both from `crates/oauth-user-login`), exchanges the code. Issues a `refresh_token`;
 //!   renewal uses the refresh grant (`renew` dispatches on its presence, so a
 //!   human session never silently turns into the service user).
 //!
@@ -162,15 +162,11 @@ pub enum LoginError {
         and run: zitadel init --client-id <client-id>"
     )]
     NativeAppNotConfigured,
-    #[error(
-        "cannot listen for the login callback on {0}: it is already in use, likely by an aborted \
-        previous login. Stop that process (lsof -i :8080) and retry"
-    )]
-    CallbackPortInUse(String),
-    #[error("login callback rejected: {0}")]
-    Callback(CallbackError),
-    #[error("OAuth state mismatch on the login callback (possible CSRF) — login aborted, retry it")]
-    StateMismatch,
+    // No retry command here: CliError::UserLoginFailed adds it.
+    #[error("{0}")]
+    CallbackListener(oauth_user_login::ListenerError),
+    #[error("{0}")]
+    Callback(oauth_user_login::WaitError),
     #[error(
         "ZITADEL issued no refresh token, so the session could not be renewed. In the console enable \
         \"Refresh Token\" in the Native application's token settings, then run: zitadel auth login --user"
@@ -195,23 +191,6 @@ struct TokenResponse {
     #[serde(default)]
     refresh_token: Option<String>,
     expires_in: u64,
-}
-
-#[derive(Debug, PartialEq, Eq, thiserror::Error)]
-pub enum CallbackError {
-    /// Any request that isn't `GET /callback?...` (e.g. the browser's favicon probe).
-    #[error("not the OAuth callback")]
-    NotCallback,
-    #[error("the callback has no \"{0}\" parameter")]
-    MissingParam(&'static str),
-    #[error("authorization denied ({0}). Approve the consent screen to log in")]
-    Denied(String),
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub struct CallbackParams {
-    pub code: String,
-    pub state: String,
 }
 
 /// Dynamic session credentials persisted to `credentials.json`.
@@ -307,43 +286,19 @@ fn request_token(instance_url: &str, pairs: &[(&str, &str)]) -> Result<TokenResp
 /// Runs the interactive human login: browser consent on the Native app,
 /// loopback callback, PKCE code exchange.
 pub fn login_user(config: &AppConfig) -> Result<Credentials, LoginError> {
-    let verifier = generate_code_verifier();
-    let state = generate_state();
+    let verifier = oauth_user_login::generate_code_verifier();
+    let state = oauth_user_login::generate_state();
     // Fails on a missing client_id before anything is opened or bound.
-    let url = authorization_url(config, &code_challenge(&verifier), &state)?;
-    let listener = std::net::TcpListener::bind(endpoints::CALLBACK_LISTEN_ADDR)
-        .map_err(|_| LoginError::CallbackPortInUse(endpoints::CALLBACK_LISTEN_ADDR.to_string()))?;
+    let url = authorization_url(config, &oauth_user_login::code_challenge(&verifier), &state)?;
+    let listener = oauth_user_login::bind_listener(endpoints::CALLBACK_LISTEN_ADDR)
+        .map_err(LoginError::CallbackListener)?;
 
     eprintln!("Opening the browser for ZITADEL login. If it does not open, visit:\n{url}\n");
     let _ = webbrowser::open(&url);
 
-    let params = wait_for_callback(&listener, &state)?;
+    let params = oauth_user_login::wait_for_callback(&listener, endpoints::CALLBACK_PATH, &state)
+        .map_err(LoginError::Callback)?;
     exchange_code(config, &params.code, &verifier)
-}
-
-/// PKCE code verifier (RFC 7636): 64 random bytes, base64url without padding.
-pub(crate) fn generate_code_verifier() -> String {
-    random_url_safe(64)
-}
-
-/// PKCE S256 challenge: base64url(sha256(verifier)), no padding.
-pub(crate) fn code_challenge(verifier: &str) -> String {
-    use base64::Engine;
-    use sha2::{Digest, Sha256};
-    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()))
-}
-
-/// Opaque CSRF state for the authorize request.
-pub(crate) fn generate_state() -> String {
-    random_url_safe(32)
-}
-
-fn random_url_safe(byte_len: usize) -> String {
-    use base64::Engine;
-    use rand::RngCore;
-    let mut bytes = vec![0u8; byte_len];
-    rand::thread_rng().fill_bytes(&mut bytes);
-    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes)
 }
 
 pub(crate) fn authorization_url(
@@ -364,74 +319,6 @@ pub(crate) fn authorization_url(
     let query = serde_urlencoded::to_string(params)
         .map_err(|e| LoginError::Internal(format!("failed to encode authorization URL: {e}")))?;
     Ok(format!("{}?{query}", endpoints::authorize_url(&config.instance_url)))
-}
-
-/// Parses the request line of a loopback request, e.g.
-/// `GET /callback?code=X&state=Y HTTP/1.1`.
-pub(crate) fn parse_callback_request_line(line: &str) -> Result<CallbackParams, CallbackError> {
-    let mut parts = line.split_whitespace();
-    let (Some("GET"), Some(target), Some(_)) = (parts.next(), parts.next(), parts.next()) else {
-        return Err(CallbackError::NotCallback);
-    };
-    let (path, query) = target.split_once('?').unwrap_or((target, ""));
-    if path != endpoints::CALLBACK_PATH {
-        return Err(CallbackError::NotCallback);
-    }
-    let params: std::collections::HashMap<String, String> =
-        serde_urlencoded::from_str(query).map_err(|_| CallbackError::NotCallback)?;
-
-    if let Some(error) = params.get("error") {
-        return Err(CallbackError::Denied(match params.get("error_description") {
-            Some(description) => format!("{error}: {description}"),
-            None => error.clone(),
-        }));
-    }
-    Ok(CallbackParams {
-        code: params.get("code").cloned().ok_or(CallbackError::MissingParam("code"))?,
-        state: params.get("state").cloned().ok_or(CallbackError::MissingParam("state"))?,
-    })
-}
-
-/// Serves the loopback listener until the OAuth callback arrives. Stray requests
-/// (e.g. `/favicon.ico`) get a 404 and the listener keeps waiting.
-pub(crate) fn wait_for_callback(
-    listener: &std::net::TcpListener,
-    expected_state: &str,
-) -> Result<CallbackParams, LoginError> {
-    use std::io::{BufRead, BufReader, Write};
-
-    loop {
-        let (mut stream, _) = listener.accept()?;
-        let mut request_line = String::new();
-        BufReader::new(&stream).read_line(&mut request_line)?;
-
-        let (status, body, outcome) = match parse_callback_request_line(request_line.trim_end()) {
-            Err(CallbackError::NotCallback) => ("404 Not Found", "Not found.", None),
-            Err(e) => (
-                "400 Bad Request",
-                "Login failed — see the terminal for details.",
-                Some(Err(LoginError::Callback(e))),
-            ),
-            Ok(params) if params.state != expected_state => (
-                "400 Bad Request",
-                "Login failed — see the terminal for details.",
-                Some(Err(LoginError::StateMismatch)),
-            ),
-            Ok(params) => (
-                "200 OK",
-                "Login complete — you can close this window and return to the terminal.",
-                Some(Ok(params)),
-            ),
-        };
-        let response = format!(
-            "HTTP/1.1 {status}\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-            body.len()
-        );
-        let _ = stream.write_all(response.as_bytes());
-        if let Some(outcome) = outcome {
-            return outcome;
-        }
-    }
 }
 
 pub(crate) fn exchange_code(
