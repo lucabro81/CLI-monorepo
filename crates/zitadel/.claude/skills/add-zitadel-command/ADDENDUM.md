@@ -18,7 +18,7 @@ deviates from or adds to the generic skill are covered. Steps not listed follow
   command's `--help` and README section. A 403 should map to an error naming
   that role and pointing to `zitadel doctor`.
 - No new OAuth scope is normally needed; if one is, add it to the scope constants
-  in `auth.rs` and re-run `auth login`.
+  in `endpoints.rs` (`SERVICE_USER_SCOPES`, and the `--user` scopes) and re-run `auth login`.
 
 ## Step 2 — API research
 
@@ -28,8 +28,18 @@ deviates from or adds to the generic skill are covered. Steps not listed follow
   `/auth/v1`, `/admin/v1`) only if v2 has no equivalent, and say so in the
   crate CLAUDE.md command table. v1 Management calls take the target org via the
   `x-zitadel-orgid` header.
-- Searches are `POST` with `{"query":{"offset","limit","asc"},"queries":[...]}`;
-  expose `--limit`/`--offset` and pass the raw response (incl. `details.totalResult`) through.
+- Two request/response shapes coexist — probe before assuming:
+  - user/organization services (REST `/v2/...`): `POST` with
+    `{"query":{"offset","limit","asc"},"queries":[...]}`, `TEXT_QUERY_METHOD_*`;
+    response `details.totalResult` + `result`.
+  - newer services without a REST mapping (e.g. `ProjectService`): `POST
+    /zitadel.<service>.v2.<Service>/<Method>` (Connect path, plain
+    `application/json`), body `{"pagination":{...},"filters":[...]}`,
+    `TEXT_FILTER_METHOD_*`; response `pagination.totalResult` + a named list.
+  - Either way: build the pagination block with `context::search_query`, expose
+    `--limit`/`--offset`, pass the raw response through.
+- Validate every enum filter client-side (clap `ValueEnum`): ZITADEL answers an
+  unknown enum value with 200 and zero results instead of an error.
 
 ## Step 6 — e2e tests
 
