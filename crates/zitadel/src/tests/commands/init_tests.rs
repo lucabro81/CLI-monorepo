@@ -1,6 +1,8 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use super::{build_app_config, discard_credentials, instance_changed, write_app_config};
+use super::{
+    build_app_config, discard_credentials, instance_changed, read_key_file, write_app_config,
+};
 use crate::auth::{AppConfig, ServiceUserKey};
 use crate::error::CliError;
 
@@ -158,4 +160,32 @@ fn discard_credentials_tolerates_a_missing_file() {
     let dir = tempfile::tempdir().unwrap();
 
     discard_credentials(&dir.path().join("credentials.json")).unwrap();
+}
+
+#[test]
+fn unreadable_key_file_names_the_path() {
+    let err = read_key_file(std::path::Path::new("/nonexistent/key.json")).unwrap_err();
+
+    assert!(
+        matches!(&err, CliError::KeyFileUnreadable { path, .. } if path == "/nonexistent/key.json"),
+        "got {err:?}"
+    );
+    assert!(err.to_string().ends_with("Check the path passed to --key-file."), "got {err}");
+}
+
+#[test]
+fn invalid_key_file_explains_why_and_names_the_path() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("key.json");
+    std::fs::write(&path, r#"{"type":"application","keyId":"k","key":"x","clientId":"c"}"#).unwrap();
+
+    let err = read_key_file(&path).unwrap_err();
+
+    match &err {
+        CliError::InvalidKeyFile { path: p, reason } => {
+            assert_eq!(p, &path.display().to_string());
+            assert!(reason.starts_with("this is a key of type \"application\""), "got {reason}");
+        }
+        other => panic!("expected InvalidKeyFile, got {other:?}"),
+    }
 }

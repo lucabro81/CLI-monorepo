@@ -1,6 +1,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use clap::Parser;
+use clap::error::ErrorKind;
 
 use super::{
     AuthCommand, Cli, Command, OrganizationCommand, ProjectCommand, UserCommand, UserState,
@@ -8,6 +9,10 @@ use super::{
 
 fn parse(args: &[&str]) -> Result<Cli, clap::Error> {
     Cli::try_parse_from(std::iter::once("zitadel").chain(args.iter().copied()))
+}
+
+fn error_kind(args: &[&str]) -> ErrorKind {
+    parse(args).unwrap_err().kind()
 }
 
 #[test]
@@ -48,7 +53,7 @@ fn select_all_is_global() {
 
 #[test]
 fn select_and_select_all_conflict() {
-    assert!(parse(&["auth", "whoami", "--select", "user.id", "--select-all"]).is_err());
+    assert_eq!(error_kind(&["auth", "whoami", "--select", "user.id", "--select-all"]), ErrorKind::ArgumentConflict);
 }
 
 #[test]
@@ -125,21 +130,21 @@ fn parses_user_get() {
 
 #[test]
 fn user_get_requires_a_user_id() {
-    assert!(parse(&["user", "get"]).is_err());
+    assert_eq!(error_kind(&["user", "get"]), ErrorKind::MissingRequiredArgument);
 }
 
 #[test]
 fn user_search_rejects_unknown_state() {
     // ZITADEL silently returns zero results for an unknown state, so it must be
     // rejected client-side.
-    assert!(parse(&["user", "search", "--state", "suspended"]).is_err());
+    assert_eq!(error_kind(&["user", "search", "--state", "suspended"]), ErrorKind::InvalidValue);
 }
 
 #[test]
 fn user_search_rejects_zero_or_non_numeric_limit() {
-    assert!(parse(&["user", "search", "--limit", "0"]).is_err());
-    assert!(parse(&["user", "search", "--limit", "ten"]).is_err());
-    assert!(parse(&["user", "search", "--offset", "-1"]).is_err());
+    assert_eq!(error_kind(&["user", "search", "--limit", "0"]), ErrorKind::ValueValidation);
+    assert_eq!(error_kind(&["user", "search", "--limit", "ten"]), ErrorKind::ValueValidation);
+    assert_eq!(error_kind(&["user", "search", "--offset", "-1"]), ErrorKind::UnknownArgument);
 }
 
 #[test]
@@ -167,7 +172,7 @@ fn parses_organization_list_with_all_flags() {
 
 #[test]
 fn organization_list_rejects_zero_limit() {
-    assert!(parse(&["organization", "list", "--limit", "0"]).is_err());
+    assert_eq!(error_kind(&["organization", "list", "--limit", "0"]), ErrorKind::ValueValidation);
 }
 
 #[test]
@@ -201,7 +206,7 @@ fn parses_project_list_with_all_flags() {
 
 #[test]
 fn project_list_rejects_zero_limit() {
-    assert!(parse(&["project", "list", "--limit", "0"]).is_err());
+    assert_eq!(error_kind(&["project", "list", "--limit", "0"]), ErrorKind::ValueValidation);
 }
 
 #[test]
@@ -213,12 +218,15 @@ fn parses_doctor() {
 
 #[test]
 fn rejects_auth_without_subcommand() {
-    assert!(parse(&["auth"]).is_err());
+    assert_eq!(
+        error_kind(&["auth"]),
+        ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand
+    );
 }
 
 #[test]
 fn rejects_unknown_auth_login_flag() {
-    assert!(parse(&["auth", "login", "--token", "x"]).is_err());
+    assert_eq!(error_kind(&["auth", "login", "--token", "x"]), ErrorKind::UnknownArgument);
 }
 
 #[test]

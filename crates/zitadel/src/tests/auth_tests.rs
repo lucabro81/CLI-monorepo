@@ -192,7 +192,21 @@ fn application_key_file_is_rejected_with_a_hint() {
     let err = ServiceUserKey::from_key_file(json).unwrap_err();
 
     assert_eq!(err, KeyFileError::WrongType("application".to_string()));
-    assert!(err.to_string().contains("Service Users"), "got {err}");
+    assert_eq!(
+        err.to_string(),
+        "this is a key of type \"application\", not a service user key (\"serviceaccount\"). In the console \
+        create it under Users > Service Users > <user> > Keys > New (JSON), not on an application"
+    );
+}
+
+#[test]
+fn key_file_without_type_is_rejected_as_wrong_type() {
+    let json = r#"{"keyId":"k","key":"x","userId":"u"}"#;
+
+    assert_eq!(
+        ServiceUserKey::from_key_file(json).unwrap_err(),
+        KeyFileError::WrongType(String::new())
+    );
 }
 
 #[test]
@@ -261,7 +275,12 @@ fn assertion_with_invalid_private_key_is_an_actionable_error() {
         matches!(&err, LoginError::InvalidPrivateKey(_)),
         "got {err:?}"
     );
-    assert!(err.to_string().contains("zitadel init --key-file"));
+    assert!(
+        err.to_string().ends_with(
+            "Download a new JSON key from the console and run: zitadel init --key-file <path-to-key.json>"
+        ),
+        "got {err}"
+    );
 }
 
 // ── token exchange (against a one-shot local mock server) ─────────────────
@@ -288,6 +307,25 @@ fn login_service_user_posts_jwt_bearer_form_to_instance_token_endpoint() {
 
     assert_eq!(creds.access_token, "at-123");
     assert_eq!(creds.refresh_token, None);
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    assert!(
+        (now + 43199 - 5..=now + 43199).contains(&creds.expires_at),
+        "expires_at {} should be now + expires_in",
+        creds.expires_at
+    );
+}
+
+#[test]
+fn login_service_user_rejects_a_success_response_without_access_token() {
+    let (url, server) = one_shot_server("200 OK", r#"{"token_type":"Bearer"}"#);
+
+    let err = login_service_user(&config_with(&url, Some(test_key()))).unwrap_err();
+    server.join().unwrap();
+
+    assert!(matches!(err, LoginError::TokenExchange(_)), "got {err:?}");
 }
 
 #[test]
@@ -301,10 +339,10 @@ fn login_service_user_surfaces_zitadel_error_body() {
     server.join().unwrap();
 
     match err {
-        LoginError::TokenExchange(msg) => {
-            assert!(msg.contains("400"), "got {msg}");
-            assert!(msg.contains("assertion invalid"), "got {msg}");
-        }
+        LoginError::TokenExchange(msg) => assert_eq!(
+            msg,
+            r#"400 Bad Request: {"error":"invalid_grant","error_description":"assertion invalid"}"#
+        ),
         other => panic!("expected TokenExchange, got {other:?}"),
     }
 }
@@ -314,7 +352,11 @@ fn login_service_user_without_service_user_block_is_an_actionable_error() {
     let err = login_service_user(&config_with("https://acme.zitadel.cloud", None)).unwrap_err();
 
     assert!(matches!(err, LoginError::ServiceUserNotConfigured));
-    assert!(err.to_string().contains("zitadel init --key-file"));
+    assert_eq!(
+        err.to_string(),
+        "no service user configured: app.json has no \"service_user\" key. Download a JSON key for a \
+        ZITADEL service user from the console and run: zitadel init --key-file <path-to-key.json>"
+    );
 }
 
 // ── credentials persistence and renewal ───────────────────────────────────

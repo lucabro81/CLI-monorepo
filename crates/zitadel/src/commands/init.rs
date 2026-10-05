@@ -71,7 +71,7 @@ pub fn run_init(
     Ok(())
 }
 
-fn read_key_file(path: &Path) -> Result<ServiceUserKey, CliError> {
+pub(crate) fn read_key_file(path: &Path) -> Result<ServiceUserKey, CliError> {
     let raw = std::fs::read_to_string(path).map_err(|e| CliError::KeyFileUnreadable {
         path: path.display().to_string(),
         reason: e.to_string(),

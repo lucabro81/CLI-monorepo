@@ -103,3 +103,28 @@ fn list_projects_posts_json_to_the_connect_project_service() {
     assert!(request.to_ascii_lowercase().contains("content-type: application/json\r\n"), "got {request}");
     assert!(request.ends_with(r#"{"filters":[]}"#), "got {request}");
 }
+
+#[test]
+fn search_users_posts_body_to_v2_users() {
+    let (url, server) = one_shot_server("200 OK", r#"{"result":[]}"#);
+
+    client(&url).search_users(&serde_json::json!({"queries": []})).unwrap();
+
+    let request = server.join().unwrap();
+    assert!(request.starts_with("POST /v2/users "), "got {request}");
+    assert!(request.ends_with(r#"{"queries":[]}"#), "got {request}");
+}
+
+#[test]
+fn success_status_with_non_json_body_is_a_request_error() {
+    // e.g. a proxy or login page answering 200 with HTML.
+    let (url, server) = one_shot_server("200 OK", "<html>login</html>");
+
+    let err = client(&url).get_current_user().unwrap_err();
+    server.join().unwrap();
+
+    assert!(
+        matches!(&err, ClientError::Request(reason) if reason.starts_with("invalid JSON response:")),
+        "got {err:?}"
+    );
+}
