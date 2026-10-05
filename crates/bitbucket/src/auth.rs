@@ -154,11 +154,23 @@ pub(crate) fn now_unix() -> u64 {
         .as_secs()
 }
 
-/// Parses a token endpoint's response body into a `TokenResponse`. On failure,
-/// the raw body is included in the error so an unexpected response shape
-/// (e.g. an unfamiliar field name) is self-diagnosing without a manual request.
+/// Parses a token endpoint's response body into a `TokenResponse`. On failure
+/// the error names the fields that arrived, so an unexpected response shape
+/// (e.g. an unfamiliar field name) is self-diagnosing — but never their values,
+/// which may be tokens.
 fn parse_token_response(text: &str) -> Result<TokenResponse, LoginError> {
-    serde_json::from_str(text).map_err(|e| LoginError::TokenExchange(format!("{e}: {text}")))
+    serde_json::from_str(text).map_err(|e| {
+        let shape = match serde_json::from_str::<serde_json::Value>(text) {
+            Ok(serde_json::Value::Object(fields)) => {
+                let mut names: Vec<&str> = fields.keys().map(String::as_str).collect();
+                names.sort_unstable();
+                format!("response fields: {}", names.join(", "))
+            }
+            Ok(_) => "response was JSON but not an object".to_string(),
+            Err(_) => format!("response was not JSON ({} bytes)", text.len()),
+        };
+        LoginError::TokenExchange(format!("{e}; {shape}"))
+    })
 }
 
 /// Builds `Credentials` from a token response received at `now`. If the
@@ -180,8 +192,16 @@ fn credentials_from_token(
 /// POSTs `form` to the token endpoint (HTTP Basic auth with the consumer's
 /// credentials) and parses the response.
 fn request_token(config: &OAuthConfig, form: &[(&str, String)]) -> Result<TokenResponse, LoginError> {
+    request_token_at(endpoints::BITBUCKET_TOKEN_URL, config, form)
+}
+
+fn request_token_at(
+    url: &str,
+    config: &OAuthConfig,
+    form: &[(&str, String)],
+) -> Result<TokenResponse, LoginError> {
     let response = reqwest::blocking::Client::new()
-        .post(endpoints::BITBUCKET_TOKEN_URL)
+        .post(url)
         .basic_auth(&config.client_id, Some(&config.client_secret))
         .form(form)
         .send()
@@ -250,9 +270,22 @@ pub fn complete_remote_login(
     state: &str,
     now: u64,
 ) -> Result<Credentials, LoginError> {
+    complete_remote_login_at(config, path, code, state, now, endpoints::BITBUCKET_TOKEN_URL)
+}
+
+/// [`complete_remote_login`] against an explicit token endpoint, so tests can
+/// point it at a local server.
+pub(crate) fn complete_remote_login_at(
+    config: &OAuthConfig,
+    path: &Path,
+    code: &str,
+    state: &str,
+    now: u64,
+    token_url: &str,
+) -> Result<Credentials, LoginError> {
     oauth_user_login::take_pending_login(path, state, now).map_err(LoginError::PendingLogin)?;
-    let token = request_token(config, &authorization_code_form(code))?;
-    Ok(credentials_from_token(token, now_unix(), None))
+    let token = request_token_at(token_url, config, &authorization_code_form(code))?;
+    Ok(credentials_from_token(token, now, None))
 }
 
 /// Builds Bitbucket's authorization URL the user must open in a browser.
