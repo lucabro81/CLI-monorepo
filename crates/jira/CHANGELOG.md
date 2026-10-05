@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.9.0](https://github.com/lucabro81/CLI-monorepo/compare/jira-v0.8.2...jira-v0.9.0) - 2026-10-05
+
+### Added
+- *(jira)* add auth login --user --remote, a two-step login for someone elsewhere
+
+### Fixed
+- *(jira)* end every remote login error with how to restart it
+
+### Other
+- *(jira)* describe the shared callback listener
+- Merge pull request #147 from lucabro81/issue143 ([#147](https://github.com/lucabro81/CLI-monorepo/pull/147))
+- *(jira)* document the two-step remote login
+- *(oauth-user-login)* make the pending login's redirect URI optional
+- *(jira)* say in doctor --help that pending_login is informational
+- Merge pull request #154 from lucabro81/issue146 ([#154](https://github.com/lucabro81/CLI-monorepo/pull/154))
 ## [0.8.2](https://github.com/lucabro81/CLI-monorepo/compare/jira-v0.8.1...jira-v0.8.2) - 2026-10-03
 
 ### Fixed
