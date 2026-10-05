@@ -291,12 +291,26 @@ fn an_unreadable_pending_login_is_reported_with_the_fix() {
     );
 }
 
+// Regression guard: pending_login is informational. A healthy report stays
+// all_ok even with an expired or unreadable pending login next to it.
 #[test]
-fn the_report_includes_pending_login_without_affecting_the_overall_result() {
-    let dir = tempfile::tempdir().unwrap();
+fn a_pending_login_never_affects_the_overall_result() {
+    for pending in ["expired", "corrupt"] {
+        let dir = tempfile::tempdir().unwrap();
+        let (url, server) = mock_server(&[("200 OK", ME_MACHINE), ("200 OK", MEMBERSHIPS_ORG_OWNER)]);
+        write_app_json(dir.path(), &url);
+        write_valid_credentials(dir.path(), None);
+        let path = dir.path().join("zitadel-cli").join("pending-login.json");
+        if pending == "expired" {
+            oauth_user_login::PendingLogin::new(Some("https://m/cb"), true, 0).save(&path).unwrap();
+        } else {
+            std::fs::write(&path, "garbage").unwrap();
+        }
 
-    let (report, all_ok) = run_doctor_in(dir.path());
+        let (report, all_ok) = run_doctor_in(dir.path());
+        server.join().unwrap();
 
-    assert_eq!(report["pending_login"], json!({"status": "none"}));
-    assert!(!all_ok, "fails on the missing app config, not on pending_login");
+        assert!(all_ok, "{pending}: {report:#}");
+        assert_ne!(report["pending_login"]["status"], "none", "{pending}: {report:#}");
+    }
 }

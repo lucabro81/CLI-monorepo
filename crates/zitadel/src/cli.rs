@@ -61,7 +61,9 @@ pub enum Command {
     /// api (GET /auth/v1/users/me) and memberships (the administrator roles of the
     /// identity per instance/organization/project — these decide which commands
     /// will succeed). Later checks are skipped when an earlier one fails. Exits
-    /// non-zero unless every check is ok. Always prints the full report regardless
+    /// non-zero unless every check is ok. Also reports
+    /// `pending_login` (a two-step `auth login --user --remote` waiting for its
+    /// code): informational, never counted in the exit code. Always prints the full report regardless
     /// of --select (an explicit --select is still honored).
     #[command(after_help = "Examples:\n  zitadel doctor\n  zitadel doctor --select memberships")]
     Doctor,
