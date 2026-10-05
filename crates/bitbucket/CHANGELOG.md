@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.11.0](https://github.com/lucabro81/CLI-monorepo/compare/bitbucket-v0.10.0...bitbucket-v0.11.0) - 2026-10-05
+
+### Added
+- *(bitbucket)* add auth login --user --remote, a two-step login for someone elsewhere
+
+### Fixed
+- *(bitbucket)* end every remote login error with how to restart it
+- *(bitbucket)* never copy token response bodies into errors
+
+### Other
+- *(bitbucket)* use oauth-user-login for state and the login callback
+- Merge pull request #147 from lucabro81/issue143 ([#147](https://github.com/lucabro81/CLI-monorepo/pull/147))
+- *(bitbucket)* document the two-step remote login
+- *(bitbucket)* say in doctor --help that pending_login is informational
+- Merge pull request #154 from lucabro81/issue146 ([#154](https://github.com/lucabro81/CLI-monorepo/pull/154))
 ## [0.10.0](https://github.com/lucabro81/CLI-monorepo/compare/bitbucket-v0.9.0...bitbucket-v0.10.0) - 2026-10-02
 
 ### Added
