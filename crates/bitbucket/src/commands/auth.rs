@@ -53,7 +53,7 @@ pub fn run_login(mode: LoginMode, select: cli_fields::Select<'_>) -> Result<(), 
         LoginMode::UserBrowser => (auth::login(&oauth_config).map_err(login_failed)?, false),
         LoginMode::RemoteStart => {
             let (url, pending) =
-                auth::start_remote_login(&oauth_config, &pending_path, auth::now_unix()).map_err(login_failed)?;
+                auth::start_remote_login(&oauth_config, &pending_path, auth::now_unix()).map_err(remote_login_error)?;
             // A small object synthesized here: exempt from mandatory --select.
             return print_json(&remote_start_output(&url, &pending), select.or_all());
         }
@@ -96,7 +96,8 @@ pub(crate) fn remote_login_error(error: LoginError) -> CliError {
                 and the pending login is now used up"
             ),
         },
-        other => CliError::LoginFailed { reason: other.to_string() },
+        // The pending login may already be consumed: restart from step 1.
+        other => CliError::RemoteLoginFailed { reason: other.to_string() },
     }
 }
 

@@ -60,3 +60,12 @@ fn a_refused_code_explains_codes_are_single_use() {
         )
     );
 }
+
+// Regression: once step 2 has consumed the pending login, every failure must
+// say to restart step 1 (it used to be a bare "OAuth login failed").
+#[test]
+fn every_other_step_two_failure_also_says_how_to_restart() {
+    let err = remote_login_error(LoginError::Internal("boom".to_string())).to_string();
+
+    assert_eq!(err, format!("remote login failed: internal error: boom. {RESTART}"));
+}
