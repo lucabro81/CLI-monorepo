@@ -4,7 +4,7 @@ use std::path::Path;
 
 use serde_json::{Value, json};
 
-use super::{run_doctor_in, summarize_memberships};
+use super::{check_pending_login, run_doctor_in, summarize_memberships};
 use crate::auth::{Credentials, save_credentials};
 use crate::test_support::mock_server;
 
@@ -244,4 +244,59 @@ fn user_without_machine_or_human_object_is_reported_as_unknown_type() {
     server.join().unwrap();
 
     assert_eq!(report["api"]["type"], "unknown");
+}
+
+// ── pending_login (informational, never affects all_ok) ───────────────────
+
+const NOW: u64 = 1_800_000_000;
+
+#[test]
+fn pending_login_is_none_without_a_remote_login_in_progress() {
+    let dir = tempfile::tempdir().unwrap();
+
+    assert_eq!(check_pending_login(dir.path(), NOW), json!({"status": "none"}));
+}
+
+#[test]
+fn pending_login_reports_its_expiry() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("zitadel-cli").join("pending-login.json");
+    oauth_user_login::PendingLogin::new("https://m/cb", true, NOW).save(&path).unwrap();
+
+    assert_eq!(
+        check_pending_login(dir.path(), NOW + 1),
+        json!({"status": "pending", "expires_at": "2027-01-15T08:10:00Z", "expired": false})
+    );
+    assert_eq!(
+        check_pending_login(dir.path(), NOW + 600),
+        json!({"status": "pending", "expires_at": "2027-01-15T08:10:00Z", "expired": true})
+    );
+}
+
+#[test]
+fn an_unreadable_pending_login_is_reported_with_the_fix() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("zitadel-cli").join("pending-login.json");
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(&path, "garbage").unwrap();
+
+    let check = check_pending_login(dir.path(), NOW);
+
+    assert_eq!(check["status"], "error");
+    assert!(
+        check["message"].as_str().unwrap().ends_with(
+            "Start a new remote login with: zitadel auth login --user --remote --redirect-uri <redirect-uri>"
+        ),
+        "got {check}"
+    );
+}
+
+#[test]
+fn the_report_includes_pending_login_without_affecting_the_overall_result() {
+    let dir = tempfile::tempdir().unwrap();
+
+    let (report, all_ok) = run_doctor_in(dir.path());
+
+    assert_eq!(report["pending_login"], json!({"status": "none"}));
+    assert!(!all_ok, "fails on the missing app config, not on pending_login");
 }
