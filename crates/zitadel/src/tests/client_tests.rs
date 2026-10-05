@@ -86,3 +86,20 @@ fn list_organizations_posts_body_to_v2_organizations_search() {
     assert!(request.starts_with("POST /v2/organizations/_search "), "got {request}");
     assert!(request.ends_with(r#"{"queries":[]}"#), "got {request}");
 }
+
+#[test]
+fn list_projects_posts_json_to_the_connect_project_service() {
+    // The v2 ProjectService has no REST mapping: it is only reachable through the
+    // Connect protocol path, with a plain application/json body.
+    let (url, server) = one_shot_server("200 OK", r#"{"projects":[]}"#);
+
+    client(&url).list_projects(&serde_json::json!({"filters": []})).unwrap();
+
+    let request = server.join().unwrap();
+    assert!(
+        request.starts_with("POST /zitadel.project.v2.ProjectService/ListProjects "),
+        "got {request}"
+    );
+    assert!(request.to_ascii_lowercase().contains("content-type: application/json\r\n"), "got {request}");
+    assert!(request.ends_with(r#"{"filters":[]}"#), "got {request}");
+}

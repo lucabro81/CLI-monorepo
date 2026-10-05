@@ -4,7 +4,7 @@ Architecture and design notes for the `zitadel` crate. Global rules (TDD, error 
 
 ## Status
 
-`init`, `doctor`, `auth login` (service user), `auth whoami`, `user search`, `user get`, `organization list` implemented. Rest in progress — see "Planned commands" below and tracking issue #142.
+`init`, `doctor`, `auth login` (service user), `auth whoami`, `user search`, `user get`, `organization list`, `project list` implemented. `auth login --user` pending (needs a Native app client id). Rest in progress — see "Planned commands" below and tracking issue #142.
 
 ## Module map (mirrors crates/google-chat)
 
@@ -19,14 +19,15 @@ src/
                        app.json), write_app_config() (mode 0600)         [implemented]
     user.rs          — run(UserCommand); build_search_body() (pure)    [search, get implemented]
     organization.rs  — run(OrganizationCommand); build_list_body() (pure) [list implemented]
-    project.rs       — run(ProjectCommand): list                         [planned]
+    project.rs       — run(ProjectCommand); build_list_body() (pure)    [list implemented]
   auth.rs         — AppConfig, ServiceUserKey (+ from_key_file: validates type/PEM),
                     Credentials; JWT-profile login
                     (service user), authorization code + PKCE login (--user),
                     renew(), load_credentials()/save_credentials(), callback parsing
   client.rs       — ZitadelClient (blocking reqwest); get_json/post_json helpers; url_with_segment()
                     percent-encodes ids as one path segment; ClientError::{Request, Status}
-                    [get_current_user, list_my_memberships, search_users, get_user, list_organizations implemented]
+                    [get_current_user, list_my_memberships, search_users, get_user, list_organizations,
+                    list_projects implemented]
   cli.rs          — clap structs only, no logic
   context.rs      — config_dir(), load_app_config(), authenticated_client(),
                     client_error_to_cli() (401 → re-login hint, 403 → missing-role hint
@@ -95,6 +96,13 @@ Two identities, same `credentials.json` — the last login decides (bitbucket mo
   Pagination is offset/limit; the raw response (incl. `details.totalResult`) is passed through.
   Top-level `queries` are combined with AND. With zero matches the response has no `result`
   and no `totalResult` (only `details.timestamp`).
+- **Some v2 services have no REST mapping.** The v2 `ProjectService` returns 404 on any
+  `/v2/projects...` REST path; it is reachable only via its Connect-protocol path
+  (`POST /zitadel.project.v2.ProjectService/<Method>`) with a plain `application/json`
+  body (`application/connect+json` → 415). These newer services also use a different
+  shape: request `{"pagination": {...}, "filters": [...]}` with `TEXT_FILTER_METHOD_*`,
+  response `{"pagination": {"totalResult", "appliedLimit"}, "projects": [...]}`. Probe a
+  new service with both forms before assuming either.
 - **Enum filters must be validated client-side** (clap `ValueEnum`): ZITADEL answers an unknown
   enum value (e.g. `"state": "BOGUS"`) with 200 and zero results, not an error — an LLM would
   read that as "nothing matches".
@@ -109,6 +117,7 @@ Two identities, same `credentials.json` — the last login decides (bitbucket mo
 | `user search` | `POST /v2/users` (v2 `ListUsers`) | mandatory |
 | `user get <user-id>` | `GET /v2/users/{userId}` (v2 `GetUserByID`) | exempt (`or_all`) |
 | `organization list` | `POST /v2/organizations/_search` (v2 `ListOrganizations`); visibility follows roles (`IAM_OWNER` all, `ORG_OWNER` own only) | mandatory |
+| `project list` | `POST /zitadel.project.v2.ProjectService/ListProjects` (Connect path, see API notes) | mandatory |
 | `auth whoami` | `GET /auth/v1/users/me` (v1: no v2 "me" endpoint; `/oidc/v1/userinfo` only returns `sub` with the `openid` scope) | exempt (`or_all`) |
 
 ## Planned commands (issue #142)
@@ -116,7 +125,6 @@ Two identities, same `credentials.json` — the last login decides (bitbucket mo
 | Command | Endpoint (verify in add-cli-command step 3) | `--select` |
 |---|---|---|
 | `auth login --user` | `/oauth/v2/authorize` + `/oauth/v2/token` | n/a |
-| `project list` | v2 ProjectService ListProjects (fallback v1 `/management/v1/projects/_search`) | mandatory |
 
 ## Testing
 

@@ -35,3 +35,8 @@ pub const USERS_V2_PATH: &str = "/v2/users";
 
 /// v2 Organization service: `ListOrganizations` (search).
 pub const ORGANIZATIONS_SEARCH_V2_PATH: &str = "/v2/organizations/_search";
+
+/// v2 Project service `ListProjects`. This service has no REST (`/v2/...`)
+/// mapping: it is reachable only via its Connect-protocol path, with a `POST` of a plain
+/// `application/json` body (verified live; `application/connect+json` → 415).
+pub const PROJECTS_LIST_V2_PATH: &str = "/zitadel.project.v2.ProjectService/ListProjects";

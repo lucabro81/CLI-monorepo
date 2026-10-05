@@ -152,6 +152,24 @@ zitadel organization list --select result.id,result.name,result.state
 zitadel organization list --name acme --select result.id,result.name
 ```
 
+### `zitadel project list`
+
+Projects the identity may read (v2 `ListProjects`, `POST /zitadel.project.v2.ProjectService/ListProjects`). Requires the `project.read` permission (e.g. `ORG_OWNER`, `PROJECT_OWNER`) and `--select` or `--select-all`.
+
+| Flag | Description |
+|---|---|
+| `--name <TEXT>` | Name contains this text, case-insensitive. |
+| `--organization-id <ID>` | Only projects owned by this organization. |
+| `--limit <N>` | Max results, default 100. |
+| `--offset <N>` | Results to skip, default 0. |
+
+Response (note the different shape from users/organizations): `pagination.totalResult` (absent when nothing matches), `pagination.appliedLimit`, and `projects[]` with `projectId`, `name`, `state`, `organizationId`, `creationDate`, `changeDate`.
+
+```sh
+zitadel project list --select projects.projectId,projects.name
+zitadel project list --organization-id 123456789 --name app --select pagination.totalResult,projects.projectId
+```
+
 ### `--select <PATHS>` / `--select-all` (global flags)
 
 List/search commands require `--select` (comma-separated dot paths) or `--select-all`; without either they fail and report the response size and top-level fields. See root `CLAUDE.md`.

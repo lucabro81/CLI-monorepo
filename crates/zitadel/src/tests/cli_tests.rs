@@ -2,7 +2,9 @@
 
 use clap::Parser;
 
-use super::{AuthCommand, Cli, Command, OrganizationCommand, UserCommand, UserState};
+use super::{
+    AuthCommand, Cli, Command, OrganizationCommand, ProjectCommand, UserCommand, UserState,
+};
 
 fn parse(args: &[&str]) -> Result<Cli, clap::Error> {
     Cli::try_parse_from(std::iter::once("zitadel").chain(args.iter().copied()))
@@ -166,6 +168,40 @@ fn parses_organization_list_with_all_flags() {
 #[test]
 fn organization_list_rejects_zero_limit() {
     assert!(parse(&["organization", "list", "--limit", "0"]).is_err());
+}
+
+#[test]
+fn parses_project_list_with_defaults() {
+    let cli = parse(&["project", "list"]).unwrap();
+
+    assert!(matches!(
+        cli.command,
+        Command::Project {
+            command: ProjectCommand::List { name: None, organization_id: None, limit: 100, offset: 0 }
+        }
+    ));
+}
+
+#[test]
+fn parses_project_list_with_all_flags() {
+    let cli = parse(&[
+        "project", "list", "--name", "app", "--organization-id", "org-1", "--limit", "5", "--offset", "10",
+    ])
+    .unwrap();
+
+    match cli.command {
+        Command::Project { command: ProjectCommand::List { name, organization_id, limit, offset } } => {
+            assert_eq!(name.as_deref(), Some("app"));
+            assert_eq!(organization_id.as_deref(), Some("org-1"));
+            assert_eq!((limit, offset), (5, 10));
+        }
+        other => panic!("expected project list, got {other:?}"),
+    }
+}
+
+#[test]
+fn project_list_rejects_zero_limit() {
+    assert!(parse(&["project", "list", "--limit", "0"]).is_err());
 }
 
 #[test]

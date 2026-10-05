@@ -75,6 +75,11 @@ pub enum Command {
         #[command(subcommand)]
         command: OrganizationCommand,
     },
+    /// Work with projects (containers for applications and roles)
+    Project {
+        #[command(subcommand)]
+        command: ProjectCommand,
+    },
     /// Manage authentication with the ZITADEL instance
     Auth {
         #[command(subcommand)]
@@ -168,6 +173,34 @@ pub enum OrganizationCommand {
         /// Name contains this text (case-insensitive)
         #[arg(long)]
         name: Option<String>,
+        /// Maximum number of results to return
+        #[arg(long, default_value_t = 100, value_parser = clap::value_parser!(u32).range(1..))]
+        limit: u32,
+        /// Number of results to skip (for paging through results)
+        #[arg(long, default_value_t = 0)]
+        offset: u64,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum ProjectCommand {
+    /// List the projects the identity may read
+    ///
+    /// Calls ZITADEL's v2 `ListProjects` (`ProjectService`). Filters are optional and
+    /// combined with AND. Requires the project.read permission (e.g. `ORG_OWNER` or
+    /// `PROJECT_OWNER`); only projects the identity may read are returned. Each
+    /// project has projectId, name, state, organizationId, creationDate,
+    /// changeDate. Pagination: --limit/--offset; the response's
+    /// pagination.totalResult is the total number of matches (absent when there are
+    /// none). --select (or --select-all) is required.
+    #[command(after_help = "Examples:\n  zitadel project list --select projects.projectId,projects.name\n  zitadel project list --organization-id 123456789 --name app --select pagination.totalResult,projects.projectId,projects.name")]
+    List {
+        /// Name contains this text (case-insensitive)
+        #[arg(long)]
+        name: Option<String>,
+        /// Only projects owned by this organization id
+        #[arg(long)]
+        organization_id: Option<String>,
         /// Maximum number of results to return
         #[arg(long, default_value_t = 100, value_parser = clap::value_parser!(u32).range(1..))]
         limit: u32,
