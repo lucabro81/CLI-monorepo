@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.4.0](https://github.com/lucabro81/CLI-monorepo/compare/confluence-v0.3.0...confluence-v0.4.0) - 2026-10-05
+
+### Added
+- *(confluence)* add auth login --user --remote, a two-step login for someone elsewhere
+
+### Fixed
+- *(confluence)* end every remote login error with how to restart it
+
+### Other
+- remove resolved entries from BACKLOG.md
+- Merge pull request #65 from lucabro81/chore/backlog-cleanup ([#65](https://github.com/lucabro81/CLI-monorepo/pull/65))
+- *(confluence)* point PKCE and the callback listener to oauth-user-login
+- Merge pull request #147 from lucabro81/issue143 ([#147](https://github.com/lucabro81/CLI-monorepo/pull/147))
+- *(oauth-user-login)* make the pending login's redirect URI optional
+- *(confluence)* say in doctor --help that pending_login is informational
+- Merge pull request #154 from lucabro81/issue146 ([#154](https://github.com/lucabro81/CLI-monorepo/pull/154))
 ## [0.3.0](https://github.com/lucabro81/CLI-monorepo/compare/confluence-v0.2.0...confluence-v0.3.0) - 2026-08-03
 
 ### Added
