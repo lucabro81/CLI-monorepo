@@ -20,3 +20,8 @@ pub const SERVICE_USER_SCOPES: &str = "openid urn:zitadel:iam:org:project:id:zit
 pub fn token_url(instance_url: &str) -> String {
     format!("{instance_url}{TOKEN_PATH}")
 }
+
+// ── ZITADEL APIs (client.rs) ───────────────────────────────────────────────
+
+/// v1 Auth API: the calling identity. No v2 "me" equivalent exists.
+pub const AUTH_USERS_ME_PATH: &str = "/auth/v1/users/me";

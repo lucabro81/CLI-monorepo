@@ -1,10 +1,11 @@
 //! Handler for the `auth` command group.
 //!
 //! `run_login` logs in as the service user (private key JWT) and saves the
-//! resulting credentials to `credentials.json`.
+//! resulting credentials to `credentials.json`. `run_whoami` prints the
+//! authenticated identity.
 
 use crate::auth;
-use crate::context::{config_dir, load_app_config};
+use crate::context::{authenticated_client, client_error_to_cli, config_dir, load_app_config, print_json};
 use crate::error::CliError;
 
 pub fn run_login() -> Result<(), CliError> {
@@ -19,4 +20,12 @@ pub fn run_login() -> Result<(), CliError> {
     })?;
     println!("Logged in. Credentials saved to {}", path.display());
     Ok(())
+}
+
+pub fn run_whoami(select: cli_fields::Select<'_>) -> Result<(), CliError> {
+    let user = authenticated_client()?
+        .get_current_user()
+        .map_err(client_error_to_cli)?;
+    // Exempt from mandatory --select: a single, small, fixed-shape object.
+    print_json(&user, select.or_all())
 }

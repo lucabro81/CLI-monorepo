@@ -19,6 +19,37 @@ fn parses_auth_login() {
 }
 
 #[test]
+fn parses_auth_whoami() {
+    let cli = parse(&["auth", "whoami"]).unwrap();
+
+    assert!(matches!(
+        cli.command,
+        Command::Auth { command: AuthCommand::Whoami }
+    ));
+    assert_eq!(cli.select, None);
+    assert!(!cli.select_all);
+}
+
+#[test]
+fn select_is_global_and_accepted_after_the_subcommand() {
+    let cli = parse(&["auth", "whoami", "--select", "user.id,user.userName"]).unwrap();
+
+    assert_eq!(cli.select.as_deref(), Some("user.id,user.userName"));
+}
+
+#[test]
+fn select_all_is_global() {
+    let cli = parse(&["--select-all", "auth", "whoami"]).unwrap();
+
+    assert!(cli.select_all);
+}
+
+#[test]
+fn select_and_select_all_conflict() {
+    assert!(parse(&["auth", "whoami", "--select", "user.id", "--select-all"]).is_err());
+}
+
+#[test]
 fn rejects_auth_without_subcommand() {
     assert!(parse(&["auth"]).is_err());
 }

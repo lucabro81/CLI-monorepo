@@ -4,7 +4,7 @@ Architecture and design notes for the `zitadel` crate. Global rules (TDD, error 
 
 ## Status
 
-Scaffolded. No command implemented yet — see "Planned commands" below and tracking issue #142.
+`auth login` (service user), `auth whoami` implemented. Rest in progress — see "Planned commands" below and tracking issue #142.
 
 ## Module map (mirrors crates/google-chat)
 
@@ -12,7 +12,7 @@ Scaffolded. No command implemented yet — see "Planned commands" below and trac
 src/
   commands/
     mod.rs           — pub mod declarations for all command handlers
-    auth.rs          — run_login(), run_whoami()                         [planned]
+    auth.rs          — run_login(), run_whoami()                         [implemented, --user planned]
     doctor.rs        — run_doctor(); also called by init as final check  [planned]
     init.rs          — run_init(), write_app_config(); onboarding flow   [planned]
     user.rs          — run(UserCommand): search, get                     [planned]
@@ -21,12 +21,17 @@ src/
   auth.rs         — AppConfig, ServiceUserKey, Credentials; JWT-profile login
                     (service user), authorization code + PKCE login (--user),
                     renew(), load_credentials()/save_credentials(), callback parsing
-  client.rs       — ZitadelClient (blocking reqwest); get_json/post_json helpers
+  client.rs       — ZitadelClient (blocking reqwest); get_json helper; ClientError::{Request, Status}
+                    [get_current_user implemented]
   cli.rs          — clap structs only, no logic
-  context.rs      — config_dir(), authenticated_client(), print_json(value, select)
+  context.rs      — config_dir(), load_app_config(), authenticated_client(),
+                    client_error_to_cli() (401 → re-login hint, 403 → missing-role hint
+                    pointing to doctor), print_json(value, select)
   endpoints.rs    — path constants/builders relative to the instance URL, no logic
   error.rs        — CliError (thiserror), incl. transparent Select(cli_fields::RenderError)
-  tests/          — *_tests.rs mirroring src/ (root CLAUDE.md "Test file convention")
+  tests/          — *_tests.rs mirroring src/ (root CLAUDE.md "Test file convention");
+                    test_support.rs = one-shot local HTTP mock server shared by
+                    auth/client tests; fixtures/ = throwaway RSA key pair (test-only)
   main.rs         — pure dispatch: resolve --select/--select-all once, call commands::*
 ```
 
@@ -87,7 +92,8 @@ Two identities, same `credentials.json` — the last login decides (bitbucket mo
 
 | Command | Endpoint | `--select` |
 |---|---|---|
-| — | — | — |
+| `auth login` | `POST /oauth/v2/token` (jwt-bearer) | n/a (prints a confirmation line) |
+| `auth whoami` | `GET /auth/v1/users/me` (v1: no v2 "me" endpoint; `/oidc/v1/userinfo` only returns `sub` with the `openid` scope) | exempt (`or_all`) |
 
 ## Planned commands (issue #142)
 
@@ -95,8 +101,7 @@ Two identities, same `credentials.json` — the last login decides (bitbucket mo
 |---|---|---|
 | `init` | writes app.json, logs in, runs doctor | narrative output |
 | `doctor` | userinfo + memberships | exempt (`or_all`) |
-| `auth login [--user]` | `/oauth/v2/token` | exempt |
-| `auth whoami` | `GET /oidc/v1/userinfo` | exempt |
+| `auth login --user` | `/oauth/v2/authorize` + `/oauth/v2/token` | n/a |
 | `user search` | `POST /v2/users` | mandatory |
 | `user get <user-id>` | `GET /v2/users/{userId}` | exempt |
 | `organization list` | `POST /v2/organizations/_search` | mandatory |
