@@ -23,6 +23,10 @@
 //! `permissions` are skipped (no token to use). `permissions` does not depend
 //! on `api` and runs whenever `credentials` succeeds.
 //!
+//! A last, informational `pending_login` check (outside the cascade and
+//! `all_ok`) reports whether a two-step `auth login --user --remote` is waiting
+//! for its code.
+//!
 //! The function never returns `Err` for check failures — all outcomes are
 //! captured in the JSON report. The caller decides whether to exit non-zero
 //! based on the returned `bool` flag. This module is also called by `init`
@@ -70,6 +74,7 @@ pub fn run_doctor() -> Result<(Value, bool), CliError> {
         "credentials": creds_check,
         "api": connectivity_check,
         "permissions": permissions_check,
+        "pending_login": check_pending_login(&config_dir, auth::now_unix()),
     });
 
     Ok((report, all_ok))
@@ -185,6 +190,23 @@ fn check_permissions(credentials: &auth::Credentials) -> Value {
     let status = if credentials.scopes.is_empty() { "error" } else { "ok" };
 
     json!({"status": status, "granted_scopes": credentials.scopes})
+}
+
+/// Informational: a two-step (`--remote`) login waiting for its code. Never
+/// affects `all_ok` (an idle CLI has none, and that is fine).
+pub(crate) fn check_pending_login(config_dir: &std::path::Path, now: u64) -> Value {
+    match oauth_user_login::pending_login_status(&auth::pending_login_path(config_dir), now) {
+        Ok(None) => json!({"status": "none"}),
+        Ok(Some(status)) => json!({
+            "status": "pending",
+            "expires_at": oauth_user_login::rfc3339_utc(status.expires_at),
+            "expired": status.expired,
+        }),
+        Err(e) => json!({
+            "status": "error",
+            "message": format!("{e}. Start a new remote login with: bitbucket auth login --user --remote"),
+        }),
+    }
 }
 
 fn skipped(reason: &str) -> Value {

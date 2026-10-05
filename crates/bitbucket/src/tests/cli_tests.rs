@@ -10,7 +10,7 @@ fn parses_auth_login() {
     assert!(matches!(
         cli.command,
         Command::Auth {
-            command: AuthCommand::Login { user: false }
+            command: AuthCommand::Login { user: false, remote: false, code: None, state: None }
         }
     ));
 }
@@ -22,9 +22,50 @@ fn parses_auth_login_with_user() {
     assert!(matches!(
         cli.command,
         Command::Auth {
-            command: AuthCommand::Login { user: true }
+            command: AuthCommand::Login { user: true, remote: false, code: None, state: None }
         }
     ));
+}
+
+#[test]
+fn parses_auth_login_remote_start_without_redirect_uri() {
+    let cli = Cli::try_parse_from(["bitbucket", "auth", "login", "--user", "--remote"]).expect("should parse");
+
+    assert!(matches!(
+        cli.command,
+        Command::Auth {
+            command: AuthCommand::Login { user: true, remote: true, code: None, state: None }
+        }
+    ));
+}
+
+#[test]
+fn parses_auth_login_remote_complete() {
+    let cli = Cli::try_parse_from(["bitbucket", "auth", "login", "--user", "--code", "c1", "--state", "s1"])
+        .expect("should parse");
+
+    match cli.command {
+        Command::Auth { command: AuthCommand::Login { user, remote, code, state } } => {
+            assert!(user && !remote);
+            assert_eq!((code.as_deref(), state.as_deref()), (Some("c1"), Some("s1")));
+        }
+        other => panic!("unexpected command: {other:?}"),
+    }
+}
+
+#[test]
+fn auth_login_remote_flag_combinations_are_enforced() {
+    use clap::error::ErrorKind::{ArgumentConflict, MissingRequiredArgument, UnknownArgument};
+    let kind = |args: &[&str]| {
+        Cli::try_parse_from(["bitbucket", "auth", "login"].iter().chain(args)).unwrap_err().kind()
+    };
+    assert_eq!(kind(&["--remote"]), MissingRequiredArgument);
+    assert_eq!(kind(&["--code", "c", "--state", "s"]), MissingRequiredArgument);
+    assert_eq!(kind(&["--user", "--code", "c"]), MissingRequiredArgument);
+    assert_eq!(kind(&["--user", "--state", "s"]), MissingRequiredArgument);
+    assert_eq!(kind(&["--user", "--remote", "--code", "c", "--state", "s"]), ArgumentConflict);
+    // Bitbucket has no redirect_uri parameter: the consumer's callback URL decides.
+    assert_eq!(kind(&["--user", "--remote", "--redirect-uri", "https://m/cb"]), UnknownArgument);
 }
 
 #[test]

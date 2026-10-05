@@ -48,9 +48,11 @@ pub fn authenticated_client() -> Result<BitbucketClient, CliError> {
         auth::LoginError::TokenExchange(reason) | auth::LoginError::Internal(reason) => {
             CliError::TokenRefreshFailed { reason }
         }
-        // Login-only failures (callback/listener); unreachable while renewing,
-        // mapped anyway rather than panicking.
-        other @ (auth::LoginError::CallbackListener(_) | auth::LoginError::Callback(_)) => {
+        // Login-only failures (callback/listener, remote login); unreachable
+        // while renewing, mapped anyway rather than panicking.
+        other @ (auth::LoginError::CallbackListener(_)
+        | auth::LoginError::Callback(_)
+        | auth::LoginError::PendingLogin(_)) => {
             CliError::TokenRefreshFailed {
                 reason: other.to_string(),
             }

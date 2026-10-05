@@ -66,6 +66,11 @@ pub fn credentials_path(config_dir: &Path) -> PathBuf {
     config_dir.join("bitbucket-cli").join("credentials.json")
 }
 
+/// Path to the pending remote login: `<config_dir>/bitbucket-cli/pending-login.json`.
+pub fn pending_login_path(config_dir: &Path) -> PathBuf {
+    config_dir.join("bitbucket-cli").join("pending-login.json")
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum OAuthConfigError {
     NotFound(PathBuf),
@@ -95,6 +100,8 @@ pub enum LoginError {
     CallbackListener(oauth_user_login::ListenerError),
     #[error("{0}: bitbucket auth login --user")]
     Callback(oauth_user_login::WaitError),
+    #[error("{0}")]
+    PendingLogin(oauth_user_login::PendingLoginError),
     /// A condition that should be unreachable given valid inputs.
     /// If this surfaces it indicates a bug in the CLI itself.
     #[error("internal error: {0}")]
@@ -137,7 +144,7 @@ pub struct Credentials {
     pub refresh_token: Option<String>,
 }
 
-fn now_unix() -> u64 {
+pub(crate) fn now_unix() -> u64 {
     // Fallback to 0 if the system clock predates the Unix epoch (should never happen
     // on a real machine, but avoids a panic — a 0 timestamp causes the token to be
     // treated as expired and renewed on the next call, which is safe behavior).
@@ -218,6 +225,33 @@ pub fn login(config: &OAuthConfig) -> Result<Credentials, LoginError> {
         .map_err(LoginError::Callback)?;
 
     let token = request_token(config, &authorization_code_form(&params.code))?;
+    Ok(credentials_from_token(token, now_unix(), None))
+}
+
+/// Step 1 of the two-step (`--remote`) login: saves a pending login (state
+/// only: Bitbucket has no PKCE and no `redirect_uri`, it always redirects to
+/// the consumer's callback URL) and returns the consent URL. No browser, no port.
+pub fn start_remote_login(
+    config: &OAuthConfig,
+    path: &Path,
+    now: u64,
+) -> Result<(String, oauth_user_login::PendingLogin), LoginError> {
+    let pending = oauth_user_login::PendingLogin::new(None, false, now);
+    let url = authorization_url(config, &pending.state)?;
+    pending.save(path).map_err(LoginError::PendingLogin)?;
+    Ok((url, pending))
+}
+
+/// Step 2: takes the pending login for `state` (single-use) and exchanges `code`.
+pub fn complete_remote_login(
+    config: &OAuthConfig,
+    path: &Path,
+    code: &str,
+    state: &str,
+    now: u64,
+) -> Result<Credentials, LoginError> {
+    oauth_user_login::take_pending_login(path, state, now).map_err(LoginError::PendingLogin)?;
+    let token = request_token(config, &authorization_code_form(code))?;
     Ok(credentials_from_token(token, now_unix(), None))
 }
 

@@ -92,15 +92,35 @@ pub enum AuthCommand {
     /// to the human Bitbucket account that approved the consent page. Requires the
     /// OAuth consumer's callback URL to be `http://localhost:8080/callback`.
     ///
-    /// Both modes write the same credentials file: the last login decides which
+    /// With --user --remote: a two-step login for a person who is not at this
+    /// machine. Step 1 (--remote) opens no browser and listens on no port: it
+    /// prints JSON `{authorize_url, state, expires_at}` for the caller to hand to
+    /// the person. Bitbucket has no redirect URI parameter: it always redirects
+    /// to the OAuth consumer's callback URL, so remote logins need a consumer
+    /// whose callback URL is the caller's own endpoint (a different consumer, and
+    /// config folder, from the localhost one). Step 2 (--code --state) exchanges
+    /// the code, saves the credentials, then prints what `auth whoami` prints.
+    /// The pending login expires after 10 minutes, its state is single-use, and
+    /// it lives in this config folder (`XDG_CONFIG_HOME`).
+    ///
+    /// All modes write the same credentials file: the last login decides which
     /// identity every later command uses. Run this once per machine (or per
     /// identity switch); tokens are renewed automatically after that.
-    #[command(after_help = "Examples:\n  bitbucket auth login           # act as the OAuth app (bot)\n  bitbucket auth login --user    # act as yourself, via browser consent\n\nRequires app.json to exist at ~/.config/bitbucket-cli/app.json with the OAuth\nconsumer's Key/Secret: {\"client_id\": \"...\", \"client_secret\": \"...\"}")]
+    #[command(after_help = "Examples:\n  bitbucket auth login           # act as the OAuth app (bot)\n  bitbucket auth login --user    # act as yourself, via browser consent\n  bitbucket auth login --user --remote                           # step 1: prints the consent URL\n  bitbucket auth login --user --code <CODE> --state <STATE>      # step 2\n\nRequires app.json to exist at ~/.config/bitbucket-cli/app.json with the OAuth\nconsumer's Key/Secret: {\"client_id\": \"...\", \"client_secret\": \"...\"}")]
     Login {
         /// Log in as a human Bitbucket account via browser consent (`authorization_code`)
         /// instead of as the OAuth app (`client_credentials`)
         #[arg(long)]
         user: bool,
+        /// Step 1 of a two-step login for someone not at this machine: print the consent URL instead of opening a browser
+        #[arg(long, requires = "user", conflicts_with_all = ["code", "state"])]
+        remote: bool,
+        /// Step 2: the `code` query parameter Bitbucket appended to the consumer's callback URL
+        #[arg(long, requires_all = ["user", "state"])]
+        code: Option<String>,
+        /// Step 2: the `state` query parameter Bitbucket appended to the consumer's callback URL
+        #[arg(long, requires = "code")]
+        state: Option<String>,
     },
     /// Print the currently authenticated account as JSON
     ///

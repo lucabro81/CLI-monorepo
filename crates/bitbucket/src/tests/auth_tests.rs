@@ -314,3 +314,72 @@ fn renewal_form_uses_client_credentials_for_app_credentials() {
         vec![("grant_type", "client_credentials".to_string())]
     );
 }
+
+// ── remote (two-step) login ───────────────────────────────────────────────
+
+const NOW: u64 = 1_800_000_000;
+
+#[test]
+fn pending_login_path_is_under_bitbucket_cli_dir() {
+    assert_eq!(
+        pending_login_path(Path::new("/cfg")),
+        std::path::PathBuf::from("/cfg/bitbucket-cli/pending-login.json")
+    );
+}
+
+#[test]
+fn remote_start_saves_state_only_and_builds_the_consent_url() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("pending-login.json");
+
+    let (url, pending) = start_remote_login(&test_config(), &path, NOW).unwrap();
+
+    assert_eq!(url, authorization_url(&test_config(), &pending.state).unwrap());
+    assert_eq!(pending.redirect_uri, None);
+    assert_eq!(pending.code_verifier, None);
+    assert_eq!(pending.expires_at, NOW + 600);
+    assert!(path.exists());
+}
+
+#[test]
+fn remote_complete_without_a_pending_login_fails_before_any_request() {
+    let dir = tempfile::tempdir().unwrap();
+
+    let err = complete_remote_login(&test_config(), &dir.path().join("pending-login.json"), "c", "s", NOW)
+        .unwrap_err();
+
+    assert!(
+        matches!(err, LoginError::PendingLogin(oauth_user_login::PendingLoginError::NotFound)),
+        "got {err:?}"
+    );
+}
+
+#[test]
+fn remote_complete_with_a_wrong_state_keeps_the_pending_login() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("pending-login.json");
+    start_remote_login(&test_config(), &path, NOW).unwrap();
+
+    let err = complete_remote_login(&test_config(), &path, "c", "stale", NOW).unwrap_err();
+
+    assert!(
+        matches!(err, LoginError::PendingLogin(oauth_user_login::PendingLoginError::StateMismatch)),
+        "got {err:?}"
+    );
+    assert!(path.exists());
+}
+
+#[test]
+fn remote_complete_after_expiry_fails_and_removes_the_pending_login() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("pending-login.json");
+    let (_, pending) = start_remote_login(&test_config(), &path, NOW).unwrap();
+
+    let err = complete_remote_login(&test_config(), &path, "c", &pending.state, NOW + 600).unwrap_err();
+
+    assert!(
+        matches!(err, LoginError::PendingLogin(oauth_user_login::PendingLoginError::Expired)),
+        "got {err:?}"
+    );
+    assert!(!path.exists());
+}
