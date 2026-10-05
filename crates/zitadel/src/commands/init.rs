@@ -33,12 +33,18 @@ pub fn run_init(
         }
     };
     let service_user = key_file.map(read_key_file).transpose()?;
+    let previous = existing.clone();
     let config = build_app_config(existing, instance_url, service_user, client_id)?;
     write_app_config(&app_path, &config)?;
     eprintln!("Wrote {}", app_path.display());
 
+    let creds_path = auth::credentials_path(&config_dir);
+    if instance_changed(previous.as_ref(), &config) {
+        discard_credentials(&creds_path)?;
+        eprintln!("Instance URL changed: removed the credentials of the previous instance.");
+    }
+
     if config.service_user.is_some() {
-        let creds_path = auth::credentials_path(&config_dir);
         let credentials = auth::login_service_user(&config).map_err(|e| CliError::LoginFailed {
             reason: e.to_string(),
         })?;
@@ -50,7 +56,10 @@ pub fn run_init(
         })?;
         eprintln!("Logged in as the service user. Credentials saved to {}", creds_path.display());
     } else {
-        eprintln!("No service user key configured (--key-file): skipping login.");
+        eprintln!(
+            "No service user key configured (--key-file): skipping login. \
+            Run zitadel auth login --user if a Native app client id is configured."
+        );
     }
 
     let (report, all_ok) = doctor::run_doctor_in(&config_dir);
@@ -71,6 +80,24 @@ fn read_key_file(path: &Path) -> Result<ServiceUserKey, CliError> {
         path: path.display().to_string(),
         reason: e.to_string(),
     })
+}
+
+/// True when an existing config pointed at a different instance — its stored
+/// token belongs to that other instance and must not be reused.
+pub(crate) fn instance_changed(previous: Option<&AppConfig>, new: &AppConfig) -> bool {
+    previous.is_some_and(|p| p.instance_url != new.instance_url)
+}
+
+/// Removes `credentials.json`; a missing file is fine.
+pub(crate) fn discard_credentials(path: &Path) -> Result<(), CliError> {
+    match std::fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(CliError::SaveCredentialsFailed {
+            path: path.display().to_string(),
+            reason: format!("could not remove the previous instance's credentials: {e}"),
+        }),
+    }
 }
 
 /// Merges flags over an existing config; flags win, omitted flags keep the

@@ -21,7 +21,7 @@ use crate::endpoints;
 
 /// Static configuration loaded from `app.json`. Written by `zitadel init`;
 /// never modified by the CLI at runtime.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AppConfig {
     /// Instance base URL, normalized without trailing slashes
     /// (e.g. `https://acme.zitadel.cloud`). Also the JWT `aud` claim.

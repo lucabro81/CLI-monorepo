@@ -1,6 +1,6 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use super::{build_app_config, write_app_config};
+use super::{build_app_config, discard_credentials, instance_changed, write_app_config};
 use crate::auth::{AppConfig, ServiceUserKey};
 use crate::error::CliError;
 
@@ -127,4 +127,35 @@ fn rewriting_an_existing_world_readable_app_config_tightens_permissions() {
 
     let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
     assert_eq!(mode, 0o600);
+}
+
+// Regression: re-running init with a different --instance-url but no key used to
+// skip the login and leave the previous instance's token in credentials.json, so
+// doctor sent it to the new instance and got a confusing 401.
+
+#[test]
+fn instance_changed_only_when_an_existing_config_had_another_url() {
+    let new = AppConfig { instance_url: "https://new.zitadel.cloud".to_string(), ..existing() };
+
+    assert!(instance_changed(Some(&existing()), &new));
+    assert!(!instance_changed(Some(&existing()), &existing()));
+    assert!(!instance_changed(None, &new));
+}
+
+#[test]
+fn discard_credentials_removes_the_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("credentials.json");
+    std::fs::write(&path, "{}").unwrap();
+
+    discard_credentials(&path).unwrap();
+
+    assert!(!path.exists());
+}
+
+#[test]
+fn discard_credentials_tolerates_a_missing_file() {
+    let dir = tempfile::tempdir().unwrap();
+
+    discard_credentials(&dir.path().join("credentials.json")).unwrap();
 }
