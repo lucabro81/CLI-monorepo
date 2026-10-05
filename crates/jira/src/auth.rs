@@ -28,6 +28,30 @@ pub fn credentials_path(config_dir: &Path) -> PathBuf {
     atlassian_auth::credentials_path(config_dir, CLI_DIR)
 }
 
+/// Path to the pending remote login: `<config_dir>/jira-cli/pending-login.json`.
+pub fn pending_login_path(config_dir: &Path) -> PathBuf {
+    atlassian_auth::pending_login_path(config_dir, CLI_DIR)
+}
+
+/// Step 1 of `auth login --user --remote`, requesting this crate's [`SCOPES`].
+pub fn start_remote_login(
+    config: &OAuthConfig,
+    redirect_uri: &str,
+    pending_path: &Path,
+) -> Result<(String, oauth_user_login::PendingLogin), LoginError> {
+    atlassian_auth::start_remote_login(config, SCOPES, redirect_uri, pending_path, atlassian_auth::now_unix())
+}
+
+/// Step 2 of `auth login --user --remote` (`--code --state`).
+pub fn complete_remote_login(
+    config: &OAuthConfig,
+    pending_path: &Path,
+    code: &str,
+    state: &str,
+) -> Result<Credentials, LoginError> {
+    atlassian_auth::complete_remote_login(config, pending_path, code, state, atlassian_auth::now_unix())
+}
+
 /// Runs the interactive OAuth 2.0 (3LO) + PKCE login flow, requesting this crate's [`SCOPES`].
 pub fn login(config: &OAuthConfig) -> Result<Credentials, LoginError> {
     atlassian_auth::login(config, SCOPES)

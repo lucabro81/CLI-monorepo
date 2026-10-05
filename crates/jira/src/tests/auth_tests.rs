@@ -2,11 +2,11 @@
 
 use std::path::{Path, PathBuf};
 
-use super::{app_config_path, credentials_path, SCOPES};
+use super::{app_config_path, credentials_path, pending_login_path, SCOPES};
 
-// `auth.rs` is now a thin wrapper over `atlassian_auth` — the OAuth flows,
-// PKCE helpers, and callback parsing it delegates to are covered by that
-// crate's own test suite. These tests only guard the two things that are
+// `auth.rs` is now a thin wrapper over `atlassian_auth` — the OAuth flows
+// (local and remote) it delegates to are covered by that crate's own test
+// suite, PKCE and the callback listener by `oauth_user_login`'s. These tests only guard the two things that are
 // actually jira-specific: which config directory this crate's paths
 // resolve under, and what scopes it requests.
 
@@ -35,4 +35,12 @@ fn scopes_include_offline_access() {
     // offline_access is what makes 3LO logins issue a refresh_token — losing
     // it from SCOPES would silently break `auth login --user` renewal.
     assert!(SCOPES.contains("offline_access"));
+}
+
+#[test]
+fn pending_login_path_is_under_jira_cli_dir() {
+    assert_eq!(
+        pending_login_path(Path::new("/cfg")),
+        PathBuf::from("/cfg/jira-cli/pending-login.json")
+    );
 }

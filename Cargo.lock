@@ -1355,6 +1355,7 @@ dependencies = [
  "cli-fields",
  "dirs",
  "dotenvy",
+ "oauth-user-login",
  "pulldown-cmark",
  "reqwest 0.12.28",
  "serde",
