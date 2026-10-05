@@ -46,7 +46,7 @@ Applies to work driven by the `new-cli-crate` and `add-cli-command` skills (see 
 Known edge cases, deferred fixes, and design notes (documented tradeoffs that aren't scheduled) are tracked as GitHub issues, labeled instead of using an ID prefix per crate:
 
 - **Type** (pick one): `bug`, `enhancement`, `tech-debt` (internal robustness/coverage improvement, not user-facing), `design-note` (a decision already made and documented, not scheduled to change), `needs-verification` (implemented but not confirmed live).
-- **Scope** (pick one): the crate name (`jira`, `bitbucket`, `google-chat`, `cli-fields`, `atlassian-auth`, `atlassian-admin`, `confluence`) or `cross-crate` for anything spanning multiple crates or repo-wide tooling/CI.
+- **Scope** (pick one): the crate name (`jira`, `bitbucket`, `google-chat`, `cli-fields`, `atlassian-auth`, `atlassian-admin`, `confluence`, `zitadel`) or `cross-crate` for anything spanning multiple crates or repo-wide tooling/CI.
 
 ```sh
 gh issue create --title "<crate>: <short description>" --label "<type>,<scope>" --body "<what was found, current behaviour, why deferred, what a fix would look like>"

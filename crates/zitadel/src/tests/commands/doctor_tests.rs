@@ -1,0 +1,247 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
+use std::path::Path;
+
+use serde_json::{Value, json};
+
+use super::{run_doctor_in, summarize_memberships};
+use crate::auth::{Credentials, save_credentials};
+use crate::test_support::mock_server;
+
+const ME_MACHINE: &str = r#"{"user":{"id":"u-1","userName":"service-user","details":{"resourceOwner":"org-1"},"machine":{"name":"service-user"}}}"#;
+const MEMBERSHIPS_ORG_OWNER: &str = r#"{"details":{"totalResult":"2"},"result":[
+    {"userId":"u-1","roles":["ORG_OWNER"],"displayName":"Acme","orgId":"org-1"},
+    {"userId":"u-1","roles":["IAM_LOGIN_CLIENT"],"displayName":"ZITADEL","iam":true}]}"#;
+
+fn write_app_json(config_dir: &Path, instance_url: &str) {
+    let dir = config_dir.join("zitadel-cli");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("app.json"),
+        json!({"instance_url": instance_url}).to_string(),
+    )
+    .unwrap();
+}
+
+fn write_valid_credentials(config_dir: &Path, refresh_token: Option<&str>) {
+    save_credentials(
+        &config_dir.join("zitadel-cli").join("credentials.json"),
+        &Credentials {
+            access_token: "at".to_string(),
+            refresh_token: refresh_token.map(str::to_string),
+            expires_at: 4_000_000_000,
+        },
+    )
+    .unwrap();
+}
+
+fn statuses(report: &Value) -> [&str; 4] {
+    ["app_config", "credentials", "api", "memberships"].map(|k| report[k]["status"].as_str().unwrap())
+}
+
+#[test]
+fn missing_app_config_skips_everything_else() {
+    let dir = tempfile::tempdir().unwrap();
+
+    let (report, all_ok) = run_doctor_in(dir.path());
+
+    assert!(!all_ok);
+    assert_eq!(statuses(&report), ["error", "skipped", "skipped", "skipped"]);
+    assert_eq!(
+        report["app_config"]["message"],
+        format!(
+            "app config file not found at {}. Run: zitadel init --instance-url https://<instance>.zitadel.cloud --key-file <path-to-key.json>",
+            dir.path().join("zitadel-cli/app.json").display()
+        )
+    );
+}
+
+#[test]
+fn missing_credentials_skips_api_and_memberships() {
+    let dir = tempfile::tempdir().unwrap();
+    write_app_json(dir.path(), "https://acme.zitadel.cloud");
+
+    let (report, all_ok) = run_doctor_in(dir.path());
+
+    assert!(!all_ok);
+    assert_eq!(statuses(&report), ["ok", "error", "skipped", "skipped"]);
+    assert_eq!(report["credentials"]["message"], "no stored credentials. Run: zitadel auth login");
+    assert_eq!(
+        report["app_config"],
+        json!({
+            "status": "ok",
+            "path": dir.path().join("zitadel-cli/app.json").display().to_string(),
+            "instance_url": "https://acme.zitadel.cloud",
+            "service_user_configured": false,
+            "native_app_configured": false,
+        })
+    );
+}
+
+#[test]
+fn healthy_service_user_reports_identity_and_roles() {
+    let dir = tempfile::tempdir().unwrap();
+    let (url, server) = mock_server(&[("200 OK", ME_MACHINE), ("200 OK", MEMBERSHIPS_ORG_OWNER)]);
+    write_app_json(dir.path(), &url);
+    write_valid_credentials(dir.path(), None);
+
+    let (report, all_ok) = run_doctor_in(dir.path());
+    let requests = server.join().unwrap();
+
+    assert!(all_ok, "report: {report:#}");
+    assert!(requests[0].starts_with("GET /auth/v1/users/me "));
+    assert!(requests[1].starts_with("POST /auth/v1/memberships/me/_search "));
+    assert_eq!(report["credentials"]["identity"], "service_user");
+    assert_eq!(report["credentials"]["expires_at"], 4_000_000_000_u64);
+    assert_eq!(
+        report["api"],
+        json!({"status": "ok", "user_id": "u-1", "user_name": "service-user",
+               "type": "machine", "organization_id": "org-1"})
+    );
+    assert_eq!(
+        report["memberships"],
+        json!({"status": "ok", "memberships": [
+            {"level": "organization", "id": "org-1", "display_name": "Acme", "roles": ["ORG_OWNER"]},
+            {"level": "instance", "id": null, "display_name": "ZITADEL", "roles": ["IAM_LOGIN_CLIENT"]}
+        ]})
+    );
+}
+
+#[test]
+fn credentials_with_refresh_token_are_reported_as_human_user() {
+    let dir = tempfile::tempdir().unwrap();
+    let (url, server) = mock_server(&[
+        ("200 OK", r#"{"user":{"id":"h-1","userName":"luca","details":{"resourceOwner":"org-1"},"human":{}}}"#),
+        ("200 OK", MEMBERSHIPS_ORG_OWNER),
+    ]);
+    write_app_json(dir.path(), &url);
+    write_valid_credentials(dir.path(), Some("rt"));
+
+    let (report, _) = run_doctor_in(dir.path());
+    server.join().unwrap();
+
+    assert_eq!(report["credentials"]["identity"], "user");
+    assert_eq!(report["api"]["type"], "human");
+}
+
+#[test]
+fn rejected_token_fails_api_and_skips_memberships() {
+    let dir = tempfile::tempdir().unwrap();
+    let (url, server) = mock_server(&[("401 Unauthorized", r#"{"message":"invalid token"}"#)]);
+    write_app_json(dir.path(), &url);
+    write_valid_credentials(dir.path(), None);
+
+    let (report, all_ok) = run_doctor_in(dir.path());
+    server.join().unwrap();
+
+    assert!(!all_ok);
+    assert_eq!(statuses(&report), ["ok", "ok", "error", "skipped"]);
+    assert_eq!(
+        report["api"]["message"],
+        r#"ZITADEL rejected the access token (401): {"message":"invalid token"}. Run: zitadel auth login"#
+    );
+}
+
+#[test]
+fn identity_without_memberships_is_an_error_with_a_grant_hint() {
+    let dir = tempfile::tempdir().unwrap();
+    let (url, server) = mock_server(&[
+        ("200 OK", ME_MACHINE),
+        ("200 OK", r#"{"details":{"totalResult":"0"}}"#),
+    ]);
+    write_app_json(dir.path(), &url);
+    write_valid_credentials(dir.path(), None);
+
+    let (report, all_ok) = run_doctor_in(dir.path());
+    server.join().unwrap();
+
+    assert!(!all_ok);
+    assert_eq!(report["memberships"]["status"], "error");
+    assert_eq!(
+        report["memberships"]["message"],
+        "the identity has no administrator role, so every management command will be \
+        denied (403). In the ZITADEL console grant it one, e.g. ORG_OWNER on an \
+        organization (Organization > Administrators) or IAM_OWNER on the instance \
+        (Default settings > Administrators)."
+    );
+}
+
+#[test]
+fn summarizes_memberships_by_level() {
+    let raw = json!({"result": [
+        {"roles": ["IAM_OWNER"], "displayName": "ZITADEL", "iam": true},
+        {"roles": ["ORG_OWNER", "ORG_USER_MANAGER"], "displayName": "Acme", "orgId": "org-1"},
+        {"roles": ["PROJECT_OWNER"], "displayName": "App", "orgId": "org-1", "projectId": "p-1"},
+        {"roles": ["PROJECT_GRANT_OWNER"], "displayName": "Shared", "projectId": "p-1", "projectGrantId": "g-1"}
+    ]});
+
+    assert_eq!(
+        summarize_memberships(&raw),
+        vec![
+            json!({"level": "instance", "id": null, "display_name": "ZITADEL", "roles": ["IAM_OWNER"]}),
+            json!({"level": "organization", "id": "org-1", "display_name": "Acme", "roles": ["ORG_OWNER", "ORG_USER_MANAGER"]}),
+            json!({"level": "project", "id": "p-1", "display_name": "App", "roles": ["PROJECT_OWNER"]}),
+            json!({"level": "project_grant", "id": "g-1", "display_name": "Shared", "roles": ["PROJECT_GRANT_OWNER"]}),
+        ]
+    );
+}
+
+#[test]
+fn summarize_memberships_tolerates_missing_result() {
+    assert!(summarize_memberships(&json!({"details": {}})).is_empty());
+}
+
+#[test]
+fn corrupted_credentials_fail_the_credentials_check() {
+    let dir = tempfile::tempdir().unwrap();
+    write_app_json(dir.path(), "https://acme.zitadel.cloud");
+    std::fs::write(dir.path().join("zitadel-cli/credentials.json"), "{not json").unwrap();
+
+    let (report, all_ok) = run_doctor_in(dir.path());
+
+    assert!(!all_ok);
+    assert_eq!(statuses(&report), ["ok", "error", "skipped", "skipped"]);
+    let message = report["credentials"]["message"].as_str().unwrap();
+    assert!(message.starts_with("credentials file is corrupted ("), "got {message}");
+    assert!(message.ends_with(". Run: zitadel auth login"), "got {message}");
+}
+
+#[test]
+fn failing_memberships_call_is_an_error_after_a_healthy_api_check() {
+    let dir = tempfile::tempdir().unwrap();
+    let (url, server) = mock_server(&[
+        ("200 OK", ME_MACHINE),
+        ("403 Forbidden", r#"{"message":"No matching permissions found"}"#),
+    ]);
+    write_app_json(dir.path(), &url);
+    write_valid_credentials(dir.path(), None);
+
+    let (report, all_ok) = run_doctor_in(dir.path());
+    server.join().unwrap();
+
+    assert!(!all_ok);
+    assert_eq!(statuses(&report), ["ok", "ok", "ok", "error"]);
+    assert!(
+        report["memberships"]["message"]
+            .as_str()
+            .unwrap()
+            .starts_with(r#"ZITADEL denied the operation (403): {"message":"No matching permissions found"}."#),
+        "got {report:#}"
+    );
+}
+
+#[test]
+fn user_without_machine_or_human_object_is_reported_as_unknown_type() {
+    let dir = tempfile::tempdir().unwrap();
+    let (url, server) = mock_server(&[
+        ("200 OK", r#"{"user":{"id":"x","userName":"x","details":{"resourceOwner":"o"}}}"#),
+        ("200 OK", MEMBERSHIPS_ORG_OWNER),
+    ]);
+    write_app_json(dir.path(), &url);
+    write_valid_credentials(dir.path(), None);
+
+    let (report, _) = run_doctor_in(dir.path());
+    server.join().unwrap();
+
+    assert_eq!(report["api"]["type"], "unknown");
+}
