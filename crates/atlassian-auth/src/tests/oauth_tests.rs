@@ -5,7 +5,8 @@ use std::path::{Path, PathBuf};
 use oauth_user_login::{CallbackError, WaitError};
 
 use super::{
-    app_config_path, authorization_url, credentials_path, merge_scopes_for_cloud_id, refresh,
+    app_config_path, authorization_code_body, authorization_url, complete_remote_login,
+    credentials_path, merge_scopes_for_cloud_id, pending_login_path, refresh, start_remote_login,
     AccessibleResource, Credentials, LoginError, OAuthConfig, OAuthConfigError,
 };
 
@@ -336,4 +337,109 @@ fn redirect_uri_points_at_the_callback_listener() {
     let port = crate::endpoints::CALLBACK_LISTEN_ADDR.rsplit_once(':').unwrap().1;
 
     assert_eq!(OAuthConfig::REDIRECT_URI, format!("http://localhost:{port}{}", crate::endpoints::CALLBACK_PATH));
+}
+
+// ── remote (two-step) login ───────────────────────────────────────────────
+
+const REMOTE_URI: &str = "https://mercury.example.com/oauth/callback";
+const NOW: u64 = 1_800_000_000;
+
+fn local_config() -> OAuthConfig {
+    OAuthConfig {
+        client_id: "cid".to_string(),
+        client_secret: "shh".to_string(),
+        redirect_uri: OAuthConfig::REDIRECT_URI.to_string(),
+    }
+}
+
+fn query(url: &str) -> std::collections::HashMap<String, String> {
+    serde_urlencoded::from_str(url.split_once('?').unwrap().1).unwrap()
+}
+
+#[test]
+fn pending_login_path_is_under_given_cli_dir() {
+    assert_eq!(
+        pending_login_path(Path::new("/cfg"), "jira-cli"),
+        PathBuf::from("/cfg/jira-cli/pending-login.json")
+    );
+}
+
+#[test]
+fn authorization_code_body_carries_the_given_redirect_and_verifier() {
+    assert_eq!(
+        authorization_code_body(&local_config(), "code-1", "verifier-1", REMOTE_URI),
+        serde_json::json!({
+            "grant_type": "authorization_code",
+            "client_id": "cid",
+            "client_secret": "shh",
+            "code": "code-1",
+            "redirect_uri": REMOTE_URI,
+            "code_verifier": "verifier-1",
+        })
+    );
+}
+
+#[test]
+fn remote_start_saves_a_pending_login_and_builds_its_authorize_url() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("pending-login.json");
+
+    let (url, pending) = start_remote_login(&local_config(), TEST_SCOPES, REMOTE_URI, &path, NOW).unwrap();
+
+    let params = query(&url);
+    assert!(url.starts_with("https://auth.atlassian.com/authorize?"), "got {url}");
+    assert_eq!(params["redirect_uri"], REMOTE_URI);
+    assert_eq!(params["state"], pending.state);
+    assert_eq!(params["code_challenge"], pending.code_challenge().unwrap());
+    assert_eq!(params["scope"], TEST_SCOPES);
+    assert_eq!(params["audience"], "api.atlassian.com");
+    assert_eq!(params["prompt"], "consent");
+    assert_eq!(pending.redirect_uri, REMOTE_URI);
+    assert_eq!(pending.expires_at, NOW + 600);
+    let on_disk: oauth_user_login::PendingLogin =
+        serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    assert_eq!(on_disk, pending);
+}
+
+#[test]
+fn remote_complete_without_a_pending_login_fails_before_any_request() {
+    let dir = tempfile::tempdir().unwrap();
+
+    let err = complete_remote_login(&local_config(), &dir.path().join("pending-login.json"), "c", "s", NOW)
+        .unwrap_err();
+
+    assert!(
+        matches!(err, LoginError::PendingLogin(oauth_user_login::PendingLoginError::NotFound)),
+        "got {err:?}"
+    );
+}
+
+#[test]
+fn remote_complete_with_a_wrong_state_keeps_the_pending_login() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("pending-login.json");
+    start_remote_login(&local_config(), TEST_SCOPES, REMOTE_URI, &path, NOW).unwrap();
+
+    let err = complete_remote_login(&local_config(), &path, "c", "stale", NOW).unwrap_err();
+
+    assert!(
+        matches!(err, LoginError::PendingLogin(oauth_user_login::PendingLoginError::StateMismatch)),
+        "got {err:?}"
+    );
+    assert!(path.exists());
+}
+
+#[test]
+fn remote_complete_after_expiry_fails_and_removes_the_pending_login() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("pending-login.json");
+    let (_, pending) = start_remote_login(&local_config(), TEST_SCOPES, REMOTE_URI, &path, NOW).unwrap();
+
+    let err = complete_remote_login(&local_config(), &path, "c", &pending.state, NOW + 600).unwrap_err();
+
+    assert!(
+        matches!(err, LoginError::PendingLogin(oauth_user_login::PendingLoginError::Expired)),
+        "got {err:?}"
+    );
+    assert!(!path.exists());
 }

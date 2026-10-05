@@ -83,6 +83,12 @@ pub fn credentials_path(config_dir: &Path, cli_dir: &str) -> PathBuf {
     config_dir.join(cli_dir).join("credentials.json")
 }
 
+/// Path to the state kept between the two steps of a remote login:
+/// `<config_dir>/<cli_dir>/pending-login.json`.
+pub fn pending_login_path(config_dir: &Path, cli_dir: &str) -> PathBuf {
+    config_dir.join(cli_dir).join("pending-login.json")
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum OAuthConfigError {
     NotFound(PathBuf),
@@ -110,6 +116,8 @@ pub enum LoginError {
     CallbackListener(oauth_user_login::ListenerError),
     #[error("{0}")]
     Callback(oauth_user_login::WaitError),
+    #[error("{0}")]
+    PendingLogin(oauth_user_login::PendingLoginError),
     #[error("token exchange failed: {0}")]
     TokenExchange(String),
     #[error("no accessible Atlassian resources found for this account")]
@@ -161,7 +169,53 @@ pub fn login(config: &OAuthConfig, scopes: &str) -> Result<Credentials, LoginErr
     let params = oauth_user_login::wait_for_callback(&listener, endpoints::CALLBACK_PATH, &state)
         .map_err(LoginError::Callback)?;
 
-    let token = exchange_code_for_token(config, &params.code, &verifier)?;
+    let token = request_token(&authorization_code_body(config, &params.code, &verifier, &config.redirect_uri))?;
+    credentials_from_code_exchange(token)
+}
+
+/// Step 1 of the two-step (`--remote`) login: saves a pending login at `path`
+/// and returns the authorize URL to hand to the person. No browser, no port.
+pub fn start_remote_login(
+    config: &OAuthConfig,
+    scopes: &str,
+    redirect_uri: &str,
+    path: &Path,
+    now: u64,
+) -> Result<(String, oauth_user_login::PendingLogin), LoginError> {
+    let pending = oauth_user_login::PendingLogin::new(redirect_uri, true, now);
+    let challenge = pending
+        .code_challenge()
+        .ok_or_else(|| LoginError::Internal("a PKCE pending login has no verifier".to_string()))?;
+    let remote_config = OAuthConfig {
+        client_id: config.client_id.clone(),
+        client_secret: config.client_secret.clone(),
+        redirect_uri: redirect_uri.to_string(),
+    };
+    let url = authorization_url(&remote_config, &challenge, &pending.state, scopes)?;
+    pending.save(path).map_err(LoginError::PendingLogin)?;
+    Ok((url, pending))
+}
+
+/// Step 2: takes the pending login for `state` (single-use), exchanges `code`
+/// with its stored verifier and redirect URI, and resolves the cloud id.
+pub fn complete_remote_login(
+    config: &OAuthConfig,
+    path: &Path,
+    code: &str,
+    state: &str,
+    now: u64,
+) -> Result<Credentials, LoginError> {
+    let pending =
+        oauth_user_login::take_pending_login(path, state, now).map_err(LoginError::PendingLogin)?;
+    let verifier = pending
+        .code_verifier
+        .as_deref()
+        .ok_or_else(|| LoginError::Internal("the pending login has no PKCE verifier".to_string()))?;
+    let token = request_token(&authorization_code_body(config, code, verifier, &pending.redirect_uri))?;
+    credentials_from_code_exchange(token)
+}
+
+fn credentials_from_code_exchange(token: TokenResponse) -> Result<Credentials, LoginError> {
     let resource = fetch_primary_resource(&token.access_token)?;
 
     Ok(Credentials {
@@ -173,7 +227,8 @@ pub fn login(config: &OAuthConfig, scopes: &str) -> Result<Credentials, LoginErr
     })
 }
 
-fn now_unix() -> u64 {
+/// Current Unix time in seconds (the `now` the remote-login functions take).
+pub fn now_unix() -> u64 {
     // Fallback to 0 if the system clock predates the Unix epoch (should never happen
     // on a real machine, but avoids a panic — a 0 timestamp causes the token to be
     // treated as expired and refreshed on the next call, which is safe behavior).
@@ -183,21 +238,22 @@ fn now_unix() -> u64 {
         .as_secs()
 }
 
-fn exchange_code_for_token(
+/// Body of the authorization-code exchange. `redirect_uri` must be the one
+/// the authorize request used.
+pub(crate) fn authorization_code_body(
     config: &OAuthConfig,
     code: &str,
     code_verifier: &str,
-) -> Result<TokenResponse, LoginError> {
-    let body = serde_json::json!({
+    redirect_uri: &str,
+) -> serde_json::Value {
+    serde_json::json!({
         "grant_type": "authorization_code",
         "client_id": config.client_id,
         "client_secret": config.client_secret,
         "code": code,
-        "redirect_uri": config.redirect_uri,
+        "redirect_uri": redirect_uri,
         "code_verifier": code_verifier,
-    });
-
-    request_token(&body)
+    })
 }
 
 /// Exchanges a refresh token for a new access/refresh token pair.
