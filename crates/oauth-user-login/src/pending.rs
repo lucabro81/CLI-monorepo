@@ -12,8 +12,10 @@ pub struct PendingLogin {
     pub state: String,
     /// `None` for providers without PKCE (Bitbucket).
     pub code_verifier: Option<String>,
-    /// Sent again, unchanged, with the code exchange.
-    pub redirect_uri: String,
+    /// Sent again, unchanged, with the code exchange. `None` for providers
+    /// with no `redirect_uri` parameter (Bitbucket uses the consumer's
+    /// registered callback URL).
+    pub redirect_uri: Option<String>,
     /// Unix timestamp (seconds).
     pub expires_at: u64,
 }
@@ -45,11 +47,11 @@ pub enum PendingLoginError {
 impl PendingLogin {
     /// A fresh pending login: random `state`, a PKCE verifier when `with_pkce`,
     /// and an expiry [`PENDING_LOGIN_TTL_SECS`] after `now`.
-    pub fn new(redirect_uri: &str, with_pkce: bool, now: u64) -> Self {
+    pub fn new(redirect_uri: Option<&str>, with_pkce: bool, now: u64) -> Self {
         PendingLogin {
             state: crate::generate_state(),
             code_verifier: with_pkce.then(crate::generate_code_verifier),
-            redirect_uri: redirect_uri.to_string(),
+            redirect_uri: redirect_uri.map(str::to_string),
             expires_at: now + PENDING_LOGIN_TTL_SECS,
         }
     }

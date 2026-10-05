@@ -17,7 +17,7 @@ fn pending_login_is_none_without_a_remote_login_in_progress() {
 fn pending_login_reports_its_expiry() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("confluence-cli").join("pending-login.json");
-    oauth_user_login::PendingLogin::new("https://m/cb", true, NOW).save(&path).unwrap();
+    oauth_user_login::PendingLogin::new(Some("https://m/cb"), true, NOW).save(&path).unwrap();
 
     assert_eq!(
         check_pending_login(dir.path(), NOW + 1),

@@ -26,7 +26,7 @@ fn login_mode_follows_the_flags() {
 
 #[test]
 fn remote_start_output_has_url_state_and_rfc3339_expiry_but_never_the_verifier() {
-    let pending = PendingLogin::new("https://m/cb", true, 1_800_000_000);
+    let pending = PendingLogin::new(Some("https://m/cb"), true, 1_800_000_000);
 
     let output = remote_start_output("https://idp/authorize?x=1", &pending);
 

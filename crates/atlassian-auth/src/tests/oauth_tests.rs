@@ -394,7 +394,7 @@ fn remote_start_saves_a_pending_login_and_builds_its_authorize_url() {
     assert_eq!(params["scope"], TEST_SCOPES);
     assert_eq!(params["audience"], "api.atlassian.com");
     assert_eq!(params["prompt"], "consent");
-    assert_eq!(pending.redirect_uri, REMOTE_URI);
+    assert_eq!(pending.redirect_uri.as_deref(), Some(REMOTE_URI));
     assert_eq!(pending.expires_at, NOW + 600);
     let on_disk: oauth_user_login::PendingLogin =
         serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();

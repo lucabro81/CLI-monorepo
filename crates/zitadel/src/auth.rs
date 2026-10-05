@@ -322,7 +322,7 @@ pub fn start_remote_login(
     path: &Path,
     now: u64,
 ) -> Result<(String, oauth_user_login::PendingLogin), LoginError> {
-    let pending = oauth_user_login::PendingLogin::new(redirect_uri, true, now);
+    let pending = oauth_user_login::PendingLogin::new(Some(redirect_uri), true, now);
     let challenge = pending
         .code_challenge()
         .ok_or_else(|| LoginError::Internal("a PKCE pending login has no verifier".to_string()))?;
@@ -347,7 +347,11 @@ pub fn complete_remote_login(
         .code_verifier
         .as_deref()
         .ok_or_else(|| LoginError::Internal("the pending login has no PKCE verifier".to_string()))?;
-    exchange_code(config, code, verifier, &pending.redirect_uri)
+    let redirect_uri = pending
+        .redirect_uri
+        .as_deref()
+        .ok_or_else(|| LoginError::Internal("the pending login has no redirect URI".to_string()))?;
+    exchange_code(config, code, verifier, redirect_uri)
 }
 
 pub(crate) fn authorization_url(

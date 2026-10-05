@@ -231,7 +231,7 @@ fn remote_start_saves_a_pending_login_and_builds_its_authorize_url() {
     assert_eq!(params["state"], pending.state);
     assert_eq!(params["code_challenge"], pending.code_challenge().unwrap());
     assert_eq!(params["code_challenge_method"], "S256");
-    assert_eq!(pending.redirect_uri, REMOTE_URI);
+    assert_eq!(pending.redirect_uri.as_deref(), Some(REMOTE_URI));
     assert_eq!(pending.expires_at, NOW + 600);
     let on_disk: oauth_user_login::PendingLogin =
         serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();

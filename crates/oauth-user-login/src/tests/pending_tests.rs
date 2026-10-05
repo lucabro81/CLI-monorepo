@@ -16,7 +16,7 @@ fn file(dir: &tempfile::TempDir) -> PathBuf {
 }
 
 fn saved(path: &Path, with_pkce: bool) -> PendingLogin {
-    let pending = PendingLogin::new(URI, with_pkce, NOW);
+    let pending = PendingLogin::new(Some(URI), with_pkce, NOW);
     pending.save(path).unwrap();
     pending
 }
@@ -25,9 +25,9 @@ fn saved(path: &Path, with_pkce: bool) -> PendingLogin {
 
 #[test]
 fn new_with_pkce_has_verifier_redirect_and_ten_minute_expiry() {
-    let pending = PendingLogin::new(URI, true, NOW);
+    let pending = PendingLogin::new(Some(URI), true, NOW);
 
-    assert_eq!(pending.redirect_uri, URI);
+    assert_eq!(pending.redirect_uri.as_deref(), Some(URI));
     assert_eq!(pending.expires_at, NOW + 600);
     assert_eq!(PENDING_LOGIN_TTL_SECS, 600);
     assert_eq!(pending.state.len(), 43);
@@ -38,16 +38,27 @@ fn new_with_pkce_has_verifier_redirect_and_ten_minute_expiry() {
 
 #[test]
 fn new_without_pkce_has_no_verifier_and_no_challenge() {
-    let pending = PendingLogin::new(URI, false, NOW);
+    let pending = PendingLogin::new(Some(URI), false, NOW);
 
     assert_eq!(pending.code_verifier, None);
     assert_eq!(pending.code_challenge(), None);
 }
 
+// Bitbucket has no redirect_uri parameter: the consumer's callback URL decides.
+#[test]
+fn new_without_redirect_uri_or_pkce_keeps_only_state_and_expiry() {
+    let pending = PendingLogin::new(None, false, NOW);
+
+    assert_eq!(pending.redirect_uri, None);
+    assert_eq!(pending.code_verifier, None);
+    assert_eq!(pending.state.len(), 43);
+    assert_eq!(pending.expires_at, NOW + 600);
+}
+
 #[test]
 fn every_pending_login_gets_fresh_secrets() {
-    let a = PendingLogin::new(URI, true, NOW);
-    let b = PendingLogin::new(URI, true, NOW);
+    let a = PendingLogin::new(Some(URI), true, NOW);
+    let b = PendingLogin::new(Some(URI), true, NOW);
 
     assert_ne!(a.state, b.state);
     assert_ne!(a.code_verifier, b.code_verifier);
