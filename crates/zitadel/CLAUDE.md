@@ -76,6 +76,14 @@ Two identities, same `credentials.json` — the last login decides (bitbucket mo
   - Scopes: `openid profile email offline_access urn:zitadel:iam:org:project:id:zitadel:aud`.
   - Refresh via `refresh_token` grant; a response without a new refresh token keeps
     the old one (a user session never silently turns into the service user).
+- **`auth login --user --remote` — the same grant in two steps**, for a person not at
+  this machine (issue #146). Step 1 (`start_remote_login`) saves an
+  `oauth_user_login::PendingLogin` to `pending-login.json` (0600, 10 minutes) and
+  prints `{authorize_url, state, expires_at}`; step 2 (`complete_remote_login`, `--code
+  --state`) takes it (state single-use, consumed before the exchange), exchanges the
+  code with the stored verifier and redirect URI, saves credentials and prints
+  `auth whoami`. The remote redirect URI must be registered on the Native app next
+  to the loopback one. `doctor` reports it as `pending_login` (outside `all_ok`).
 - **Renewal**: `load_credentials` renews when `now + 60 >= expires_at` —
   `refresh_token` present → refresh grant, else re-sign the JWT.
 - **Authorization** is Zitadel's manager roles on the identity (IAM_OWNER,
@@ -89,8 +97,10 @@ Two identities, same `credentials.json` — the last login decides (bitbucket mo
 - `app.json` — `{"instance_url": "...", "service_user": {"keyId","key","userId"}?, "client_id": "..."?}`.
   Written by `init`; `service_user` is needed for the default login, `client_id` for `--user`.
 - `credentials.json` — `access_token`, `expires_at`, `refresh_token?`. Fully CLI-managed.
+- `pending-login.json` — only between the two steps of `auth login --user --remote`:
+  `state`, `code_verifier`, `redirect_uri`, `expires_at`. Removed by step 2.
 
-Both files hold secrets and are written mode `0600` (an existing looser file loses its group/other bits).
+All three hold secrets and are written mode `0600` (an existing looser file loses its group/other bits).
 
 ## API design notes
 
@@ -117,6 +127,7 @@ Both files hold secrets and are written mode `0600` (an existing looser file los
 |---|---|---|
 | `auth login` | `POST /oauth/v2/token` (jwt-bearer) | n/a (prints a confirmation line) |
 | `auth login --user` | `GET /oauth/v2/authorize` (browser) + `POST /oauth/v2/token` (authorization_code + PKCE, refresh_token) | n/a |
+| `auth login --user --remote` / `--code --state` | step 1 prints the authorize URL (no request); step 2 `POST /oauth/v2/token` (authorization_code + PKCE) then `GET /auth/v1/users/me` | exempt (`or_all`): step 1's synthesized object, step 2 = whoami |
 | `init` | writes app.json, logs in (`POST /oauth/v2/token`), runs doctor; flags only, no prompts; narrative on stderr, doctor report on stdout | exempt (`or_all`), like doctor |
 | `doctor` | `GET /auth/v1/users/me` + `POST /auth/v1/memberships/me/_search` (v1: no v2 equivalent for the caller's own roles) | exempt (`or_all`) |
 | `user search` | `POST /v2/users` (v2 `ListUsers`) | mandatory |

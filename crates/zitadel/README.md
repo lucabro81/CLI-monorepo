@@ -45,6 +45,16 @@ The key file's content is copied into `app.json` (mode `0600`); the original fil
 
 Opens the browser on `<instance>/oauth/v2/authorize` for the Native app (scopes `openid profile email offline_access urn:zitadel:iam:org:project:id:zitadel:aud`, PKCE `S256`, random `state`), listens on `127.0.0.1:8080` for the redirect to `http://localhost:8080/callback` (stray requests such as `/favicon.ico` get a 404 and the listener keeps waiting), checks `state`, and exchanges the code plus PKCE verifier for an access token and a refresh token. Every action is then attributed to the human. If port 8080 is busy (often a previous, aborted login), the command fails immediately instead of opening the browser.
 
+### Remote login, in two steps — `auth login --user --remote`
+
+For a person who is not at the CLI's machine (the CLI runs on a server, the person is in a chat or a web page). Nothing opens a browser or listens on a port; whoever runs the CLI carries the link to the person and the code back.
+
+1. `auth login --user --remote --redirect-uri <url>` stores a pending login (`state`, PKCE verifier, redirect URI; `pending-login.json`, mode `0600`) and prints `{"authorize_url", "state", "expires_at"}`. The redirect URI must be registered on the Native app (it accepts several).
+2. The person opens `authorize_url` and logs in; ZITADEL redirects them to `<url>?code=...&state=...`.
+3. `auth login --user --code <code> --state <state>` checks the state and the expiry, exchanges the code with the stored verifier and redirect URI, saves `credentials.json`, and prints what `auth whoami` prints.
+
+A pending login is valid for 10 minutes and its state is single-use (consumed even if ZITADEL then refuses the code). A new step 1 replaces the previous pending login. Everything lives in the config folder the CLI resolves, so pointing `XDG_CONFIG_HOME` at one folder per person keeps people's logins apart. `doctor` shows a pending login under `pending_login`.
+
 ### Automatic renewal
 
 Both logins write `credentials.json`; the last one decides the identity. Before each command, a token expiring within 60 seconds is renewed — via the refresh token for `--user`, by re-signing the JWT for the service user.
@@ -94,10 +104,13 @@ Saves `credentials.json` for one of two identities; the last login decides which
 
 - default — the service user from `app.json` (private key JWT, see [above](#service-user-login-default-private-key-jwt)). No browser: the mode for agents.
 - `--user` — yourself, through the browser (see [above](#human-login-authorization-code--pkce--auth-login---user)). Needs the Native app's client id in `app.json` (`zitadel init --client-id <id>`).
+- `--user --remote --redirect-uri <url>`, then `--user --code <code> --state <state>` — someone who is not at this machine, in two steps (see [above](#remote-login-in-two-steps--auth-login---user---remote)). Step 1 prints `{authorize_url, state, expires_at}`; step 2 prints the `auth whoami` output.
 
 ```sh
 zitadel auth login          # service user
 zitadel auth login --user   # human, via the browser
+zitadel auth login --user --remote --redirect-uri https://app.example.com/oauth/callback   # step 1
+zitadel auth login --user --code <CODE> --state <STATE>                                   # step 2
 ```
 
 ### `zitadel auth whoami`
