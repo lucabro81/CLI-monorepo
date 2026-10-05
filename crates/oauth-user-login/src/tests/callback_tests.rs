@@ -26,8 +26,8 @@ fn parses_code_and_state() {
 #[test]
 fn decodes_url_encoded_values() {
     assert_eq!(
-        parse_callback_request_line("GET /callback?code=abc%2F1%2B2&state=x%20y HTTP/1.1", "/callback"),
-        Ok(params("abc/1+2", "x y"))
+        parse_callback_request_line("GET /callback?code=abc%2F1%2B2%3D&state=x%20y HTTP/1.1", "/callback"),
+        Ok(params("abc/1+2=", "x y"))
     );
 }
 
@@ -48,9 +48,35 @@ fn honours_the_given_callback_path() {
         parse_callback_request_line("GET /oauth/cb?code=abc&state=xyz HTTP/1.1", "/oauth/cb"),
         Ok(params("abc", "xyz"))
     );
+}
+
+// Regression: a provider redirecting to a registered URL whose path differs
+// from the one the CLI listens on (Bitbucket sends no redirect_uri, so the
+// consumer's callback URL wins) got a 404 and the login waited forever.
+#[test]
+fn an_oauth_redirect_on_another_path_names_the_expected_path() {
+    for (line, path) in [
+        ("GET /?code=abc&state=xyz HTTP/1.1", "/"),
+        ("GET /oauth/cb?state=xyz HTTP/1.1", "/oauth/cb"),
+        ("GET /cb?error=access_denied HTTP/1.1", "/cb"),
+    ] {
+        assert_eq!(
+            parse_callback_request_line(line, "/callback"),
+            Err(CallbackError::WrongPath { path: path.to_string(), expected: "/callback".to_string() }),
+            "line {line:?}"
+        );
+    }
+}
+
+#[test]
+fn wrong_path_message_says_what_to_register() {
+    let err = CallbackError::WrongPath { path: "/".to_string(), expected: "/callback".to_string() };
+
     assert_eq!(
-        parse_callback_request_line("GET /callback?code=abc&state=xyz HTTP/1.1", "/oauth/cb"),
-        Err(CallbackError::NotCallback)
+        err.to_string(),
+        "the provider redirected to path \"/\", but this CLI listens on \"/callback\". Change the \
+        redirect (callback) URL registered with the provider so its path is exactly \"/callback\", \
+        then retry the login"
     );
 }
 
@@ -101,7 +127,7 @@ fn missing_code_or_state_is_reported_by_name() {
 fn anything_else_is_not_the_callback() {
     for line in [
         "GET /favicon.ico HTTP/1.1",
-        "GET /favicon.ico?code=abc&state=xyz HTTP/1.1",
+        "GET /favicon.ico?v=2 HTTP/1.1",
         "POST /callback?code=abc&state=xyz HTTP/1.1",
         "GET /callback?code=abc&state=xyz",
         "garbage",
@@ -210,7 +236,8 @@ fn a_state_mismatch_aborts_with_400() {
 }
 
 // Regression: the atlassian-auth and google-chat copies ignored the `error`
-// parameter and reported a missing `code` instead of the denial (issue #70).
+// parameter and reported a missing `code` instead of the denial (issue #70,
+// found again while extracting this library in #143).
 #[test]
 fn a_denied_consent_is_reported_as_such() {
     let (outcome, responses) = run(
@@ -225,6 +252,41 @@ fn a_denied_consent_is_reported_as_such() {
         }
         other => panic!("expected a denial, got {other:?}"),
     }
+    assert!(responses[0].starts_with("HTTP/1.1 400 Bad Request\r\n"), "got {}", responses[0]);
+}
+
+#[test]
+fn an_empty_connection_gets_404_and_the_listener_keeps_waiting() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let browser = thread::spawn(move || {
+        // Connects and closes without sending a request line (e.g. a probe).
+        let mut empty = TcpStream::connect(addr).unwrap();
+        empty.shutdown(std::net::Shutdown::Write).unwrap();
+        let mut response = String::new();
+        empty.read_to_string(&mut response).unwrap();
+        (response, send(addr, "GET /callback?code=c1&state=s1 HTTP/1.1"))
+    });
+
+    let outcome = wait_for_callback(&listener, "/callback", "s1");
+    let (empty, callback) = browser.join().unwrap();
+
+    assert_eq!(outcome.unwrap(), params("c1", "s1"));
+    assert_eq!(
+        empty,
+        "HTTP/1.1 404 Not Found\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: 10\r\nConnection: close\r\n\r\nNot found."
+    );
+    assert!(callback.starts_with("HTTP/1.1 200 OK\r\n"), "got {callback}");
+}
+
+#[test]
+fn a_callback_without_state_aborts_with_400() {
+    let (outcome, responses) = run(&["GET /callback?code=c1 HTTP/1.1"], "s1");
+
+    assert!(
+        matches!(outcome, Err(WaitError::Callback(CallbackError::MissingParam("state")))),
+        "got {outcome:?}"
+    );
     assert!(responses[0].starts_with("HTTP/1.1 400 Bad Request\r\n"), "got {}", responses[0]);
 }
 

@@ -16,6 +16,15 @@ pub enum CallbackError {
     /// `/favicon.ico` probe). The listener answers 404 and keeps waiting.
     #[error("the request is not the OAuth callback")]
     NotCallback,
+    /// An OAuth redirect (it carries `code`, `state` or `error`) on a path other
+    /// than the one the CLI listens on: the provider's registered redirect URL
+    /// doesn't match. Reported instead of a 404, which would wait forever.
+    #[error(
+        "the provider redirected to path {path:?}, but this CLI listens on {expected:?}. Change the \
+        redirect (callback) URL registered with the provider so its path is exactly {expected:?}, \
+        then retry the login"
+    )]
+    WrongPath { path: String, expected: String },
     #[error(
         "the login callback has no \"{0}\" parameter. Check that the redirect URI registered \
         with the provider matches the one this CLI uses, then retry the login"
@@ -79,11 +88,16 @@ pub fn parse_callback_request_line(
         return Err(CallbackError::NotCallback);
     };
     let (path, query) = target.split_once('?').unwrap_or((target, ""));
-    if path != callback_path {
-        return Err(CallbackError::NotCallback);
-    }
     let mut params: std::collections::HashMap<String, String> =
         serde_urlencoded::from_str(query).map_err(|_| CallbackError::NotCallback)?;
+    if path != callback_path {
+        let is_oauth_redirect = ["code", "state", "error"].iter().any(|k| params.contains_key(*k));
+        return Err(if is_oauth_redirect {
+            CallbackError::WrongPath { path: path.to_string(), expected: callback_path.to_string() }
+        } else {
+            CallbackError::NotCallback
+        });
+    }
 
     if let Some(error) = params.remove("error") {
         return Err(CallbackError::Denied {
