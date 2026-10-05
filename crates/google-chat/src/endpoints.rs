@@ -16,6 +16,11 @@ pub const GOOGLE_OAUTH_TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
 /// `grant_type` value for the service-account domain-wide-delegation flow (RFC 7523).
 pub const JWT_BEARER_GRANT_TYPE: &str = "urn:ietf:params:oauth:grant-type:jwt-bearer";
 
+/// Loopback address and path the `--user` login listens on; together they
+/// match `OAuthConfig::REDIRECT_URI` (`http://localhost:8080/callback`).
+pub const CALLBACK_LISTEN_ADDR: &str = "127.0.0.1:8080";
+pub const CALLBACK_PATH: &str = "/callback";
+
 // ── Google Chat API v1 (client.rs) ─────────────────────────────────────────
 
 /// Base URL for Google Chat API v1 calls.

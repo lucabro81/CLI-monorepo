@@ -27,7 +27,8 @@ src/
     users.rs      — run(UsersCommand); dispatches to PeopleClient
   auth.rs         — OAuth infrastructure: OAuthConfig, Credentials, login(),
                     refresh(), renew(), save_credentials(), load_credentials(),
-                    path helpers
+                    path helpers; PKCE and the callback listener come from
+                    crates/oauth-user-login
   client.rs       — GoogleChatClient (blocking reqwest); get_json/post_json/
                     patch_json helpers; all Chat API methods: list_spaces,
                     list_messages, list_members, create_message,
