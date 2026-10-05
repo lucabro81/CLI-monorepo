@@ -163,13 +163,43 @@ fn an_expired_pending_login_with_the_wrong_state_reports_the_mismatch_first() {
 }
 
 #[test]
-fn a_corrupt_file_is_reported() {
+fn a_corrupt_file_is_reported_and_left_for_step_one_to_replace() {
     let dir = tempfile::tempdir().unwrap();
     let path = file(&dir);
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     std::fs::write(&path, "not json").unwrap();
 
     assert!(matches!(take_pending_login(&path, "s", NOW), Err(PendingLoginError::Corrupt(_))));
+    assert!(matches!(pending_login_status(&path, NOW), Err(PendingLoginError::Corrupt(_))));
+    assert!(path.exists());
+}
+
+// Regression: two step-2 runs racing on the same pending login both matched
+// the state; the loser failed to remove the file and reported an I/O error
+// instead of "no pending login".
+#[test]
+fn losing_a_race_to_the_same_pending_login_reports_not_found() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = file(&dir);
+    let pending = saved(&path, true);
+    let winner = take_pending_login(&path, &pending.state, NOW);
+    assert!(winner.is_ok());
+
+    // The loser read the file before the winner removed it.
+    assert_eq!(super::consume(&path), Err(PendingLoginError::NotFound));
+}
+
+#[test]
+fn save_leaves_no_temporary_file_behind() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = file(&dir);
+    saved(&path, true);
+
+    let names: Vec<_> = std::fs::read_dir(path.parent().unwrap())
+        .unwrap()
+        .map(|e| e.unwrap().file_name().into_string().unwrap())
+        .collect();
+    assert_eq!(names, vec!["pending-login.json".to_string()]);
 }
 
 // ── status ────────────────────────────────────────────────────────────────
@@ -213,5 +243,18 @@ fn error_messages_are_plain_and_specific() {
     assert_eq!(
         PendingLoginError::Expired.to_string(),
         "the pending remote login expired (it is valid for 10 minutes after it was started)"
+    );
+    assert_eq!(
+        PendingLoginError::StateMismatch.to_string(),
+        "the state does not match the pending remote login (the link is from an older attempt, or \
+        the state was mistyped). Use the code and state of the latest link"
+    );
+    assert_eq!(
+        PendingLoginError::Corrupt("eof".to_string()).to_string(),
+        "the pending remote login file is unreadable (eof)"
+    );
+    assert_eq!(
+        PendingLoginError::Io("denied".to_string()).to_string(),
+        "could not write or remove the pending remote login file (denied)"
     );
 }

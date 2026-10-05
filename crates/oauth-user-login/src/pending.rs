@@ -73,22 +73,24 @@ impl PendingLogin {
         // Serializing this plain struct cannot fail; mapped rather than unwrapped.
         let json = serde_json::to_string_pretty(self).map_err(|e| PendingLoginError::Io(e.to_string()))?;
 
+        // Written to a sibling file and renamed over the target, so a concurrent
+        // reader (doctor, step 2) never sees a half-written file.
+        let tmp = path.with_extension("json.tmp");
         let mut options = std::fs::OpenOptions::new();
         options.write(true).create(true).truncate(true);
         #[cfg(unix)]
         {
-            use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
-            // New files are created 0600; an existing one loses group/other bits first.
+            use std::os::unix::fs::OpenOptionsExt;
             options.mode(0o600);
-            if let Ok(metadata) = std::fs::metadata(path) {
-                let mode = metadata.permissions().mode();
-                if mode & 0o077 != 0 {
-                    std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode & 0o700))
-                        .map_err(io)?;
-                }
-            }
         }
-        options.open(path).and_then(|mut file| file.write_all(json.as_bytes())).map_err(io)
+        options.open(&tmp).and_then(|mut file| file.write_all(json.as_bytes())).map_err(io)?;
+        #[cfg(unix)]
+        {
+            // A leftover temporary file from an earlier crash keeps its old mode.
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600)).map_err(io)?;
+        }
+        std::fs::rename(&tmp, path).map_err(io)
     }
 }
 
@@ -102,8 +104,14 @@ fn read(path: &Path) -> Result<Option<PendingLogin>, PendingLoginError> {
     }
 }
 
-fn remove(path: &Path) -> Result<(), PendingLoginError> {
-    std::fs::remove_file(path).map_err(|e| PendingLoginError::Io(e.to_string()))
+/// Removes the pending login. Losing a race to another step 2 that removed it
+/// first means it is no longer pending: `NotFound`, not an I/O error.
+fn consume(path: &Path) -> Result<(), PendingLoginError> {
+    match std::fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Err(PendingLoginError::NotFound),
+        Err(e) => Err(PendingLoginError::Io(e.to_string())),
+    }
 }
 
 /// Takes the pending login at `path` for `state`. On success the file is
@@ -115,7 +123,7 @@ pub fn take_pending_login(path: &Path, state: &str, now: u64) -> Result<PendingL
     if pending.state != state {
         return Err(PendingLoginError::StateMismatch);
     }
-    remove(path)?;
+    consume(path)?;
     if now >= pending.expires_at {
         return Err(PendingLoginError::Expired);
     }
