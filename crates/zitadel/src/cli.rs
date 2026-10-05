@@ -91,14 +91,20 @@ pub enum Command {
 pub enum AuthCommand {
     /// Log in and save credentials to credentials.json
     ///
-    /// Logs in as the service user configured in app.json (private key JWT):
-    /// signs a JWT with the service user's key and exchanges it for an access
-    /// token. No browser, no human interaction. The token is renewed
-    /// automatically when it expires, so this is normally only needed once.
-    /// What the CLI may then do is decided by the ZITADEL administrator roles
-    /// granted to the service user (e.g. `IAM_OWNER`, `ORG_OWNER`).
-    #[command(after_help = "Example:\n  zitadel auth login")]
-    Login,
+    /// Default: logs in as the service user configured in app.json (private key
+    /// JWT) — no browser, no human interaction; this is the mode for agents.
+    /// With --user: logs in as a human through the browser (authorization code +
+    /// PKCE on the Native app configured with `init --client-id`; listens on
+    /// localhost:8080 for the redirect). Either way the token is renewed
+    /// automatically, so this is normally needed once; the last login decides
+    /// which identity the CLI acts as. What it may then do is decided by the
+    /// ZITADEL administrator roles of that identity (e.g. `IAM_OWNER`, `ORG_OWNER`).
+    #[command(after_help = "Examples:\n  zitadel auth login          # service user (agents)\n  zitadel auth login --user   # yourself, via the browser")]
+    Login {
+        /// Log in as a human via the browser instead of as the service user
+        #[arg(long)]
+        user: bool,
+    },
     /// Show the identity the CLI is authenticated as
     ///
     /// Prints the ZITADEL user behind the stored credentials (GET /auth/v1/users/me):

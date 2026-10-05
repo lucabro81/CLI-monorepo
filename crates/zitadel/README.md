@@ -43,7 +43,7 @@ The key file's content is copied into `app.json` (mode `0600`); the original fil
 
 ### Human login: authorization code + PKCE — `auth login --user`
 
-Opens the browser on `<instance>/oauth/v2/authorize` for the Native app, waits for the redirect on `http://localhost:8080/callback`, and exchanges the code (with the PKCE verifier) for an access token and a refresh token. Every action is then attributed to the human.
+Opens the browser on `<instance>/oauth/v2/authorize` for the Native app (scopes `openid profile email offline_access urn:zitadel:iam:org:project:id:zitadel:aud`, PKCE `S256`, random `state`), listens on `127.0.0.1:8080` for the redirect to `http://localhost:8080/callback` (stray requests such as `/favicon.ico` get a 404 and the listener keeps waiting), checks `state`, and exchanges the code plus PKCE verifier for an access token and a refresh token. Every action is then attributed to the human. If port 8080 is busy (often a previous, aborted login), the command fails immediately instead of opening the browser.
 
 ### Automatic renewal
 
@@ -88,12 +88,16 @@ zitadel doctor
 zitadel doctor --select memberships
 ```
 
-### `zitadel auth login`
+### `zitadel auth login [--user]`
 
-Logs in as the service user from `app.json` (private key JWT, see [above](#service-user-login-default-private-key-jwt)) and saves `credentials.json`. Normally only needed once: tokens are renewed automatically.
+Saves `credentials.json` for one of two identities; the last login decides which one the CLI acts as. Normally only needed once: tokens are renewed automatically.
+
+- default — the service user from `app.json` (private key JWT, see [above](#service-user-login-default-private-key-jwt)). No browser: the mode for agents.
+- `--user` — yourself, through the browser (see [above](#human-login-authorization-code--pkce--auth-login---user)). Needs the Native app's client id in `app.json` (`zitadel init --client-id <id>`).
 
 ```sh
-zitadel auth login
+zitadel auth login          # service user
+zitadel auth login --user   # human, via the browser
 ```
 
 ### `zitadel auth whoami`
@@ -189,4 +193,5 @@ Every error is a single plain-text sentence: what went wrong and what to run or 
 
 - missing/invalid `app.json` → the exact `zitadel init ...` command to run;
 - `401` from the API → `zitadel auth login`;
+- a failed `auth login --user` → what to check on the Native app (client id, redirect URI, PKCE, refresh token);
 - `403` from the API → the identity lacks an administrator role for that operation; run `zitadel doctor` to see its roles and grant the missing one in the console.

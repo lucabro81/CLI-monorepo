@@ -4,7 +4,7 @@ Architecture and design notes for the `zitadel` crate. Global rules (TDD, error 
 
 ## Status
 
-`init`, `doctor`, `auth login` (service user), `auth whoami`, `user search`, `user get`, `organization list`, `project list` implemented. `auth login --user` pending (needs a Native app client id). Rest in progress — see "Planned commands" below and tracking issue #142.
+`init`, `doctor`, `auth login [--user]`, `auth whoami`, `user search`, `user get`, `organization list`, `project list` implemented. Rest in progress — see "Planned commands" below and tracking issue #142.
 
 ## Module map (mirrors crates/google-chat)
 
@@ -12,7 +12,7 @@ Architecture and design notes for the `zitadel` crate. Global rules (TDD, error 
 src/
   commands/
     mod.rs           — pub mod declarations for all command handlers
-    auth.rs          — run_login(), run_whoami()                         [implemented, --user planned]
+    auth.rs          — run_login(), run_whoami()                         [implemented]
     doctor.rs        — run_doctor()/run_doctor_in(dir), summarize_memberships(); also
                        called by init as final check                    [implemented]
     init.rs          — run_init(), build_app_config() (merge flags over existing
@@ -36,7 +36,8 @@ src/
                     every v2 search body)
   endpoints.rs    — path constants/builders relative to the instance URL, no logic
   error.rs        — CliError (thiserror), incl. transparent Select(cli_fields::RenderError)
-  tests/          — *_tests.rs mirroring src/ (root CLAUDE.md "Test file convention");
+  tests/          — *_tests.rs mirroring src/; auth_user_tests.rs = the --user flow
+                    (PKCE, callback listener, exchange, refresh, renew dispatch); (root CLAUDE.md "Test file convention");
                     test_support.rs = one-shot / sequential local HTTP mock servers shared by
                     auth/client tests; fixtures/ = throwaway RSA key pair (test-only)
   main.rs         — pure dispatch: resolve --select/--select-all once, call commands::*
@@ -112,6 +113,7 @@ Two identities, same `credentials.json` — the last login decides (bitbucket mo
 | Command | Endpoint | `--select` |
 |---|---|---|
 | `auth login` | `POST /oauth/v2/token` (jwt-bearer) | n/a (prints a confirmation line) |
+| `auth login --user` | `GET /oauth/v2/authorize` (browser) + `POST /oauth/v2/token` (authorization_code + PKCE, refresh_token) | n/a |
 | `init` | writes app.json, logs in (`POST /oauth/v2/token`), runs doctor; flags only, no prompts; narrative on stderr, doctor report on stdout | exempt (`or_all`), like doctor |
 | `doctor` | `GET /auth/v1/users/me` + `POST /auth/v1/memberships/me/_search` (v1: no v2 equivalent for the caller's own roles) | exempt (`or_all`) |
 | `user search` | `POST /v2/users` (v2 `ListUsers`) | mandatory |
@@ -124,7 +126,6 @@ Two identities, same `credentials.json` — the last login decides (bitbucket mo
 
 | Command | Endpoint (verify in add-cli-command step 3) | `--select` |
 |---|---|---|
-| `auth login --user` | `/oauth/v2/authorize` + `/oauth/v2/token` | n/a |
 
 ## Testing
 

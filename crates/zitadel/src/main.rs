@@ -69,8 +69,8 @@ fn run() -> Result<(), CliError> {
         Command::Organization { command } => commands::organization::run(command, select),
         Command::Project { command } => commands::project::run(command, select),
         Command::Auth {
-            command: AuthCommand::Login,
-        } => commands::auth::run_login(),
+            command: AuthCommand::Login { user },
+        } => commands::auth::run_login(user),
         Command::Auth {
             command: AuthCommand::Whoami,
         } => commands::auth::run_whoami(select),

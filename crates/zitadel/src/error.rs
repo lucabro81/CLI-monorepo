@@ -35,6 +35,14 @@ pub enum CliError {
     LoginFailed { reason: String },
 
     #[error(
+        "login failed: {reason}. Check the Native application in the console: its client id must \
+        match app.json (zitadel init --client-id <client-id>), its redirect URI must be \
+        http://localhost:8080/callback, authentication method PKCE, refresh token enabled. Then \
+        retry: zitadel auth login --user"
+    )]
+    UserLoginFailed { reason: String },
+
+    #[error(
         "failed to save credentials to {path}: {reason}. \
         Check that the directory exists and is writable."
     )]

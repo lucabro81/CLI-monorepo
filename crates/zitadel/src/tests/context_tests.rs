@@ -133,3 +133,16 @@ fn login_failure_says_what_to_check_and_how_to_replace_the_key() {
         and run: zitadel init --key-file <path-to-key.json>"
     );
 }
+
+#[test]
+fn user_login_failure_points_at_the_native_app_not_the_service_user_key() {
+    let err = CliError::UserLoginFailed { reason: "token exchange failed: 400".to_string() };
+
+    assert_eq!(
+        err.to_string(),
+        "login failed: token exchange failed: 400. Check the Native application in the console: its \
+        client id must match app.json (zitadel init --client-id <client-id>), its redirect URI must be \
+        http://localhost:8080/callback, authentication method PKCE, refresh token enabled. Then retry: \
+        zitadel auth login --user"
+    );
+}

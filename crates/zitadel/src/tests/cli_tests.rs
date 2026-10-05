@@ -21,7 +21,17 @@ fn parses_auth_login() {
 
     assert!(matches!(
         cli.command,
-        Command::Auth { command: AuthCommand::Login }
+        Command::Auth { command: AuthCommand::Login { user: false } }
+    ));
+}
+
+#[test]
+fn parses_auth_login_user() {
+    let cli = parse(&["auth", "login", "--user"]).unwrap();
+
+    assert!(matches!(
+        cli.command,
+        Command::Auth { command: AuthCommand::Login { user: true } }
     ));
 }
 

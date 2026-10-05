@@ -17,6 +17,24 @@ pub const JWT_BEARER_GRANT_TYPE: &str = "urn:ietf:params:oauth:grant-type:jwt-be
 /// ZITADEL's own APIs.
 pub const SERVICE_USER_SCOPES: &str = "openid urn:zitadel:iam:org:project:id:zitadel:aud";
 
+/// Authorization endpoint for the human login (authorization code + PKCE).
+pub const AUTHORIZE_PATH: &str = "/oauth/v2/authorize";
+
+/// Scopes requested by `auth login --user`. `offline_access` makes ZITADEL issue
+/// a refresh token (the Native app must also have refresh tokens enabled).
+pub const USER_SCOPES: &str =
+    "openid profile email offline_access urn:zitadel:iam:org:project:id:zitadel:aud";
+
+/// Redirect URI registered on the Native app, and the loopback address the CLI
+/// listens on for it.
+pub const REDIRECT_URI: &str = "http://localhost:8080/callback";
+pub const CALLBACK_PATH: &str = "/callback";
+pub const CALLBACK_LISTEN_ADDR: &str = "127.0.0.1:8080";
+
+pub fn authorize_url(instance_url: &str) -> String {
+    format!("{instance_url}{AUTHORIZE_PATH}")
+}
+
 pub fn token_url(instance_url: &str) -> String {
     format!("{instance_url}{TOKEN_PATH}")
 }
