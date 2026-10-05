@@ -5,7 +5,7 @@ use std::path::Path;
 use crate::test_support::one_shot_server;
 
 use super::{
-    AppConfig, AppConfigError, Credentials, LoginError, ServiceUserKey, app_config_path,
+    AppConfig, AppConfigError, Credentials, KeyFileError, LoginError, ServiceUserKey, app_config_path,
     build_assertion, credentials_path, is_expiring, jwt_claims, load_credentials,
     login_service_user, save_credentials,
 };
@@ -153,6 +153,62 @@ fn config_paths_are_under_zitadel_cli_dir() {
         credentials_path(base),
         base.join("zitadel-cli").join("credentials.json")
     );
+}
+
+// ── service user key file ───────────────────────────────────────────────
+
+fn key_file_json(key_type: &str, key: &str) -> String {
+    serde_json::json!({"type": key_type, "keyId": "k-1", "key": key, "userId": "u-1"}).to_string()
+}
+
+#[test]
+fn key_file_from_console_parses_into_service_user_key() {
+    let key = ServiceUserKey::from_key_file(&key_file_json("serviceaccount", TEST_PRIVATE_KEY)).unwrap();
+
+    assert_eq!(
+        key,
+        ServiceUserKey {
+            key_id: "k-1".to_string(),
+            key: TEST_PRIVATE_KEY.to_string(),
+            user_id: "u-1".to_string(),
+        }
+    );
+}
+
+#[test]
+fn key_file_that_is_not_json_is_rejected() {
+    assert!(matches!(
+        ServiceUserKey::from_key_file("-----BEGIN RSA PRIVATE KEY-----"),
+        Err(KeyFileError::InvalidJson(_))
+    ));
+}
+
+#[test]
+fn application_key_file_is_rejected_with_a_hint() {
+    // An API/OIDC *application* key has "type":"application" and a clientId
+    // instead of userId — a plausible mix-up in the console.
+    let json = r#"{"type":"application","keyId":"k","key":"x","appId":"a","clientId":"c"}"#;
+
+    let err = ServiceUserKey::from_key_file(json).unwrap_err();
+
+    assert_eq!(err, KeyFileError::WrongType("application".to_string()));
+    assert!(err.to_string().contains("Service Users"), "got {err}");
+}
+
+#[test]
+fn key_file_with_unparseable_private_key_is_rejected() {
+    let err = ServiceUserKey::from_key_file(&key_file_json("serviceaccount", "not a pem")).unwrap_err();
+
+    assert!(matches!(err, KeyFileError::InvalidPrivateKey(_)), "got {err:?}");
+}
+
+#[test]
+fn service_user_key_serializes_in_console_key_file_format() {
+    let value = serde_json::to_value(test_key()).unwrap();
+
+    assert_eq!(value["keyId"], "100509901696068329");
+    assert_eq!(value["userId"], "100507859606888466");
+    assert_eq!(value["key"], TEST_PRIVATE_KEY);
 }
 
 // ── JWT assertion ─────────────────────────────────────────────────────────

@@ -66,4 +66,28 @@ pub enum CliError {
 
     #[error("one or more doctor checks failed. See the JSON report above for details.")]
     DoctorCheckFailed,
+
+    #[error(
+        "no instance URL known. Pass it explicitly: \
+        zitadel init --instance-url https://<instance>.zitadel.cloud --key-file <path-to-key.json>"
+    )]
+    InstanceUrlRequired,
+
+    #[error(
+        "invalid --instance-url {value:?}: expected an absolute URL like https://<instance>.zitadel.cloud \
+        (or your self-hosted domain, including https://)"
+    )]
+    InvalidInstanceUrl { value: String },
+
+    #[error("cannot read key file {path}: {reason}. Check the path passed to --key-file.")]
+    KeyFileUnreadable { path: String, reason: String },
+
+    #[error(
+        "key file {path} is not usable: {reason}. Download a JSON key for the service user \
+        from the console and pass it to --key-file."
+    )]
+    InvalidKeyFile { path: String, reason: String },
+
+    #[error("failed to write app config {path}: {reason}. Check that the directory is writable.")]
+    WriteAppConfigFailed { path: String, reason: String },
 }

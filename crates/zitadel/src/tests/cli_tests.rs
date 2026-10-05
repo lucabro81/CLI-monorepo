@@ -50,6 +50,34 @@ fn select_and_select_all_conflict() {
 }
 
 #[test]
+fn parses_init_with_all_flags() {
+    let cli = parse(&[
+        "init", "--instance-url", "https://acme.zitadel.cloud", "--key-file", "/tmp/key.json",
+        "--client-id", "123@cli",
+    ])
+    .unwrap();
+
+    match cli.command {
+        Command::Init { instance_url, key_file, client_id } => {
+            assert_eq!(instance_url.as_deref(), Some("https://acme.zitadel.cloud"));
+            assert_eq!(key_file, Some(std::path::PathBuf::from("/tmp/key.json")));
+            assert_eq!(client_id.as_deref(), Some("123@cli"));
+        }
+        other => panic!("expected Init, got {other:?}"),
+    }
+}
+
+#[test]
+fn parses_init_with_no_flags() {
+    let cli = parse(&["init"]).unwrap();
+
+    assert!(matches!(
+        cli.command,
+        Command::Init { instance_url: None, key_file: None, client_id: None }
+    ));
+}
+
+#[test]
 fn parses_doctor() {
     let cli = parse(&["doctor"]).unwrap();
 

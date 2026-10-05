@@ -33,8 +33,9 @@ pub struct AppConfig {
 }
 
 /// A service user's private key, in the exact shape of the JSON key file
-/// downloaded from the ZITADEL console (its `"type"` field is ignored).
-#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+/// downloaded from the ZITADEL console (its `"type"` field is ignored here and
+/// checked by `from_key_file`).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ServiceUserKey {
     /// Key id — sent as the JWT `kid` header.
@@ -43,6 +44,37 @@ pub struct ServiceUserKey {
     pub key: String,
     /// The service user's id — the JWT `iss` and `sub` claims.
     pub user_id: String,
+}
+
+#[derive(Debug, PartialEq, Eq, thiserror::Error)]
+pub enum KeyFileError {
+    #[error("not a valid JSON key file: {0}")]
+    InvalidJson(String),
+    #[error(
+        "this is a key of type {0:?}, not a service user key (\"serviceaccount\"). In the console \
+        create it under Users > Service Users > <user> > Keys > New (JSON), not on an application"
+    )]
+    WrongType(String),
+    #[error("its private key is not a valid RSA PEM key: {0}")]
+    InvalidPrivateKey(String),
+}
+
+impl ServiceUserKey {
+    /// Parses and validates a key file downloaded from the console: valid JSON,
+    /// `"type": "serviceaccount"`, and a usable RSA private key.
+    pub fn from_key_file(json: &str) -> Result<Self, KeyFileError> {
+        let value: serde_json::Value =
+            serde_json::from_str(json).map_err(|e| KeyFileError::InvalidJson(e.to_string()))?;
+        let key_type = value["type"].as_str().unwrap_or_default();
+        if key_type != "serviceaccount" {
+            return Err(KeyFileError::WrongType(key_type.to_string()));
+        }
+        let key: ServiceUserKey =
+            serde_json::from_value(value).map_err(|e| KeyFileError::InvalidJson(e.to_string()))?;
+        jsonwebtoken::EncodingKey::from_rsa_pem(key.key.as_bytes())
+            .map_err(|e| KeyFileError::InvalidPrivateKey(e.to_string()))?;
+        Ok(key)
+    }
 }
 
 #[derive(Debug, Deserialize)]

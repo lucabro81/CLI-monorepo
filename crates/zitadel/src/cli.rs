@@ -30,6 +30,29 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
+    /// Configure the CLI for a ZITADEL instance, log in, and verify with doctor
+    ///
+    /// Writes app.json (instance URL, service user key, optional Native app client
+    /// id; file mode 0600 because it holds the private key), logs in as the service
+    /// user if one is configured, then prints the doctor JSON report and exits
+    /// non-zero if any check fails. Re-running merges with the existing app.json:
+    /// flags you omit keep their current value, so e.g. a Native app client id can
+    /// be added later with --client-id alone. No interactive prompts.
+    #[command(after_help = "Examples:\n  zitadel init --instance-url https://acme.zitadel.cloud --key-file ~/Downloads/123456789.json\n  zitadel init --client-id 123456789@zitadel-cli   # add the Native app for auth login --user later")]
+    Init {
+        /// Instance base URL, e.g. `https://acme.zitadel.cloud` or your self-hosted domain.
+        /// Required on the first run.
+        #[arg(long)]
+        instance_url: Option<String>,
+        /// Path to the service user's JSON key file downloaded from the console
+        /// (Users > Service Users > <user> > Keys > New, type JSON). Its content is
+        /// copied into app.json; the file itself is no longer needed afterwards.
+        #[arg(long, value_name = "PATH")]
+        key_file: Option<std::path::PathBuf>,
+        /// Client id of a Native application (PKCE), needed only for auth login --user.
+        #[arg(long)]
+        client_id: Option<String>,
+    },
     /// Check configuration, credentials, API reachability and the identity's roles
     ///
     /// Runs four checks in order and prints a JSON report with a status field

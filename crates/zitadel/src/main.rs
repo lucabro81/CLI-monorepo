@@ -42,6 +42,16 @@ fn run() -> Result<(), CliError> {
     };
 
     match cli.command {
+        Command::Init {
+            instance_url,
+            key_file,
+            client_id,
+        } => commands::init::run_init(
+            instance_url.as_deref(),
+            key_file.as_deref(),
+            client_id.as_deref(),
+            select,
+        ),
         Command::Doctor => {
             let (report, all_ok) = commands::doctor::run_doctor()?;
             // Exempt from mandatory --select: internally generated, small, fixed shape.
