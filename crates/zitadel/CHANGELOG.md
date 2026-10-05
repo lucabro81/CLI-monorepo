@@ -22,6 +22,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - *(oauth-user-login)* make the pending login's redirect URI optional
 - *(zitadel)* say in doctor --help that pending_login is informational
 - Merge pull request #154 from lucabro81/issue146 ([#154](https://github.com/lucabro81/CLI-monorepo/pull/154))
+- Release
+- Merge pull request #150 from lucabro81/release/zitadel ([#150](https://github.com/lucabro81/CLI-monorepo/pull/150))
+## [0.2.0](https://github.com/lucabro81/CLI-monorepo/compare/zitadel-v0.1.0...zitadel-v0.2.0) - 2026-10-05
+
+### Added
+- *(zitadel)* add auth login --user --remote, a two-step login for someone elsewhere
+
+### Fixed
+- *(zitadel)* print the login retry command once on callback errors
+- *(zitadel)* end every remote login error with how to restart it
+
+### Other
+- Release
+- Merge pull request #145 from lucabro81/release/zitadel ([#145](https://github.com/lucabro81/CLI-monorepo/pull/145))
+- *(zitadel)* use oauth-user-login for PKCE and the login callback
+- *(zitadel)* document the two-step remote login
+- Merge pull request #147 from lucabro81/issue143 ([#147](https://github.com/lucabro81/CLI-monorepo/pull/147))
+- *(oauth-user-login)* make the pending login's redirect URI optional
+- *(zitadel)* say in doctor --help that pending_login is informational
+- Merge pull request #154 from lucabro81/issue146 ([#154](https://github.com/lucabro81/CLI-monorepo/pull/154))
 ## [0.1.0](https://github.com/lucabro81/CLI-monorepo/releases/tag/zitadel-v0.1.0) - 2026-10-05
 
 ### Added
