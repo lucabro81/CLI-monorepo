@@ -3596,6 +3596,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "zitadel"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "cli-fields",
+ "dirs",
+ "jsonwebtoken",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "serde_urlencoded",
+ "tempfile",
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "zmij"
 version = "1.0.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
