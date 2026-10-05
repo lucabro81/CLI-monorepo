@@ -58,9 +58,12 @@ pub enum Command {
     },
     /// Check that the CLI is correctly configured and can reach the Jira API
     ///
-    /// Runs three checks in order: app credentials file, stored OAuth tokens,
-    /// and a live API call. Prints a JSON object with a status field per check.
-    /// Exits non-zero if any check fails or is skipped. Always prints its full
+    /// Runs checks in order: app credentials file, stored OAuth tokens, a live
+    /// API call, granted OAuth scopes, global and per-project permissions.
+    /// Prints a JSON object with a status field per check. Exits non-zero if any
+    /// check fails or is skipped. Also reports `pending_login` (a two-step
+    /// `auth login --user --remote` waiting for its code): informational, never
+    /// counted in the exit code. Always prints its full
     /// result regardless of --select — the report is generated internally and is
     /// always small and fixed-shape.
     #[command(after_help = "Examples:\n  jira doctor\n  jira doctor --select app_config.status,credentials.status,api.status\n\nEach check has a status field: \"ok\", \"error\", or \"skipped\".\nLater checks are skipped if an earlier one fails.")]
