@@ -105,6 +105,7 @@ Two grant types, both using `client_id`/`client_secret` from `app.json`:
 
 - **`client_credentials`** (default, `auth login`) — `login_client_credentials()` POSTs `grant_type=client_credentials` + `audience=api.atlassian.com`, no browser. Returns `Credentials` with `refresh_token: None`. Expected mode for agent-driven usage; resulting account has `accountType: "app"`.
 - **3LO + PKCE** (`auth login --user`, also used by `init`) — `login()` builds the authorization URL, binds `127.0.0.1:8080`, opens the browser, waits for the callback (stray requests get a 404; listener from `crates/oauth-user-login`), exchanges the code for tokens, resolves `cloud_id` via the accessible-resources endpoint. Returns `Credentials` with `refresh_token: Some(...)`.
+- **3LO + PKCE in two steps** (`auth login --user --remote`, issue #146) — for a person not at this machine. Step 1 (`atlassian_auth::start_remote_login`) saves an `oauth_user_login::PendingLogin` to `pending-login.json` (0600, 10 minutes) and prints `{authorize_url, state, expires_at}`; step 2 (`--code --state`, `complete_remote_login`) takes it (state single-use, consumed before the exchange), exchanges the code with the stored verifier and redirect URI, resolves `cloud_id`, saves credentials and prints `auth whoami`. The redirect URI must be one of the 3LO app's callback URLs. `doctor` reports it as `pending_login` (outside `all_ok`). Verified live end to end (including a reused and a wrong state).
 
 ### App identity sourcing: 3LO app vs. Service Account
 
@@ -132,6 +133,7 @@ Both files live under `$XDG_CONFIG_HOME/jira-cli/` (falling back to `~/.config/j
 
 - `app.json` — `{"client_id": "...", "client_secret": "..."}`. Static; written by `jira init` (3LO app path only) or by hand (either path). Never modified at runtime. The shape is identical whether the credentials came from a 3LO app (developer.atlassian.com) or a Service Account (admin.atlassian.com) — see "OAuth / auth design" above for how the two differ in site-access provisioning.
 - `credentials.json` — OAuth tokens. Fully managed by the CLI; never edit by hand.
+- `pending-login.json` — only between the two steps of `auth login --user --remote` (state, PKCE verifier, redirect URI, expiry). Removed by step 2.
 
 Kept separate so automatic token writes never clobber the app identity.
 
@@ -213,6 +215,7 @@ Issues") is needed by `jira issue assign`.
 | `init [--client-id --client-secret]` | Human onboarding; only command with narrative output |
 | `doctor` | Cascading JSON health check (app_config, credentials, api, oauth_scopes, service_user, projects); exit non-zero on any failure |
 | `auth login [--user]` | Default: `client_credentials` (service account, no browser). `--user`: interactive 3LO + PKCE |
+| `auth login --user --remote` / `--code --state` | Two-step 3LO + PKCE for someone elsewhere: step 1 prints the authorize URL (exempt from `--select`), step 2 exchanges the code and prints `auth whoami` |
 | `auth whoami` | GET /myself |
 | `issue get <KEY>` | Fetch single issue |
 | `issue create [--parent <KEY>]` | POST with ADF description/body; `--parent` sets `fields.parent` (subtask parent, or epic parent on team-managed projects — not company-managed Epic Link) |
