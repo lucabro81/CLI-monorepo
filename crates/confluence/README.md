@@ -89,7 +89,17 @@ Stores credentials locally. By default runs the non-interactive `client_credenti
 ```sh
 cargo run -p confluence -- auth login              # service account (client_credentials)
 cargo run -p confluence -- auth login --user       # human account (OAuth 2.0 3LO + PKCE)
+cargo run -p confluence -- auth login --user --remote --redirect-uri https://app.example.com/oauth/callback   # step 1
+cargo run -p confluence -- auth login --user --code <CODE> --state <STATE>                                   # step 2
 ```
+
+`--user --remote` is the same 3LO grant in two steps, for a person who is not at the CLI's machine (the CLI on a server, the person in a chat or a web page); it needs a 3LO app (Option B), not a Service Account credential.
+
+1. Step 1 (`--remote --redirect-uri <url>`) opens no browser and listens on no port: it stores a pending login (`state`, PKCE verifier, redirect URI; `pending-login.json`, mode `0600`) and prints `{"authorize_url", "state", "expires_at"}`. `<url>` must be one of the 3LO app's callback URLs.
+2. The person opens `authorize_url`, picks the site and accepts; Atlassian redirects them to `<url>?code=...&state=...`.
+3. Step 2 (`--code <code> --state <state>`) checks the state and the expiry, exchanges the code, saves `credentials.json`, and prints what `auth whoami` prints.
+
+A pending login is valid for 10 minutes and its state is single-use. Everything lives in the config folder the CLI resolves, so one `XDG_CONFIG_HOME` per person keeps people's logins apart. `confluence doctor` shows a pending login under `pending_login`.
 
 ### `confluence auth whoami`
 

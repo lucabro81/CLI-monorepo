@@ -104,6 +104,7 @@ Both files live under `$XDG_CONFIG_HOME/confluence-cli/` (falling back to `~/.co
 
 - `app.json` — `{"client_id": "...", "client_secret": "..."}`. Static; written by `confluence init` (3LO app path) or by hand (either path). Never modified at runtime.
 - `credentials.json` — OAuth tokens. Fully managed by the CLI; never edit by hand.
+- `pending-login.json` — only between the two steps of `auth login --user --remote` (issue #146; state, PKCE verifier, redirect URI, expiry). Removed by step 2. The flow itself lives in `atlassian_auth` (`start_remote_login`/`complete_remote_login`) and is identical to jira's, where it was verified live end to end; not verified live here (no Confluence 3LO app yet). `doctor` reports it as `pending_login` (outside `all_ok`).
 
 Kept separate so automatic token writes never clobber the app identity — same reasoning as `jira`.
 

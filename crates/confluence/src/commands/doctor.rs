@@ -17,6 +17,10 @@
 //! account-level OAuth scopes) — add one here once a concrete command needs
 //! it, per root CLAUDE.md's incremental approach.
 //!
+//! A last, informational `pending_login` check (outside the cascade and
+//! `all_ok`) reports whether a two-step `auth login --user --remote` is waiting
+//! for its code.
+//!
 //! Checks cascade: if `app_config` fails, the remaining checks are marked
 //! `skipped` (no credentials to load). If `credentials` fails, `api` and
 //! `oauth_scopes` are skipped (no token to use).
@@ -68,6 +72,7 @@ pub fn run_doctor() -> Result<(Value, bool), CliError> {
         "credentials": creds_check,
         "api": connectivity_check,
         "oauth_scopes": oauth_scopes_check,
+        "pending_login": check_pending_login(&config_dir, atlassian_auth::now_unix()),
     });
 
     Ok((report, all_ok))
@@ -177,6 +182,29 @@ fn check_oauth_scopes(credentials: &auth::Credentials) -> Value {
     }
 }
 
+/// Informational: a two-step (`--remote`) login waiting for its code. Never
+/// affects `all_ok` (an idle CLI has none, and that is fine).
+pub(crate) fn check_pending_login(config_dir: &std::path::Path, now: u64) -> Value {
+    match oauth_user_login::pending_login_status(&auth::pending_login_path(config_dir), now) {
+        Ok(None) => json!({"status": "none"}),
+        Ok(Some(status)) => json!({
+            "status": "pending",
+            "expires_at": oauth_user_login::rfc3339_utc(status.expires_at),
+            "expired": status.expired,
+        }),
+        Err(e) => json!({
+            "status": "error",
+            "message": format!(
+                "{e}. Start a new remote login with: confluence auth login --user --remote --redirect-uri <redirect-uri>"
+            ),
+        }),
+    }
+}
+
 fn skipped(reason: &str) -> Value {
     json!({"status": "skipped", "reason": reason})
 }
+
+#[cfg(test)]
+#[path = "../tests/commands/doctor_tests.rs"]
+mod tests;

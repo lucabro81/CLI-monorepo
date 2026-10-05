@@ -106,12 +106,35 @@ pub enum AuthCommand {
     /// on localhost:8080, exchanges the code for tokens, and stores a
     /// `refresh_token` for automatic renewal.
     ///
+    /// With --user --remote: a two-step login for a person who is not at this
+    /// machine. Step 1 (--remote --redirect-uri) opens no browser and listens on
+    /// no port: it prints JSON `{authorize_url, state, expires_at}` for the caller
+    /// to hand to the person. Atlassian then redirects the person to
+    /// --redirect-uri (it must be one of the 3LO app's callback URLs) with `code`
+    /// and `state`. Step 2 (--code --state) exchanges the code, saves the
+    /// credentials, then prints what `auth whoami` prints. The pending login
+    /// expires after 10 minutes, its state is single-use, and it lives in this
+    /// config folder (`XDG_CONFIG_HOME`). Needs a 3LO app (developer console),
+    /// not a Service Account credential.
+    ///
     /// Run this once per machine; tokens are renewed automatically after that.
-    #[command(after_help = "Examples:\n  confluence auth login              # service account (client_credentials)\n  confluence auth login --user       # human account (OAuth 2.0 3LO + PKCE)\n\nRequires app.json to exist at ~/.config/confluence-cli/app.json.\nRun `confluence init` first if you have not set up the OAuth app yet.")]
+    #[command(after_help = "Examples:\n  confluence auth login              # service account (client_credentials)\n  confluence auth login --user       # human account (OAuth 2.0 3LO + PKCE)\n  confluence auth login --user --remote --redirect-uri https://app.example.com/oauth/callback   # step 1\n  confluence auth login --user --code <CODE> --state <STATE>                                   # step 2\n\nRequires app.json to exist at ~/.config/confluence-cli/app.json.\nRun `confluence init` first if you have not set up the OAuth app yet.")]
     Login {
         /// Use the interactive OAuth 2.0 (3LO) + PKCE flow for a human Atlassian account
         #[arg(long)]
         user: bool,
+        /// Step 1 of a two-step login for someone not at this machine: print the authorize URL instead of opening a browser
+        #[arg(long, requires_all = ["user", "redirect_uri"], conflicts_with_all = ["code", "state"])]
+        remote: bool,
+        /// With --remote: where Atlassian sends the person back; must be a callback URL of the 3LO app
+        #[arg(long, requires = "remote")]
+        redirect_uri: Option<String>,
+        /// Step 2: the `code` query parameter Atlassian appended to the redirect URI
+        #[arg(long, requires_all = ["user", "state"])]
+        code: Option<String>,
+        /// Step 2: the `state` query parameter Atlassian appended to the redirect URI
+        #[arg(long, requires = "code")]
+        state: Option<String>,
     },
     /// Print the currently authenticated user as JSON
     ///
