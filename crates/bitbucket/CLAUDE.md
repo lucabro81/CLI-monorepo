@@ -118,6 +118,16 @@ Both write the same `credentials.json`: the last login decides the identity.
   parameter — Bitbucket always redirects to the consumer's callback URL. `state` is
   sent and checked for CSRF. The token response may name the scope field `scope` or
   `scopes`; both are accepted.
+- **`auth login --user --remote` — the same grant in two steps** (issue #146), for a
+  person not at this machine. Step 1 (`start_remote_login`) saves an
+  `oauth_user_login::PendingLogin` with **state only** (no PKCE, no redirect URI) to
+  `pending-login.json` (0600, 10 minutes) and prints `{authorize_url, state,
+  expires_at}`; step 2 (`--code --state`, `complete_remote_login`) takes it (state
+  single-use) and exchanges the code. There is no `--redirect-uri`: Bitbucket always
+  redirects to the consumer's callback URL, so remote use needs a consumer whose
+  callback URL is the caller's endpoint, in its own config folder. Verified live
+  end to end against the localhost consumer (copying `code`/`state` from the
+  browser's address bar). `doctor` reports it as `pending_login` (outside `all_ok`).
 
 Config layout, mirroring jira (`$XDG_CONFIG_HOME/bitbucket-cli/`, falling back to
 `~/.config/bitbucket-cli/`):
@@ -126,6 +136,8 @@ Config layout, mirroring jira (`$XDG_CONFIG_HOME/bitbucket-cli/`, falling back t
   Key/Secret). Static, written by hand.
 - `credentials.json` — `access_token`, `expires_at`, `scopes`, `refresh_token`
   (only after `--user`). Fully managed by the CLI.
+- `pending-login.json` — only between the two steps of `auth login --user --remote`
+  (`state`, `expires_at`). Removed by step 2.
 
 ## Implemented commands
 
@@ -134,6 +146,7 @@ Config layout, mirroring jira (`$XDG_CONFIG_HOME/bitbucket-cli/`, falling back t
 | `init [--client-id --client-secret]` | Human onboarding; only command with narrative output |
 | `doctor` | Cascading JSON health check (app_config, credentials, api, permissions); `credentials.identity` is `user` or `app`; exit non-zero on any failure |
 | `auth login [--user]` | default: `client_credentials` exchange (acts as the app); `--user`: browser `authorization_code` flow (acts as the human). Stores `credentials.json` |
+| `auth login --user --remote` / `--code --state` | two-step `authorization_code` for someone elsewhere: step 1 prints the consent URL (exempt from `--select`), step 2 exchanges the code and prints `auth whoami` |
 | `auth whoami` | `GET /2.0/user`, supports `--select` |
 | `repo get <workspace>/<repo_slug>` | `GET /2.0/repositories/{workspace}/{repo_slug}`, supports `--select` |
 | `repo list <workspace> [--page]` | `GET /2.0/repositories/{workspace}`, paginated (`--page`), supports `--select` |
