@@ -20,6 +20,8 @@
 //!    A project with no roles/permissions is reported with `status: "error"`;
 //!    finding zero projects at all is also `status: "error"` (an account
 //!    that can't see any project can't do anything useful).
+//! 7. `pending_login` — informational, outside the cascade and `all_ok`:
+//!    whether a two-step `auth login --user --remote` is waiting for its code.
 //!
 //! Checks cascade: if `app_config` fails, the remaining checks are marked
 //! `skipped` (no credentials to load). If `credentials` fails, `api`,
@@ -95,6 +97,7 @@ pub fn run_doctor() -> Result<(Value, bool), CliError> {
         "oauth_scopes": oauth_scopes_check,
         "service_user": service_user_check,
         "projects": projects_check,
+        "pending_login": check_pending_login(&config_dir, atlassian_auth::now_unix()),
     });
 
     Ok((report, all_ok))
@@ -345,6 +348,29 @@ fn granted_permission_keys(response: &Value) -> Vec<String> {
         .collect()
 }
 
+/// Informational: a two-step (`--remote`) login waiting for its code. Never
+/// affects `all_ok` (an idle CLI has none, and that is fine).
+pub(crate) fn check_pending_login(config_dir: &std::path::Path, now: u64) -> Value {
+    match oauth_user_login::pending_login_status(&auth::pending_login_path(config_dir), now) {
+        Ok(None) => json!({"status": "none"}),
+        Ok(Some(status)) => json!({
+            "status": "pending",
+            "expires_at": oauth_user_login::rfc3339_utc(status.expires_at),
+            "expired": status.expired,
+        }),
+        Err(e) => json!({
+            "status": "error",
+            "message": format!(
+                "{e}. Start a new remote login with: jira auth login --user --remote --redirect-uri <redirect-uri>"
+            ),
+        }),
+    }
+}
+
 fn skipped(reason: &str) -> Value {
     json!({"status": "skipped", "reason": reason})
 }
+
+#[cfg(test)]
+#[path = "../tests/commands/doctor_tests.rs"]
+mod tests;

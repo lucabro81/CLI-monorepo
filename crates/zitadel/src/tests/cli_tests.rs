@@ -21,7 +21,9 @@ fn parses_auth_login() {
 
     assert!(matches!(
         cli.command,
-        Command::Auth { command: AuthCommand::Login { user: false } }
+        Command::Auth {
+            command: AuthCommand::Login { user: false, remote: false, redirect_uri: None, code: None, state: None }
+        }
     ));
 }
 
@@ -31,8 +33,73 @@ fn parses_auth_login_user() {
 
     assert!(matches!(
         cli.command,
-        Command::Auth { command: AuthCommand::Login { user: true } }
+        Command::Auth {
+            command: AuthCommand::Login { user: true, remote: false, redirect_uri: None, code: None, state: None }
+        }
     ));
+}
+
+#[test]
+fn parses_auth_login_remote_start() {
+    let cli = parse(&["auth", "login", "--user", "--remote", "--redirect-uri", "https://m.example/cb"]).unwrap();
+
+    match cli.command {
+        Command::Auth { command: AuthCommand::Login { user, remote, redirect_uri, code, state } } => {
+            assert!(user && remote);
+            assert_eq!(redirect_uri.as_deref(), Some("https://m.example/cb"));
+            assert_eq!((code, state), (None, None));
+        }
+        other => panic!("got {other:?}"),
+    }
+}
+
+#[test]
+fn parses_auth_login_remote_complete() {
+    let cli = parse(&["auth", "login", "--user", "--code", "c1", "--state", "s1"]).unwrap();
+
+    match cli.command {
+        Command::Auth { command: AuthCommand::Login { user, remote, redirect_uri, code, state } } => {
+            assert!(user && !remote);
+            assert_eq!(redirect_uri, None);
+            assert_eq!((code.as_deref(), state.as_deref()), (Some("c1"), Some("s1")));
+        }
+        other => panic!("got {other:?}"),
+    }
+}
+
+#[test]
+fn remote_requires_user_and_redirect_uri() {
+    assert_eq!(
+        error_kind(&["auth", "login", "--remote", "--redirect-uri", "https://m.example/cb"]),
+        ErrorKind::MissingRequiredArgument
+    );
+    assert_eq!(error_kind(&["auth", "login", "--user", "--remote"]), ErrorKind::MissingRequiredArgument);
+}
+
+#[test]
+fn redirect_uri_requires_remote() {
+    assert_eq!(
+        error_kind(&["auth", "login", "--user", "--redirect-uri", "https://m.example/cb"]),
+        ErrorKind::MissingRequiredArgument
+    );
+}
+
+#[test]
+fn code_requires_user_and_state_and_state_requires_code() {
+    assert_eq!(error_kind(&["auth", "login", "--code", "c1", "--state", "s1"]), ErrorKind::MissingRequiredArgument);
+    assert_eq!(error_kind(&["auth", "login", "--user", "--code", "c1"]), ErrorKind::MissingRequiredArgument);
+    assert_eq!(error_kind(&["auth", "login", "--user", "--state", "s1"]), ErrorKind::MissingRequiredArgument);
+}
+
+#[test]
+fn remote_start_and_completion_cannot_be_combined() {
+    assert_eq!(
+        error_kind(&[
+            "auth", "login", "--user", "--remote", "--redirect-uri", "https://m.example/cb", "--code", "c1",
+            "--state", "s1",
+        ]),
+        ErrorKind::ArgumentConflict
+    );
 }
 
 #[test]

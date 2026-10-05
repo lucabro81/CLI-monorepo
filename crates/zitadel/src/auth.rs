@@ -139,6 +139,12 @@ pub fn credentials_path(config_dir: &Path) -> PathBuf {
     config_dir.join("zitadel-cli").join("credentials.json")
 }
 
+/// `<config_dir>/zitadel-cli/pending-login.json`, the state between the two
+/// steps of `auth login --user --remote`.
+pub fn pending_login_path(config_dir: &Path) -> PathBuf {
+    config_dir.join("zitadel-cli").join("pending-login.json")
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum LoginError {
     #[error("I/O error: {0}")]
@@ -167,6 +173,8 @@ pub enum LoginError {
     CallbackListener(oauth_user_login::ListenerError),
     #[error("{0}")]
     Callback(oauth_user_login::WaitError),
+    #[error("{0}")]
+    PendingLogin(oauth_user_login::PendingLoginError),
     #[error(
         "ZITADEL issued no refresh token, so the session could not be renewed. In the console enable \
         \"Refresh Token\" in the Native application's token settings, then run: zitadel auth login --user"
@@ -289,7 +297,12 @@ pub fn login_user(config: &AppConfig) -> Result<Credentials, LoginError> {
     let verifier = oauth_user_login::generate_code_verifier();
     let state = oauth_user_login::generate_state();
     // Fails on a missing client_id before anything is opened or bound.
-    let url = authorization_url(config, &oauth_user_login::code_challenge(&verifier), &state)?;
+    let url = authorization_url(
+        config,
+        &oauth_user_login::code_challenge(&verifier),
+        &state,
+        endpoints::REDIRECT_URI,
+    )?;
     let listener = oauth_user_login::bind_listener(endpoints::CALLBACK_LISTEN_ADDR)
         .map_err(LoginError::CallbackListener)?;
 
@@ -298,18 +311,59 @@ pub fn login_user(config: &AppConfig) -> Result<Credentials, LoginError> {
 
     let params = oauth_user_login::wait_for_callback(&listener, endpoints::CALLBACK_PATH, &state)
         .map_err(LoginError::Callback)?;
-    exchange_code(config, &params.code, &verifier)
+    exchange_code(config, &params.code, &verifier, endpoints::REDIRECT_URI)
+}
+
+/// Step 1 of the two-step (`--remote`) login: saves a pending login at `path`
+/// and returns the authorize URL to hand to the person. No browser, no port.
+pub fn start_remote_login(
+    config: &AppConfig,
+    redirect_uri: &str,
+    path: &Path,
+    now: u64,
+) -> Result<(String, oauth_user_login::PendingLogin), LoginError> {
+    let pending = oauth_user_login::PendingLogin::new(Some(redirect_uri), true, now);
+    let challenge = pending
+        .code_challenge()
+        .ok_or_else(|| LoginError::Internal("a PKCE pending login has no verifier".to_string()))?;
+    // Fails on a missing client_id before anything is saved.
+    let url = authorization_url(config, &challenge, &pending.state, redirect_uri)?;
+    pending.save(path).map_err(LoginError::PendingLogin)?;
+    Ok((url, pending))
+}
+
+/// Step 2: takes the pending login for `state` (single-use) and exchanges
+/// `code` with its stored verifier and redirect URI.
+pub fn complete_remote_login(
+    config: &AppConfig,
+    path: &Path,
+    code: &str,
+    state: &str,
+    now: u64,
+) -> Result<Credentials, LoginError> {
+    let pending =
+        oauth_user_login::take_pending_login(path, state, now).map_err(LoginError::PendingLogin)?;
+    let verifier = pending
+        .code_verifier
+        .as_deref()
+        .ok_or_else(|| LoginError::Internal("the pending login has no PKCE verifier".to_string()))?;
+    let redirect_uri = pending
+        .redirect_uri
+        .as_deref()
+        .ok_or_else(|| LoginError::Internal("the pending login has no redirect URI".to_string()))?;
+    exchange_code(config, code, verifier, redirect_uri)
 }
 
 pub(crate) fn authorization_url(
     config: &AppConfig,
     code_challenge: &str,
     state: &str,
+    redirect_uri: &str,
 ) -> Result<String, LoginError> {
     let client_id = config.client_id.as_deref().ok_or(LoginError::NativeAppNotConfigured)?;
     let params = [
         ("client_id", client_id),
-        ("redirect_uri", endpoints::REDIRECT_URI),
+        ("redirect_uri", redirect_uri),
         ("response_type", "code"),
         ("scope", endpoints::USER_SCOPES),
         ("state", state),
@@ -325,12 +379,13 @@ pub(crate) fn exchange_code(
     config: &AppConfig,
     code: &str,
     code_verifier: &str,
+    redirect_uri: &str,
 ) -> Result<Credentials, LoginError> {
     let client_id = config.client_id.as_deref().ok_or(LoginError::NativeAppNotConfigured)?;
     let pairs = [
         ("grant_type", "authorization_code"),
         ("code", code),
-        ("redirect_uri", endpoints::REDIRECT_URI),
+        ("redirect_uri", redirect_uri),
         ("client_id", client_id),
         ("code_verifier", code_verifier),
     ];
@@ -427,7 +482,7 @@ pub fn save_credentials(path: &Path, credentials: &Credentials) -> Result<(), Lo
         .map_err(write_failed)
 }
 
-fn now_unix() -> u64 {
+pub(crate) fn now_unix() -> u64 {
     // A pre-epoch clock (never on a real machine) yields 0, which only makes the
     // token look expired and triggers a renewal — safe, and avoids a panic.
     std::time::SystemTime::now()

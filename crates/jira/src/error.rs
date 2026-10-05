@@ -51,6 +51,12 @@ pub enum CliError {
     LoginFailed { reason: String },
 
     #[error(
+        "remote login failed: {reason}. Start a new remote login with: jira auth login --user \
+        --remote --redirect-uri <redirect-uri>"
+    )]
+    RemoteLoginFailed { reason: String },
+
+    #[error(
         "failed to save credentials to {path}: {reason}. \
         Check that the directory exists and is writable."
     )]

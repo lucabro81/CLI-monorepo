@@ -66,6 +66,11 @@ pub fn credentials_path(config_dir: &Path) -> PathBuf {
     config_dir.join("bitbucket-cli").join("credentials.json")
 }
 
+/// Path to the pending remote login: `<config_dir>/bitbucket-cli/pending-login.json`.
+pub fn pending_login_path(config_dir: &Path) -> PathBuf {
+    config_dir.join("bitbucket-cli").join("pending-login.json")
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum OAuthConfigError {
     NotFound(PathBuf),
@@ -95,6 +100,8 @@ pub enum LoginError {
     CallbackListener(oauth_user_login::ListenerError),
     #[error("{0}: bitbucket auth login --user")]
     Callback(oauth_user_login::WaitError),
+    #[error("{0}")]
+    PendingLogin(oauth_user_login::PendingLoginError),
     /// A condition that should be unreachable given valid inputs.
     /// If this surfaces it indicates a bug in the CLI itself.
     #[error("internal error: {0}")]
@@ -137,7 +144,7 @@ pub struct Credentials {
     pub refresh_token: Option<String>,
 }
 
-fn now_unix() -> u64 {
+pub(crate) fn now_unix() -> u64 {
     // Fallback to 0 if the system clock predates the Unix epoch (should never happen
     // on a real machine, but avoids a panic — a 0 timestamp causes the token to be
     // treated as expired and renewed on the next call, which is safe behavior).
@@ -147,11 +154,23 @@ fn now_unix() -> u64 {
         .as_secs()
 }
 
-/// Parses a token endpoint's response body into a `TokenResponse`. On failure,
-/// the raw body is included in the error so an unexpected response shape
-/// (e.g. an unfamiliar field name) is self-diagnosing without a manual request.
+/// Parses a token endpoint's response body into a `TokenResponse`. On failure
+/// the error names the fields that arrived, so an unexpected response shape
+/// (e.g. an unfamiliar field name) is self-diagnosing — but never their values,
+/// which may be tokens.
 fn parse_token_response(text: &str) -> Result<TokenResponse, LoginError> {
-    serde_json::from_str(text).map_err(|e| LoginError::TokenExchange(format!("{e}: {text}")))
+    serde_json::from_str(text).map_err(|e| {
+        let shape = match serde_json::from_str::<serde_json::Value>(text) {
+            Ok(serde_json::Value::Object(fields)) => {
+                let mut names: Vec<&str> = fields.keys().map(String::as_str).collect();
+                names.sort_unstable();
+                format!("response fields: {}", names.join(", "))
+            }
+            Ok(_) => "response was JSON but not an object".to_string(),
+            Err(_) => format!("response was not JSON ({} bytes)", text.len()),
+        };
+        LoginError::TokenExchange(format!("{e}; {shape}"))
+    })
 }
 
 /// Builds `Credentials` from a token response received at `now`. If the
@@ -173,8 +192,16 @@ fn credentials_from_token(
 /// POSTs `form` to the token endpoint (HTTP Basic auth with the consumer's
 /// credentials) and parses the response.
 fn request_token(config: &OAuthConfig, form: &[(&str, String)]) -> Result<TokenResponse, LoginError> {
+    request_token_at(endpoints::BITBUCKET_TOKEN_URL, config, form)
+}
+
+fn request_token_at(
+    url: &str,
+    config: &OAuthConfig,
+    form: &[(&str, String)],
+) -> Result<TokenResponse, LoginError> {
     let response = reqwest::blocking::Client::new()
-        .post(endpoints::BITBUCKET_TOKEN_URL)
+        .post(url)
         .basic_auth(&config.client_id, Some(&config.client_secret))
         .form(form)
         .send()
@@ -219,6 +246,46 @@ pub fn login(config: &OAuthConfig) -> Result<Credentials, LoginError> {
 
     let token = request_token(config, &authorization_code_form(&params.code))?;
     Ok(credentials_from_token(token, now_unix(), None))
+}
+
+/// Step 1 of the two-step (`--remote`) login: saves a pending login (state
+/// only: Bitbucket has no PKCE and no `redirect_uri`, it always redirects to
+/// the consumer's callback URL) and returns the consent URL. No browser, no port.
+pub fn start_remote_login(
+    config: &OAuthConfig,
+    path: &Path,
+    now: u64,
+) -> Result<(String, oauth_user_login::PendingLogin), LoginError> {
+    let pending = oauth_user_login::PendingLogin::new(None, false, now);
+    let url = authorization_url(config, &pending.state)?;
+    pending.save(path).map_err(LoginError::PendingLogin)?;
+    Ok((url, pending))
+}
+
+/// Step 2: takes the pending login for `state` (single-use) and exchanges `code`.
+pub fn complete_remote_login(
+    config: &OAuthConfig,
+    path: &Path,
+    code: &str,
+    state: &str,
+    now: u64,
+) -> Result<Credentials, LoginError> {
+    complete_remote_login_at(config, path, code, state, now, endpoints::BITBUCKET_TOKEN_URL)
+}
+
+/// [`complete_remote_login`] against an explicit token endpoint, so tests can
+/// point it at a local server.
+pub(crate) fn complete_remote_login_at(
+    config: &OAuthConfig,
+    path: &Path,
+    code: &str,
+    state: &str,
+    now: u64,
+    token_url: &str,
+) -> Result<Credentials, LoginError> {
+    oauth_user_login::take_pending_login(path, state, now).map_err(LoginError::PendingLogin)?;
+    let token = request_token_at(token_url, config, &authorization_code_form(code))?;
+    Ok(credentials_from_token(token, now, None))
 }
 
 /// Builds Bitbucket's authorization URL the user must open in a browser.

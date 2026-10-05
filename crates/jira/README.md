@@ -135,6 +135,16 @@ The standard flow for apps that can't keep a secret fully safe (a CLI binary on 
 4. **Cloud ID resolution** — Jira's OAuth API is accessed through `https://api.atlassian.com/ex/jira/<cloud_id>/...`, not the site's own URL. The CLI calls `https://api.atlassian.com/oauth/token/accessible-resources` with the new access token to discover the `cloud_id` of the authorized site.
 5. **Persisting credentials** — `access_token`, `refresh_token`, `expires_at` (unix timestamp), and `cloud_id` are written to `credentials.json`.
 
+### Remote login, in two steps — `jira auth login --user --remote`
+
+The same 3LO grant for a person who is not at the CLI's machine (the CLI runs on a server, the person is in a chat or a web page). Nothing opens a browser or listens on a port; whoever runs the CLI carries the link to the person and the code back. Needs a 3LO app (Option B): a Service Account credential can't do a user login at all.
+
+1. `jira auth login --user --remote --redirect-uri <url>` stores a pending login (`state`, PKCE verifier, redirect URI; `pending-login.json`, mode `0600`) and prints `{"authorize_url", "state", "expires_at"}`. `<url>` must be one of the 3LO app's callback URLs (the console's Callback URL field takes one per line).
+2. The person opens `authorize_url`, picks the site and accepts; Atlassian redirects them to `<url>?code=...&state=...`.
+3. `jira auth login --user --code <code> --state <state>` checks the state and the expiry, exchanges the code with the stored verifier and redirect URI, resolves the `cloud_id`, saves `credentials.json`, and prints what `auth whoami` prints.
+
+A pending login is valid for 10 minutes and its state is single-use (consumed even if Atlassian then refuses the code). A new step 1 replaces the previous pending login. Everything lives in the config folder the CLI resolves, so pointing `XDG_CONFIG_HOME` at one folder per person keeps people's logins apart. `jira doctor` shows a pending login under `pending_login`. For other people to log in, the 3LO app must have sharing enabled (developer console → Distribution).
+
 ### Automatic renewal
 
 Before each API call, the CLI checks whether the access token is expired (or about to expire within 60s). How it renews depends on whether the stored credentials have a `refresh_token`:
@@ -168,11 +178,13 @@ The `permissions` check reports `BROWSE_PROJECTS`, `CREATE_ISSUES`, `EDIT_ISSUES
 
 ### `jira auth login`
 
-Stores credentials locally. By default runs the non-interactive `client_credentials` flow (service account) — no browser, no human interaction. Pass `--user` for the interactive OAuth 2.0 (3LO) + PKCE flow for a human Atlassian account.
+Stores credentials locally. By default runs the non-interactive `client_credentials` flow (service account) — no browser, no human interaction. Pass `--user` for the interactive OAuth 2.0 (3LO) + PKCE flow for a human Atlassian account, or `--user --remote` for the [two-step remote login](#remote-login-in-two-steps--jira-auth-login---user---remote) (step 1 prints `{authorize_url, state, expires_at}`, step 2 prints the `auth whoami` output).
 
 ```sh
 cargo run -p jira -- auth login              # service account (client_credentials)
 cargo run -p jira -- auth login --user       # human account (OAuth 2.0 3LO + PKCE)
+cargo run -p jira -- auth login --user --remote --redirect-uri https://app.example.com/oauth/callback   # step 1
+cargo run -p jira -- auth login --user --code <CODE> --state <STATE>                                   # step 2
 ```
 
 Run this once per machine, or again if `credentials.json` is lost or revoked. If `app.json` holds a 3LO app's credentials (Setup Option B), the `--user` flow must have been completed at least once (e.g. via `jira init`) before the default flow can succeed. If `app.json` holds Service Account credentials (Setup Option A), the default flow works immediately — no prior `--user` run needed or possible.

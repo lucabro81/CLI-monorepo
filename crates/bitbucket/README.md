@@ -121,11 +121,16 @@ Stores credentials locally. Two modes, same credentials file (the last login dec
 
 - default — non-interactive `client_credentials` flow, no browser. Every action is attributed to the **OAuth app** (bot identity): the mode for agents.
 - `--user` — interactive `authorization_code` flow: opens the browser on Bitbucket's consent page, receives the callback on `localhost:8080`, stores a refresh token. Every action is attributed to **your own account**. Requires the consumer's callback URL to be `http://localhost:8080/callback`.
+- `--user --remote`, then `--user --code <code> --state <state>` — the same `authorization_code` flow in two steps, for a person who is not at the CLI's machine (the CLI on a server, the person in a chat or a web page). Step 1 opens no browser and listens on no port: it stores a pending login (`state` only; `pending-login.json`, mode `0600`) and prints `{"authorize_url", "state", "expires_at"}`. The person opens `authorize_url` and grants access; Bitbucket redirects them to the consumer's callback URL with `code` and `state`. Step 2 checks the state and the expiry, exchanges the code, saves `credentials.json`, and prints what `auth whoami` prints. A pending login is valid for 10 minutes and its state is single-use.
 
 ```sh
 cargo run -p bitbucket -- auth login
 cargo run -p bitbucket -- auth login --user
+cargo run -p bitbucket -- auth login --user --remote                          # step 1
+cargo run -p bitbucket -- auth login --user --code <CODE> --state <STATE>     # step 2
 ```
+
+**Bitbucket has no `redirect_uri` parameter**: the person is always sent back to the consumer's single callback URL. So for remote logins through a service (e.g. one that receives the redirect at `https://service.example.com/oauth/callback`), use a separate OAuth consumer whose callback URL is that endpoint, with its own config folder (`XDG_CONFIG_HOME`) — the `localhost:8080` consumer stays for local `--user` logins. `doctor` shows a pending login under `pending_login`.
 
 Run this once per machine, again if `credentials.json` is lost or revoked, or to switch identity. `doctor` reports the active one as `credentials.identity` (`app` or `user`).
 

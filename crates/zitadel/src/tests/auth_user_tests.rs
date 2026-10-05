@@ -8,8 +8,8 @@ use std::collections::HashMap;
 use oauth_user_login::{WaitError, bind_listener};
 
 use super::{
-    AppConfig, Credentials, LoginError, authorization_url, exchange_code, load_credentials,
-    refresh, save_credentials,
+    AppConfig, Credentials, LoginError, authorization_url, complete_remote_login, exchange_code,
+    load_credentials, pending_login_path, refresh, save_credentials, start_remote_login,
 };
 use crate::test_support::one_shot_server;
 
@@ -29,7 +29,7 @@ fn form(request: &str) -> HashMap<String, String> {
 
 #[test]
 fn authorization_url_carries_pkce_scopes_and_redirect() {
-    let url = authorization_url(&native_config("https://acme.zitadel.cloud"), "chal", "st").unwrap();
+    let url = authorization_url(&native_config("https://acme.zitadel.cloud"), "chal", "st", "http://localhost:8080/callback").unwrap();
 
     let (base, query) = url.split_once('?').unwrap();
     assert_eq!(base, "https://acme.zitadel.cloud/oauth/v2/authorize");
@@ -56,7 +56,7 @@ fn authorization_url_carries_pkce_scopes_and_redirect() {
 fn authorization_url_without_client_id_points_to_init() {
     let config = AppConfig { client_id: None, ..native_config("https://acme.zitadel.cloud") };
 
-    let err = authorization_url(&config, "c", "s").unwrap_err();
+    let err = authorization_url(&config, "c", "s", "http://localhost:8080/callback").unwrap_err();
 
     assert!(matches!(err, LoginError::NativeAppNotConfigured), "got {err:?}");
     assert_eq!(
@@ -99,7 +99,7 @@ fn exchange_code_posts_pkce_form_and_keeps_refresh_token() {
         r#"{"access_token":"at","refresh_token":"rt","expires_in":43199,"token_type":"Bearer"}"#,
     );
 
-    let creds = exchange_code(&native_config(&url), "code-1", "verifier-1").unwrap();
+    let creds = exchange_code(&native_config(&url), "code-1", "verifier-1", "http://localhost:8080/callback").unwrap();
 
     let request = server.join().unwrap();
     assert!(request.starts_with("POST /oauth/v2/token "), "got {request}");
@@ -122,7 +122,7 @@ fn exchange_without_refresh_token_explains_how_to_enable_it() {
     let (url, server) =
         one_shot_server("200 OK", r#"{"access_token":"at","expires_in":43199,"token_type":"Bearer"}"#);
 
-    let err = exchange_code(&native_config(&url), "c", "v").unwrap_err();
+    let err = exchange_code(&native_config(&url), "c", "v", "http://localhost:8080/callback").unwrap_err();
     server.join().unwrap();
 
     assert!(matches!(err, LoginError::NoRefreshToken), "got {err:?}");
@@ -198,4 +198,111 @@ fn redirect_uri_points_at_the_callback_listener() {
     let port = crate::endpoints::CALLBACK_LISTEN_ADDR.rsplit_once(':').unwrap().1;
 
     assert_eq!(crate::endpoints::REDIRECT_URI, format!("http://localhost:{port}{}", crate::endpoints::CALLBACK_PATH));
+}
+
+// ── remote (two-step) login ───────────────────────────────────────────────
+
+const REMOTE_URI: &str = "https://mercury.example.com/oauth/callback";
+const NOW: u64 = 1_800_000_000;
+
+fn query(url: &str) -> HashMap<String, String> {
+    serde_urlencoded::from_str(url.split_once('?').unwrap().1).unwrap()
+}
+
+#[test]
+fn pending_login_lives_next_to_the_credentials() {
+    assert_eq!(
+        pending_login_path(std::path::Path::new("/cfg")),
+        std::path::PathBuf::from("/cfg/zitadel-cli/pending-login.json")
+    );
+}
+
+#[test]
+fn remote_start_saves_a_pending_login_and_builds_its_authorize_url() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("pending-login.json");
+
+    let (url, pending) =
+        start_remote_login(&native_config("https://acme.zitadel.cloud"), REMOTE_URI, &path, NOW).unwrap();
+
+    let params = query(&url);
+    assert!(url.starts_with("https://acme.zitadel.cloud/oauth/v2/authorize?"), "got {url}");
+    assert_eq!(params["redirect_uri"], REMOTE_URI);
+    assert_eq!(params["state"], pending.state);
+    assert_eq!(params["code_challenge"], pending.code_challenge().unwrap());
+    assert_eq!(params["code_challenge_method"], "S256");
+    assert_eq!(pending.redirect_uri.as_deref(), Some(REMOTE_URI));
+    assert_eq!(pending.expires_at, NOW + 600);
+    let on_disk: oauth_user_login::PendingLogin =
+        serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    assert_eq!(on_disk, pending);
+}
+
+#[test]
+fn remote_start_without_a_native_app_saves_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("pending-login.json");
+    let config = AppConfig { client_id: None, ..native_config("https://acme.zitadel.cloud") };
+
+    let err = start_remote_login(&config, REMOTE_URI, &path, NOW).unwrap_err();
+
+    assert!(matches!(err, LoginError::NativeAppNotConfigured), "got {err:?}");
+    assert!(!path.exists());
+}
+
+#[test]
+fn remote_complete_exchanges_the_code_with_the_stored_verifier_and_redirect() {
+    let (url, server) = one_shot_server(
+        "200 OK",
+        r#"{"access_token":"at","refresh_token":"rt","expires_in":43199,"token_type":"Bearer"}"#,
+    );
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("pending-login.json");
+    let (_, pending) = start_remote_login(&native_config(&url), REMOTE_URI, &path, NOW).unwrap();
+
+    let creds = complete_remote_login(&native_config(&url), &path, "code-9", &pending.state, NOW + 30).unwrap();
+
+    assert_eq!(
+        form(&server.join().unwrap()),
+        HashMap::from([
+            ("grant_type".to_string(), "authorization_code".to_string()),
+            ("code".to_string(), "code-9".to_string()),
+            ("redirect_uri".to_string(), REMOTE_URI.to_string()),
+            ("client_id".to_string(), "123@zitadel-cli".to_string()),
+            ("code_verifier".to_string(), pending.code_verifier.clone().unwrap()),
+        ])
+    );
+    assert_eq!(creds.refresh_token.as_deref(), Some("rt"));
+    assert!(!path.exists(), "the pending login must be consumed");
+}
+
+#[test]
+fn remote_complete_with_a_wrong_state_makes_no_token_request() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("pending-login.json");
+    // An unroutable instance: any token request would fail differently.
+    let config = native_config("http://127.0.0.1:9");
+    start_remote_login(&config, REMOTE_URI, &path, NOW).unwrap();
+
+    let err = complete_remote_login(&config, &path, "c", "stale", NOW).unwrap_err();
+
+    assert!(
+        matches!(err, LoginError::PendingLogin(oauth_user_login::PendingLoginError::StateMismatch)),
+        "got {err:?}"
+    );
+    assert!(path.exists());
+}
+
+#[test]
+fn remote_complete_consumes_the_state_even_when_the_provider_refuses_the_code() {
+    let (url, server) = one_shot_server("400 Bad Request", r#"{"error":"invalid_grant"}"#);
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("pending-login.json");
+    let (_, pending) = start_remote_login(&native_config(&url), REMOTE_URI, &path, NOW).unwrap();
+
+    let err = complete_remote_login(&native_config(&url), &path, "used", &pending.state, NOW).unwrap_err();
+    server.join().unwrap();
+
+    assert!(matches!(err, LoginError::TokenExchange(_)), "got {err:?}");
+    assert!(!path.exists());
 }

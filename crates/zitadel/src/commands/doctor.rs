@@ -11,6 +11,9 @@
 //!    organization / project / project grant. ZITADEL authorizes by these roles,
 //!    so they decide which commands will succeed; none at all is an error.
 //!
+//! 5. `pending_login` — informational, outside the cascade and `all_ok`: whether a
+//!    two-step `auth login --user --remote` is waiting for its code, and until when.
+//!
 //! Checks cascade: a failed check marks every later check `skipped`. Failures
 //! never surface as `Err` — they are captured in the report, and the caller
 //! exits non-zero based on the returned `all_ok`. Also called by `init`.
@@ -53,8 +56,28 @@ pub(crate) fn run_doctor_in(config_dir: &Path) -> (Value, bool) {
         "credentials": creds_check,
         "api": identity_check,
         "memberships": memberships_check,
+        "pending_login": check_pending_login(config_dir, auth::now_unix()),
     });
     (report, all_ok)
+}
+
+/// Informational: a two-step (`--remote`) login waiting for its code. Never
+/// affects `all_ok` (an idle CLI has none, and that is fine).
+pub(crate) fn check_pending_login(config_dir: &Path, now: u64) -> Value {
+    match oauth_user_login::pending_login_status(&auth::pending_login_path(config_dir), now) {
+        Ok(None) => json!({"status": "none"}),
+        Ok(Some(status)) => json!({
+            "status": "pending",
+            "expires_at": oauth_user_login::rfc3339_utc(status.expires_at),
+            "expired": status.expired,
+        }),
+        Err(e) => json!({
+            "status": "error",
+            "message": format!(
+                "{e}. Start a new remote login with: zitadel auth login --user --remote --redirect-uri <redirect-uri>"
+            ),
+        }),
+    }
 }
 
 fn skipped(reason: &str) -> Value {

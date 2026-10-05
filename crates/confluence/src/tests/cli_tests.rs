@@ -10,23 +10,77 @@ fn parses_auth_login() {
 
     match cli.command {
         Command::Auth {
-            command: AuthCommand::Login { user },
-        } => assert!(!user, "default should be service account (client_credentials)"),
+            command: AuthCommand::Login { user, remote, redirect_uri, code, state },
+        } => {
+            assert!(!user, "default should be service account (client_credentials)");
+            assert!(!remote);
+            assert_eq!((redirect_uri, code, state), (None, None, None));
+        }
         other => panic!("unexpected command: {other:?}"),
     }
 }
 
 #[test]
 fn parses_auth_login_with_user_flag() {
-    let cli =
-        Cli::try_parse_from(["confluence", "auth", "login", "--user"]).expect("should parse");
+    let cli = Cli::try_parse_from(["confluence", "auth", "login", "--user"]).expect("should parse");
 
     match cli.command {
         Command::Auth {
-            command: AuthCommand::Login { user },
-        } => assert!(user, "--user should select the interactive 3LO flow"),
+            command: AuthCommand::Login { user, remote, .. },
+        } => assert!(user && !remote, "--user should select the interactive 3LO flow"),
         other => panic!("unexpected command: {other:?}"),
     }
+}
+
+fn login_error_kind(args: &[&str]) -> clap::error::ErrorKind {
+    Cli::try_parse_from(["confluence", "auth", "login"].iter().chain(args)).unwrap_err().kind()
+}
+
+#[test]
+fn parses_auth_login_remote_start() {
+    let cli = Cli::try_parse_from([
+        "confluence", "auth", "login", "--user", "--remote", "--redirect-uri", "https://m.example/cb",
+    ])
+    .expect("should parse");
+
+    match cli.command {
+        Command::Auth { command: AuthCommand::Login { user, remote, redirect_uri, code, state } } => {
+            assert!(user && remote);
+            assert_eq!(redirect_uri.as_deref(), Some("https://m.example/cb"));
+            assert_eq!((code, state), (None, None));
+        }
+        other => panic!("unexpected command: {other:?}"),
+    }
+}
+
+#[test]
+fn parses_auth_login_remote_complete() {
+    let cli = Cli::try_parse_from(["confluence", "auth", "login", "--user", "--code", "c1", "--state", "s1"])
+        .expect("should parse");
+
+    match cli.command {
+        Command::Auth { command: AuthCommand::Login { user, remote, redirect_uri, code, state } } => {
+            assert!(user && !remote);
+            assert_eq!(redirect_uri, None);
+            assert_eq!((code.as_deref(), state.as_deref()), (Some("c1"), Some("s1")));
+        }
+        other => panic!("unexpected command: {other:?}"),
+    }
+}
+
+#[test]
+fn auth_login_remote_flag_combinations_are_enforced() {
+    use clap::error::ErrorKind::{ArgumentConflict, MissingRequiredArgument};
+    assert_eq!(login_error_kind(&["--remote", "--redirect-uri", "https://m/cb"]), MissingRequiredArgument);
+    assert_eq!(login_error_kind(&["--user", "--remote"]), MissingRequiredArgument);
+    assert_eq!(login_error_kind(&["--user", "--redirect-uri", "https://m/cb"]), MissingRequiredArgument);
+    assert_eq!(login_error_kind(&["--code", "c", "--state", "s"]), MissingRequiredArgument);
+    assert_eq!(login_error_kind(&["--user", "--code", "c"]), MissingRequiredArgument);
+    assert_eq!(login_error_kind(&["--user", "--state", "s"]), MissingRequiredArgument);
+    assert_eq!(
+        login_error_kind(&["--user", "--remote", "--redirect-uri", "https://m/cb", "--code", "c", "--state", "s"]),
+        ArgumentConflict
+    );
 }
 
 #[test]

@@ -61,7 +61,9 @@ pub enum Command {
     /// api (GET /auth/v1/users/me) and memberships (the administrator roles of the
     /// identity per instance/organization/project — these decide which commands
     /// will succeed). Later checks are skipped when an earlier one fails. Exits
-    /// non-zero unless every check is ok. Always prints the full report regardless
+    /// non-zero unless every check is ok. Also reports
+    /// `pending_login` (a two-step `auth login --user --remote` waiting for its
+    /// code): informational, never counted in the exit code. Always prints the full report regardless
     /// of --select (an explicit --select is still honored).
     #[command(after_help = "Examples:\n  zitadel doctor\n  zitadel doctor --select memberships")]
     Doctor,
@@ -99,11 +101,32 @@ pub enum AuthCommand {
     /// automatically, so this is normally needed once; the last login decides
     /// which identity the CLI acts as. What it may then do is decided by the
     /// ZITADEL administrator roles of that identity (e.g. `IAM_OWNER`, `ORG_OWNER`).
-    #[command(after_help = "Examples:\n  zitadel auth login          # service user (agents)\n  zitadel auth login --user   # yourself, via the browser")]
+    ///
+    /// With --user --remote: a two-step login for a person who is not at this
+    /// machine. Step 1 (--remote --redirect-uri) opens no browser and listens on no
+    /// port: it prints JSON `{authorize_url, state, expires_at}` for the caller to hand
+    /// to the person. The provider then redirects the person to --redirect-uri (it
+    /// must be registered on the Native app) with `code` and `state`. Step 2
+    /// (--code --state) exchanges the code and saves the credentials, then prints
+    /// what `auth whoami` prints. The pending login expires after 10 minutes, its
+    /// state is single-use, and it lives in this config folder (`XDG_CONFIG_HOME`).
+    #[command(after_help = "Examples:\n  zitadel auth login          # service user (agents)\n  zitadel auth login --user   # yourself, via the browser\n  zitadel auth login --user --remote --redirect-uri https://app.example.com/oauth/callback   # step 1\n  zitadel auth login --user --code <CODE> --state <STATE>                                   # step 2")]
     Login {
         /// Log in as a human via the browser instead of as the service user
         #[arg(long)]
         user: bool,
+        /// Step 1 of a two-step login for someone not at this machine: print the authorize URL instead of opening a browser
+        #[arg(long, requires_all = ["user", "redirect_uri"], conflicts_with_all = ["code", "state"])]
+        remote: bool,
+        /// With --remote: where the provider sends the person back; must be registered on the Native app
+        #[arg(long, requires = "remote")]
+        redirect_uri: Option<String>,
+        /// Step 2: the `code` query parameter the provider appended to the redirect URI
+        #[arg(long, requires_all = ["user", "state"])]
+        code: Option<String>,
+        /// Step 2: the `state` query parameter the provider appended to the redirect URI
+        #[arg(long, requires = "code")]
+        state: Option<String>,
     },
     /// Show the identity the CLI is authenticated as
     ///

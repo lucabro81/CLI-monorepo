@@ -83,6 +83,12 @@ pub fn credentials_path(config_dir: &Path, cli_dir: &str) -> PathBuf {
     config_dir.join(cli_dir).join("credentials.json")
 }
 
+/// Path to the state kept between the two steps of a remote login:
+/// `<config_dir>/<cli_dir>/pending-login.json`.
+pub fn pending_login_path(config_dir: &Path, cli_dir: &str) -> PathBuf {
+    config_dir.join(cli_dir).join("pending-login.json")
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum OAuthConfigError {
     NotFound(PathBuf),
@@ -110,10 +116,16 @@ pub enum LoginError {
     CallbackListener(oauth_user_login::ListenerError),
     #[error("{0}")]
     Callback(oauth_user_login::WaitError),
+    #[error("{0}")]
+    PendingLogin(oauth_user_login::PendingLoginError),
     #[error("token exchange failed: {0}")]
     TokenExchange(String),
     #[error("no accessible Atlassian resources found for this account")]
     NoAccessibleResources,
+    /// The accessible-resources call itself failed (network, status, JSON),
+    /// e.g. after a successful code exchange — not a refused code.
+    #[error("could not list the Atlassian sites this account can access ({0}). Retry the login")]
+    AccessibleResources(String),
     /// A condition that should be unreachable given valid inputs.
     /// If this surfaces it indicates a bug in the CLI itself.
     #[error("internal error: {0}")]
@@ -161,19 +173,96 @@ pub fn login(config: &OAuthConfig, scopes: &str) -> Result<Credentials, LoginErr
     let params = oauth_user_login::wait_for_callback(&listener, endpoints::CALLBACK_PATH, &state)
         .map_err(LoginError::Callback)?;
 
-    let token = exchange_code_for_token(config, &params.code, &verifier)?;
-    let resource = fetch_primary_resource(&token.access_token)?;
+    let token = request_token(&authorization_code_body(config, &params.code, &verifier, &config.redirect_uri))?;
+    credentials_from_code_exchange(token)
+}
 
-    Ok(Credentials {
+/// Step 1 of the two-step (`--remote`) login: saves a pending login at `path`
+/// and returns the authorize URL to hand to the person. No browser, no port.
+pub fn start_remote_login(
+    config: &OAuthConfig,
+    scopes: &str,
+    redirect_uri: &str,
+    path: &Path,
+    now: u64,
+) -> Result<(String, oauth_user_login::PendingLogin), LoginError> {
+    let pending = oauth_user_login::PendingLogin::new(Some(redirect_uri), true, now);
+    let challenge = pending
+        .code_challenge()
+        .ok_or_else(|| LoginError::Internal("a PKCE pending login has no verifier".to_string()))?;
+    let remote_config = OAuthConfig {
+        client_id: config.client_id.clone(),
+        client_secret: config.client_secret.clone(),
+        redirect_uri: redirect_uri.to_string(),
+    };
+    let url = authorization_url(&remote_config, &challenge, &pending.state, scopes)?;
+    pending.save(path).map_err(LoginError::PendingLogin)?;
+    Ok((url, pending))
+}
+
+/// Step 2: takes the pending login for `state` (single-use), exchanges `code`
+/// with its stored verifier and redirect URI, and resolves the cloud id.
+pub fn complete_remote_login(
+    config: &OAuthConfig,
+    path: &Path,
+    code: &str,
+    state: &str,
+    now: u64,
+) -> Result<Credentials, LoginError> {
+    complete_remote_login_at(
+        config,
+        path,
+        code,
+        state,
+        now,
+        endpoints::ATLASSIAN_TOKEN_URL,
+        endpoints::ATLASSIAN_ACCESSIBLE_RESOURCES_URL,
+    )
+}
+
+/// [`complete_remote_login`] against explicit endpoints, so tests can point
+/// it at a local server.
+pub(crate) fn complete_remote_login_at(
+    config: &OAuthConfig,
+    path: &Path,
+    code: &str,
+    state: &str,
+    now: u64,
+    token_url: &str,
+    resources_url: &str,
+) -> Result<Credentials, LoginError> {
+    let pending =
+        oauth_user_login::take_pending_login(path, state, now).map_err(LoginError::PendingLogin)?;
+    let verifier = pending
+        .code_verifier
+        .as_deref()
+        .ok_or_else(|| LoginError::Internal("the pending login has no PKCE verifier".to_string()))?;
+    let redirect_uri = pending
+        .redirect_uri
+        .as_deref()
+        .ok_or_else(|| LoginError::Internal("the pending login has no redirect URI".to_string()))?;
+    let token = request_token_at(token_url, &authorization_code_body(config, code, verifier, redirect_uri))?;
+    let resource = first_resource(fetch_accessible_resources_at(resources_url, &token.access_token)?)?;
+    Ok(credentials_from(token, resource))
+}
+
+fn credentials_from_code_exchange(token: TokenResponse) -> Result<Credentials, LoginError> {
+    let resource = fetch_primary_resource(&token.access_token)?;
+    Ok(credentials_from(token, resource))
+}
+
+fn credentials_from(token: TokenResponse, resource: AccessibleResource) -> Credentials {
+    Credentials {
         access_token: token.access_token,
         refresh_token: token.refresh_token,
         expires_at: now_unix() + token.expires_in,
         cloud_id: resource.id,
         site_url: resource.url,
-    })
+    }
 }
 
-fn now_unix() -> u64 {
+/// Current Unix time in seconds (the `now` the remote-login functions take).
+pub fn now_unix() -> u64 {
     // Fallback to 0 if the system clock predates the Unix epoch (should never happen
     // on a real machine, but avoids a panic — a 0 timestamp causes the token to be
     // treated as expired and refreshed on the next call, which is safe behavior).
@@ -183,21 +272,22 @@ fn now_unix() -> u64 {
         .as_secs()
 }
 
-fn exchange_code_for_token(
+/// Body of the authorization-code exchange. `redirect_uri` must be the one
+/// the authorize request used.
+pub(crate) fn authorization_code_body(
     config: &OAuthConfig,
     code: &str,
     code_verifier: &str,
-) -> Result<TokenResponse, LoginError> {
-    let body = serde_json::json!({
+    redirect_uri: &str,
+) -> serde_json::Value {
+    serde_json::json!({
         "grant_type": "authorization_code",
         "client_id": config.client_id,
         "client_secret": config.client_secret,
         "code": code,
-        "redirect_uri": config.redirect_uri,
+        "redirect_uri": redirect_uri,
         "code_verifier": code_verifier,
-    });
-
-    request_token(&body)
+    })
 }
 
 /// Exchanges a refresh token for a new access/refresh token pair.
@@ -260,8 +350,12 @@ pub fn login_client_credentials(config: &OAuthConfig) -> Result<Credentials, Log
 }
 
 fn request_token(body: &serde_json::Value) -> Result<TokenResponse, LoginError> {
+    request_token_at(endpoints::ATLASSIAN_TOKEN_URL, body)
+}
+
+fn request_token_at(url: &str, body: &serde_json::Value) -> Result<TokenResponse, LoginError> {
     let response = reqwest::blocking::Client::new()
-        .post(endpoints::ATLASSIAN_TOKEN_URL)
+        .post(url)
         .json(body)
         .send()
         .map_err(|e| LoginError::TokenExchange(e.to_string()))?;
@@ -278,21 +372,31 @@ fn request_token(body: &serde_json::Value) -> Result<TokenResponse, LoginError> 
 }
 
 fn fetch_accessible_resources(access_token: &str) -> Result<Vec<AccessibleResource>, LoginError> {
-    reqwest::blocking::Client::new()
-        .get(endpoints::ATLASSIAN_ACCESSIBLE_RESOURCES_URL)
+    fetch_accessible_resources_at(endpoints::ATLASSIAN_ACCESSIBLE_RESOURCES_URL, access_token)
+}
+
+fn fetch_accessible_resources_at(url: &str, access_token: &str) -> Result<Vec<AccessibleResource>, LoginError> {
+    let failed = |e: reqwest::Error| LoginError::AccessibleResources(e.to_string());
+    let response = reqwest::blocking::Client::new()
+        .get(url)
         .bearer_auth(access_token)
         .header("Accept", "application/json")
         .send()
-        .map_err(|e| LoginError::TokenExchange(e.to_string()))?
-        .json()
-        .map_err(|e| LoginError::TokenExchange(e.to_string()))
+        .map_err(failed)?;
+    let status = response.status();
+    if !status.is_success() {
+        let text = response.text().unwrap_or_default();
+        return Err(LoginError::AccessibleResources(format!("{status}: {text}")));
+    }
+    response.json().map_err(failed)
+}
+
+fn first_resource(resources: Vec<AccessibleResource>) -> Result<AccessibleResource, LoginError> {
+    resources.into_iter().next().ok_or(LoginError::NoAccessibleResources)
 }
 
 fn fetch_primary_resource(access_token: &str) -> Result<AccessibleResource, LoginError> {
-    fetch_accessible_resources(access_token)?
-        .into_iter()
-        .next()
-        .ok_or(LoginError::NoAccessibleResources)
+    first_resource(fetch_accessible_resources(access_token)?)
 }
 
 /// Fetches the OAuth scopes granted to `access_token` for the resource matching

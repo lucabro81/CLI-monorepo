@@ -61,7 +61,9 @@ fn run() -> Result<(), CliError> {
             }
             Ok(())
         }
-        Command::Auth { command: AuthCommand::Login { user } } => commands::auth::run_login(user),
+        Command::Auth { command: AuthCommand::Login { user, remote: _, redirect_uri, code, state } } => {
+            commands::auth::run_login(commands::auth::LoginMode::from_flags(user, redirect_uri, code, state), select)
+        }
         Command::Auth { command: AuthCommand::Whoami } => commands::auth::run_whoami(select),
         Command::Issue { command } => commands::issue::run(command, select),
         Command::User { command } => commands::user::run(command, select),

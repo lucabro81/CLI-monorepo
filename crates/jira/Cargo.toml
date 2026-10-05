@@ -12,6 +12,7 @@ workspace = true
 
 [dependencies]
 atlassian-auth = { path = "../atlassian-auth" }
+oauth-user-login = { path = "../oauth-user-login" }
 cli-fields = { path = "../cli-fields" }
 clap = { version = "4", features = ["derive"] }
 reqwest = { version = "0.12", features = ["blocking", "json"] }

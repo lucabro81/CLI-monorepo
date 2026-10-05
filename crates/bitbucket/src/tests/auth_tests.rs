@@ -63,21 +63,41 @@ fn deserializes_real_bitbucket_token_response_shape() {
 }
 
 #[test]
-fn parse_token_response_includes_raw_body_on_invalid_json() {
+fn parse_token_response_names_the_fields_it_got_on_an_unexpected_shape() {
     // Guards against a diagnosability gap: when the token endpoint returns
     // 200 with a body that doesn't match TokenResponse (e.g. an unexpected
-    // field name, as happened with "scope" vs "scopes"), the error must
-    // include the raw body so the failure is self-diagnosing instead of
-    // requiring a manual curl to see what the server actually sent.
+    // field name, as happened with "scope" vs "scopes"), the error must say
+    // which fields arrived, so the failure is self-diagnosing without a curl.
     // No access_token: still invalid now that "scope"/"scopes" is optional.
     let body = r#"{"expires_in":7200,"unexpected_field":"x"}"#;
 
     let err = parse_token_response(body).expect_err("should fail to parse");
 
     assert!(
-        matches!(&err, LoginError::TokenExchange(msg) if msg.contains(body)),
-        "expected error to contain raw body {body:?}, got {err}"
+        matches!(&err, LoginError::TokenExchange(msg) if msg.ends_with("; response fields: expires_in, unexpected_field")),
+        "got {err}"
     );
+}
+
+// Regression: the raw body used to be copied into the error, so a 200 response
+// carrying tokens in an unexpected shape printed them (e.g. in step 2 of a
+// remote login).
+#[test]
+fn parse_token_response_never_puts_token_values_in_the_error() {
+    let body = r#"{"access_token":"secret-at","refresh_token":"secret-rt","expires_in":"soon"}"#;
+
+    let err = parse_token_response(body).expect_err("expires_in is not a number").to_string();
+
+    assert!(!err.contains("secret-at") && !err.contains("secret-rt"), "got {err}");
+    assert!(err.ends_with("; response fields: access_token, expires_in, refresh_token"), "got {err}");
+}
+
+#[test]
+fn parse_token_response_on_a_non_json_body_reports_only_its_size() {
+    let err = parse_token_response("<html>gateway</html>").expect_err("not JSON").to_string();
+
+    assert!(err.ends_with("; response was not JSON (20 bytes)"), "got {err}");
+    assert!(!err.contains("gateway"), "got {err}");
 }
 
 #[test]
@@ -313,4 +333,141 @@ fn renewal_form_uses_client_credentials_for_app_credentials() {
         renewal_form(&credentials),
         vec![("grant_type", "client_credentials".to_string())]
     );
+}
+
+// ── remote (two-step) login ───────────────────────────────────────────────
+
+const NOW: u64 = 1_800_000_000;
+
+#[test]
+fn pending_login_path_is_under_bitbucket_cli_dir() {
+    assert_eq!(
+        pending_login_path(Path::new("/cfg")),
+        std::path::PathBuf::from("/cfg/bitbucket-cli/pending-login.json")
+    );
+}
+
+#[test]
+fn remote_start_saves_state_only_and_builds_the_consent_url() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("pending-login.json");
+
+    let (url, pending) = start_remote_login(&test_config(), &path, NOW).unwrap();
+
+    assert_eq!(url, authorization_url(&test_config(), &pending.state).unwrap());
+    assert_eq!(pending.redirect_uri, None);
+    assert_eq!(pending.code_verifier, None);
+    assert_eq!(pending.expires_at, NOW + 600);
+    assert!(path.exists());
+}
+
+#[test]
+fn remote_complete_without_a_pending_login_fails_before_any_request() {
+    let dir = tempfile::tempdir().unwrap();
+
+    let err = complete_remote_login(&test_config(), &dir.path().join("pending-login.json"), "c", "s", NOW)
+        .unwrap_err();
+
+    assert!(
+        matches!(err, LoginError::PendingLogin(oauth_user_login::PendingLoginError::NotFound)),
+        "got {err:?}"
+    );
+}
+
+#[test]
+fn remote_complete_with_a_wrong_state_keeps_the_pending_login() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("pending-login.json");
+    start_remote_login(&test_config(), &path, NOW).unwrap();
+
+    let err = complete_remote_login(&test_config(), &path, "c", "stale", NOW).unwrap_err();
+
+    assert!(
+        matches!(err, LoginError::PendingLogin(oauth_user_login::PendingLoginError::StateMismatch)),
+        "got {err:?}"
+    );
+    assert!(path.exists());
+}
+
+#[test]
+fn remote_complete_after_expiry_fails_and_removes_the_pending_login() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("pending-login.json");
+    let (_, pending) = start_remote_login(&test_config(), &path, NOW).unwrap();
+
+    let err = complete_remote_login(&test_config(), &path, "c", &pending.state, NOW + 600).unwrap_err();
+
+    assert!(
+        matches!(err, LoginError::PendingLogin(oauth_user_login::PendingLoginError::Expired)),
+        "got {err:?}"
+    );
+    assert!(!path.exists());
+}
+
+// ── remote login against a local stand-in for the token endpoint ──────────
+
+fn token_server(status: &'static str, body: &'static str) -> (String, std::thread::JoinHandle<String>) {
+    use std::io::{BufRead, BufReader, Read, Write};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("http://{}/token", listener.local_addr().unwrap());
+    let handle = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut reader = BufReader::new(stream.try_clone().unwrap());
+        let mut request = String::new();
+        let mut content_length = 0;
+        loop {
+            let mut line = String::new();
+            reader.read_line(&mut line).unwrap();
+            if let Some(v) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+                content_length = v.trim().parse().unwrap();
+            }
+            request.push_str(&line);
+            if line == "\r\n" {
+                break;
+            }
+        }
+        let mut form = vec![0; content_length];
+        reader.read_exact(&mut form).unwrap();
+        request.push_str(&String::from_utf8(form).unwrap());
+        let response = format!(
+            "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            body.len()
+        );
+        stream.write_all(response.as_bytes()).unwrap();
+        request
+    });
+    (url, handle)
+}
+
+#[test]
+fn remote_complete_exchanges_the_code_and_consumes_the_pending_login() {
+    let (url, server) = token_server(
+        "200 OK",
+        r#"{"access_token":"at","refresh_token":"rt","expires_in":7200,"scopes":"account"}"#,
+    );
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("pending-login.json");
+    let (_, pending) = start_remote_login(&test_config(), &path, NOW).unwrap();
+
+    let creds = complete_remote_login_at(&test_config(), &path, "code-9", &pending.state, NOW, &url).unwrap();
+
+    let request = server.join().unwrap();
+    assert!(request.ends_with("grant_type=authorization_code&code=code-9"), "got {request}");
+    assert_eq!(creds.refresh_token.as_deref(), Some("rt"));
+    assert_eq!(creds.expires_at, NOW + 7200);
+    assert!(!path.exists());
+}
+
+#[test]
+fn remote_complete_with_a_refused_code_still_consumes_the_state() {
+    let (url, server) = token_server("400 Bad Request", r#"{"error":"invalid_grant"}"#);
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("pending-login.json");
+    let (_, pending) = start_remote_login(&test_config(), &path, NOW).unwrap();
+
+    let err = complete_remote_login_at(&test_config(), &path, "used", &pending.state, NOW, &url).unwrap_err();
+    server.join().unwrap();
+
+    assert!(matches!(err, LoginError::TokenExchange(_)), "got {err:?}");
+    assert!(!path.exists());
 }
