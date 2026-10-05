@@ -3,6 +3,8 @@
 //! - `config_dir` — resolves the XDG config directory (`$XDG_CONFIG_HOME` or `~/.config`).
 //! - `load_app_config` — loads and validates `app.json`, mapping `AppConfigError` to `CliError`.
 //! - `authenticated_client` — load config → load credentials → renew if expiring → build client.
+//! - `login_error_to_cli` — maps credential-loading failures (incl. a failed save
+//!   after renewal, which must not be reported as "log in again").
 //! - `client_error_to_cli` — maps `ClientError` to an actionable `CliError` (401/403/404 hints).
 //! - `print_json` — renders a value via `cli_fields::render_json` honoring `--select`.
 //! - `search_query` / `CONTAINS_IGNORE_CASE` — the pagination block and text-match
@@ -41,15 +43,27 @@ pub fn load_app_config() -> Result<AppConfig, CliError> {
 pub fn authenticated_client() -> Result<ZitadelClient, CliError> {
     let config = load_app_config()?;
     let path = auth::credentials_path(&config_dir()?);
-    let credentials = auth::load_credentials(&config, &path).map_err(|e| match e {
+    let credentials =
+        auth::load_credentials(&config, &path).map_err(|e| login_error_to_cli(e, &path))?;
+    Ok(ZitadelClient::new(&config.instance_url, &credentials))
+}
+
+/// Maps a credential-loading failure: unreadable/corrupted file → not
+/// authenticated; failed write after a renewal → save failure naming the file;
+/// anything else happened while renewing → token refresh failure.
+pub fn login_error_to_cli(error: LoginError, credentials_path: &std::path::Path) -> CliError {
+    match error {
         LoginError::Io(_) | LoginError::InvalidCredentialsFile(_) => CliError::NotAuthenticated {
-            reason: e.to_string(),
+            reason: error.to_string(),
+        },
+        LoginError::SaveCredentials(reason) => CliError::SaveCredentialsFailed {
+            path: credentials_path.display().to_string(),
+            reason,
         },
         _ => CliError::TokenRefreshFailed {
-            reason: e.to_string(),
+            reason: error.to_string(),
         },
-    })?;
-    Ok(ZitadelClient::new(&config.instance_url, &credentials))
+    }
 }
 
 pub fn client_error_to_cli(error: ClientError) -> CliError {

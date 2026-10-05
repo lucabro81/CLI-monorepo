@@ -60,3 +60,56 @@ fn not_found_suggests_verifying_the_id() {
     assert!(msg.contains("search"), "got {msg}");
     assert!(msg.contains(r#"{"message":"m"}"#), "body must be kept: {msg}");
 }
+
+// ── login_error_to_cli (authenticated_client's credential-loading errors) ──
+
+use super::login_error_to_cli;
+use crate::auth::LoginError;
+
+#[test]
+fn missing_credentials_file_means_not_authenticated() {
+    let err = login_error_to_cli(
+        LoginError::Io(std::io::Error::from(std::io::ErrorKind::NotFound)),
+        std::path::Path::new("/c/credentials.json"),
+    );
+
+    assert!(matches!(err, CliError::NotAuthenticated { .. }), "got {err:?}");
+    assert!(err.to_string().ends_with("Run: zitadel auth login"));
+}
+
+#[test]
+fn failed_save_after_renewal_names_the_file_not_a_relogin() {
+    // Regression: this used to map to NotAuthenticated ("Run: zitadel auth login").
+    let err = login_error_to_cli(
+        LoginError::SaveCredentials("permission denied".to_string()),
+        std::path::Path::new("/c/credentials.json"),
+    );
+
+    assert!(
+        matches!(&err, CliError::SaveCredentialsFailed { path, reason }
+            if path == "/c/credentials.json" && reason == "permission denied"),
+        "got {err:?}"
+    );
+}
+
+#[test]
+fn renewal_failures_map_to_token_refresh_failed() {
+    for e in [
+        LoginError::TokenExchange("400 Bad Request: invalid_grant".to_string()),
+        LoginError::ServiceUserNotConfigured,
+        LoginError::InvalidPrivateKey("bad pem".to_string()),
+    ] {
+        let err = login_error_to_cli(e, std::path::Path::new("/c/credentials.json"));
+        assert!(matches!(err, CliError::TokenRefreshFailed { .. }), "got {err:?}");
+    }
+}
+
+#[test]
+fn corrupted_credentials_mean_not_authenticated() {
+    let err = login_error_to_cli(
+        LoginError::InvalidCredentialsFile("eof".to_string()),
+        std::path::Path::new("/c/credentials.json"),
+    );
+
+    assert!(matches!(err, CliError::NotAuthenticated { .. }), "got {err:?}");
+}

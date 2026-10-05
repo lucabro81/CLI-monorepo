@@ -383,3 +383,57 @@ fn token_is_expiring_within_60_second_leeway() {
     assert!(!is_expiring(1_061, 1_000));
     assert!(is_expiring(0, 1_000));
 }
+
+#[cfg(unix)]
+#[test]
+fn renewal_that_cannot_be_saved_is_reported_as_a_save_failure() {
+    // Regression: a successful renewal followed by a failed write of
+    // credentials.json used to surface as an I/O error indistinguishable from
+    // "no credentials", which told the user to log in again instead of pointing
+    // at the unwritable file.
+    use std::os::unix::fs::PermissionsExt;
+    let (url, server) = one_shot_server(
+        "200 OK",
+        r#"{"access_token":"fresh","token_type":"Bearer","expires_in":43199}"#,
+    );
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("credentials.json");
+    save_credentials(
+        &path,
+        &Credentials { access_token: "stale".to_string(), refresh_token: None, expires_at: 0 },
+    )
+    .unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o444)).unwrap();
+
+    let err = load_credentials(&config_with(&url, Some(test_key())), &path).unwrap_err();
+    server.join().unwrap();
+
+    assert!(matches!(err, LoginError::SaveCredentials(_)), "got {err:?}");
+}
+
+#[test]
+fn corrupted_credentials_file_is_reported_as_such() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("credentials.json");
+    std::fs::write(&path, "{not json").unwrap();
+
+    let err = load_credentials(&config_with("https://unused.invalid", None), &path).unwrap_err();
+
+    assert!(matches!(err, LoginError::InvalidCredentialsFile(_)), "got {err:?}");
+    assert!(err.to_string().ends_with("Run: zitadel auth login"), "got {err}");
+}
+
+#[test]
+fn expired_service_user_token_without_key_cannot_be_renewed() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("credentials.json");
+    save_credentials(
+        &path,
+        &Credentials { access_token: "stale".to_string(), refresh_token: None, expires_at: 0 },
+    )
+    .unwrap();
+
+    let err = load_credentials(&config_with("https://unused.invalid", None), &path).unwrap_err();
+
+    assert!(matches!(err, LoginError::ServiceUserNotConfigured), "got {err:?}");
+}

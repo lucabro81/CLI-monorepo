@@ -153,6 +153,10 @@ pub enum LoginError {
     InvalidPrivateKey(String),
     #[error("credentials file is corrupted ({0}). Run: zitadel auth login")]
     InvalidCredentialsFile(String),
+    /// Writing `credentials.json` failed (e.g. after a successful renewal) —
+    /// distinct from `Io`, which only covers reading it.
+    #[error("could not write credentials file: {0}")]
+    SaveCredentials(String),
     /// Serializing/signing well-typed values — should never fire in practice.
     #[error("internal error: {0}")]
     Internal(String),
@@ -281,13 +285,13 @@ pub fn load_credentials(config: &AppConfig, path: &Path) -> Result<Credentials, 
 
 /// Writes credentials as pretty JSON, creating parent directories as needed.
 pub fn save_credentials(path: &Path, credentials: &Credentials) -> Result<(), LoginError> {
+    let write_failed = |e: std::io::Error| LoginError::SaveCredentials(e.to_string());
     if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
+        std::fs::create_dir_all(parent).map_err(write_failed)?;
     }
     let json = serde_json::to_string_pretty(credentials)
         .map_err(|e| LoginError::Internal(format!("failed to serialize credentials: {e}")))?;
-    std::fs::write(path, json)?;
-    Ok(())
+    std::fs::write(path, json).map_err(write_failed)
 }
 
 fn now_unix() -> u64 {
