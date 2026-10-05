@@ -86,3 +86,15 @@ fn a_refused_code_explains_codes_are_single_use() {
         )
     );
 }
+
+// Regression: the other step-2 failures went through UserLoginFailed, whose
+// advice (redirect http://localhost:8080/callback, retry --user) is wrong for
+// a remote login.
+#[test]
+fn every_other_step_two_failure_says_how_to_restart_without_localhost_advice() {
+    let err = remote_login_error(LoginError::NoRefreshToken).to_string();
+
+    assert!(err.starts_with("remote login failed: ZITADEL issued no refresh token"), "got {err}");
+    assert!(!err.contains("localhost:8080"), "got {err}");
+    assert!(err.ends_with(RESTART), "got {err}");
+}
