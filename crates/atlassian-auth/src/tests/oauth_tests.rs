@@ -327,3 +327,13 @@ fn merge_scopes_for_cloud_id_returns_some_empty_vec_when_entry_has_no_scopes() {
 
     assert_eq!(merge_scopes_for_cloud_id(&resources, "site-1"), Some(vec![]));
 }
+
+// Guard: the listener only accepts requests on CALLBACK_PATH at
+// CALLBACK_LISTEN_ADDR's port, so the redirect URI sent to the provider must
+// point exactly there, or the login gets a 404 / WrongPath instead of the code.
+#[test]
+fn redirect_uri_points_at_the_callback_listener() {
+    let port = crate::endpoints::CALLBACK_LISTEN_ADDR.rsplit_once(':').unwrap().1;
+
+    assert_eq!(OAuthConfig::REDIRECT_URI, format!("http://localhost:{port}{}", crate::endpoints::CALLBACK_PATH));
+}
