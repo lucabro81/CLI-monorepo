@@ -66,7 +66,9 @@ pub enum Command {
     /// Runs four checks in order: app credentials file, stored OAuth tokens, a
     /// live API call, and the OAuth scopes granted to the token. Prints a JSON
     /// object with a status field per check. Exits non-zero if any check fails
-    /// or is skipped. Always prints its full result regardless of --select —
+    /// or is skipped. Also reports `pending_login` (a two-step `auth login
+    /// --user --remote` waiting for its code): informational, never counted in
+    /// the exit code. Always prints its full result regardless of --select —
     /// the report is generated internally and is always small and fixed-shape.
     #[command(after_help = "Examples:\n  confluence doctor\n  confluence doctor --select app_config.status,credentials.status,api.status\n\nEach check has a status field: \"ok\", \"error\", or \"skipped\".\nLater checks are skipped if an earlier one fails.")]
     Doctor,
