@@ -506,15 +506,38 @@ pub fn load_credentials(config: &AppConfig, path: &Path) -> Result<Credentials, 
     Ok(credentials)
 }
 
-/// Writes credentials as pretty JSON, creating parent directories as needed.
+/// Writes credentials as pretty JSON with owner-only permissions (they hold
+/// bearer tokens), creating parent directories as needed.
 pub fn save_credentials(path: &Path, credentials: &Credentials) -> Result<(), LoginError> {
+    use std::io::Write;
+
     let write_failed = |e: std::io::Error| LoginError::SaveCredentials(e.to_string());
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(write_failed)?;
     }
     let json = serde_json::to_string_pretty(credentials)
         .map_err(|e| LoginError::Internal(format!("failed to serialize credentials: {e}")))?;
-    std::fs::write(path, json).map_err(write_failed)
+
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+        // New files are created 0600. An existing file loses any group/other
+        // access first (owner bits are kept: a read-only file stays read-only).
+        options.mode(0o600);
+        if let Ok(metadata) = std::fs::metadata(path) {
+            let mode = metadata.permissions().mode();
+            if mode & 0o077 != 0 {
+                std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode & 0o700))
+                    .map_err(write_failed)?;
+            }
+        }
+    }
+    options
+        .open(path)
+        .and_then(|mut file| file.write_all(json.as_bytes()))
+        .map_err(write_failed)
 }
 
 fn now_unix() -> u64 {

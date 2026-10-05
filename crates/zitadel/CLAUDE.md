@@ -89,6 +89,8 @@ Two identities, same `credentials.json` — the last login decides (bitbucket mo
   Written by `init`; `service_user` is needed for the default login, `client_id` for `--user`.
 - `credentials.json` — `access_token`, `expires_at`, `refresh_token?`. Fully CLI-managed.
 
+Both files hold secrets and are written mode `0600` (an existing looser file loses its group/other bits).
+
 ## API design notes
 
 - Zitadel v2 REST JSON under `<instance_url>/v2/...` (recommended by Zitadel for new

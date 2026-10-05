@@ -479,3 +479,23 @@ fn expired_service_user_token_without_key_cannot_be_renewed() {
 
     assert!(matches!(err, LoginError::ServiceUserNotConfigured), "got {err:?}");
 }
+
+// Regression: credentials.json (bearer access token, refresh token) was written
+// with the default 0644 mode, readable by every local user.
+#[cfg(unix)]
+#[test]
+fn saved_credentials_are_readable_only_by_owner() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("credentials.json");
+    std::fs::write(&path, "{}").unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+
+    save_credentials(
+        &path,
+        &Credentials { access_token: "at".to_string(), refresh_token: None, expires_at: 1 },
+    )
+    .unwrap();
+
+    assert_eq!(std::fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
+}
