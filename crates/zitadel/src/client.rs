@@ -33,12 +33,30 @@ impl ZitadelClient {
         self.get_json(endpoints::AUTH_USERS_ME_PATH)
     }
 
+    /// The calling identity's administrator memberships and roles:
+    /// `POST /auth/v1/memberships/me/_search`.
+    pub fn list_my_memberships(&self) -> Result<serde_json::Value, ClientError> {
+        self.post_json(endpoints::AUTH_MY_MEMBERSHIPS_SEARCH_PATH, &serde_json::json!({}))
+    }
+
     fn get_json(&self, path: &str) -> Result<serde_json::Value, ClientError> {
         let response = self
             .http
             .get(format!("{}{path}", self.instance_url))
             .bearer_auth(&self.access_token)
             .header(reqwest::header::ACCEPT, "application/json")
+            .send()
+            .map_err(|e| ClientError::Request(e.to_string()))?;
+        Self::into_json(response)
+    }
+
+    fn post_json(&self, path: &str, body: &serde_json::Value) -> Result<serde_json::Value, ClientError> {
+        let response = self
+            .http
+            .post(format!("{}{path}", self.instance_url))
+            .bearer_auth(&self.access_token)
+            .header(reqwest::header::ACCEPT, "application/json")
+            .json(body)
             .send()
             .map_err(|e| ClientError::Request(e.to_string()))?;
         Self::into_json(response)

@@ -63,4 +63,7 @@ pub enum CliError {
 
     #[error("ZITADEL API returned status {status}: {body}")]
     ApiError { status: u16, body: String },
+
+    #[error("one or more doctor checks failed. See the JSON report above for details.")]
+    DoctorCheckFailed,
 }

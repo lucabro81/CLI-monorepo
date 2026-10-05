@@ -50,6 +50,13 @@ fn select_and_select_all_conflict() {
 }
 
 #[test]
+fn parses_doctor() {
+    let cli = parse(&["doctor"]).unwrap();
+
+    assert!(matches!(cli.command, Command::Doctor));
+}
+
+#[test]
 fn rejects_auth_without_subcommand() {
     assert!(parse(&["auth"]).is_err());
 }

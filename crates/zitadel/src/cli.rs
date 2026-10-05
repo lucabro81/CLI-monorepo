@@ -30,6 +30,18 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
+    /// Check configuration, credentials, API reachability and the identity's roles
+    ///
+    /// Runs four checks in order and prints a JSON report with a status field
+    /// ("ok", "error" or "skipped") per check: `app_config` (app.json), `credentials`
+    /// (stored token, renewed if expiring; identity is `service_user` or `user`),
+    /// api (GET /auth/v1/users/me) and memberships (the administrator roles of the
+    /// identity per instance/organization/project — these decide which commands
+    /// will succeed). Later checks are skipped when an earlier one fails. Exits
+    /// non-zero unless every check is ok. Always prints the full report regardless
+    /// of --select (an explicit --select is still honored).
+    #[command(after_help = "Examples:\n  zitadel doctor\n  zitadel doctor --select memberships")]
+    Doctor,
     /// Manage authentication with the ZITADEL instance
     Auth {
         #[command(subcommand)]

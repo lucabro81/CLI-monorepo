@@ -25,3 +25,7 @@ pub fn token_url(instance_url: &str) -> String {
 
 /// v1 Auth API: the calling identity. No v2 "me" equivalent exists.
 pub const AUTH_USERS_ME_PATH: &str = "/auth/v1/users/me";
+
+/// v1 Auth API: the calling identity's administrator memberships (roles per
+/// instance / organization / project / project grant).
+pub const AUTH_MY_MEMBERSHIPS_SEARCH_PATH: &str = "/auth/v1/memberships/me/_search";

@@ -42,6 +42,15 @@ fn run() -> Result<(), CliError> {
     };
 
     match cli.command {
+        Command::Doctor => {
+            let (report, all_ok) = commands::doctor::run_doctor()?;
+            // Exempt from mandatory --select: internally generated, small, fixed shape.
+            context::print_json(&report, select.or_all())?;
+            if !all_ok {
+                return Err(CliError::DoctorCheckFailed);
+            }
+            Ok(())
+        }
         Command::Auth {
             command: AuthCommand::Login,
         } => commands::auth::run_login(),
