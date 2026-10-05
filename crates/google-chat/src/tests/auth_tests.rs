@@ -38,7 +38,8 @@ fn builds_authorization_url_with_required_params() {
 // the wrapping, which must add this CLI's retry command.
 
 // Regression: a denied consent (`error=access_denied`) used to surface as a
-// missing `code` (issue #143).
+// missing `code`, as in jira's #70. The parsing fix is tested in
+// crates/oauth-user-login; this checks the message keeps the retry command.
 #[test]
 fn denied_consent_ends_with_the_retry_command() {
     let err = LoginError::Callback(WaitError::Callback(CallbackError::Denied {
@@ -53,8 +54,9 @@ fn denied_consent_ends_with_the_retry_command() {
     );
 }
 
-// Regression: a stale process on the callback port made the login fail with a
-// bare "Address already in use" only after the browser had opened.
+// A stale process on the callback port used to fail with a bare "Address
+// already in use" after the browser had opened. The port is now bound first
+// (auth::login); this checks the message names the port and the retry command.
 #[test]
 fn a_busy_callback_port_names_the_port_and_the_retry_command() {
     let busy = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
@@ -252,4 +254,14 @@ fn jwt_claims_carry_impersonation_and_scopes() {
     assert_eq!(claims.aud, "https://oauth2.googleapis.com/token");
     assert_eq!(claims.iat, 1_700_000_000);
     assert_eq!(claims.exp, 1_700_003_600);
+}
+
+// Guard: the listener only accepts requests on CALLBACK_PATH at
+// CALLBACK_LISTEN_ADDR's port, so the redirect URI sent to the provider must
+// point exactly there, or the login gets a 404 / WrongPath instead of the code.
+#[test]
+fn redirect_uri_points_at_the_callback_listener() {
+    let port = crate::endpoints::CALLBACK_LISTEN_ADDR.rsplit_once(':').unwrap().1;
+
+    assert_eq!(OAuthConfig::REDIRECT_URI, format!("http://localhost:{port}{}", crate::endpoints::CALLBACK_PATH));
 }
