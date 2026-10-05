@@ -105,6 +105,27 @@ zitadel auth whoami
 zitadel auth whoami --select user.id,user.userName,user.details.resourceOwner
 ```
 
+### `zitadel user search`
+
+Searches users with ZITADEL's v2 `ListUsers` (`POST /v2/users`). Filters are optional and combined with AND. Requires `--select` or `--select-all`. Needs the `user.read` permission (e.g. `ORG_OWNER` / `ORG_USER_MANAGER` on the users' organization) — otherwise only what the identity may read is returned.
+
+| Flag | Description |
+|---|---|
+| `--email <TEXT>` | Email contains this text, case-insensitive (`@acme.com`, or a full address). |
+| `--username <TEXT>` | Username contains this text, case-insensitive. |
+| `--state <STATE>` | `active`, `inactive`, `deleted`, `locked`, `initial`. Validated locally: ZITADEL silently returns nothing for an unknown state. |
+| `--organization-id <ID>` | Only users of this organization. |
+| `--limit <N>` | Max results, default 100. |
+| `--offset <N>` | Results to skip, default 0. |
+
+Response: `details.totalResult` (total matches; absent, together with `result`, when there are none) and `result[]` with `userId`, `username`, `state`, `loginNames`, `details.resourceOwner` (organization) and a `human` (`profile`, `email`, `phone`) or `machine` object.
+
+```sh
+zitadel user search --email @acme.com --select result.userId,result.username,result.human.email.email
+zitadel user search --username john --state active --select result.userId,result.state
+zitadel user search --limit 50 --offset 50 --select details.totalResult,result.userId
+```
+
 ### `--select <PATHS>` / `--select-all` (global flags)
 
 List/search commands require `--select` (comma-separated dot paths) or `--select-all`; without either they fail and report the response size and top-level fields. See root `CLAUDE.md`.

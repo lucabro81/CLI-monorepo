@@ -29,3 +29,6 @@ pub const AUTH_USERS_ME_PATH: &str = "/auth/v1/users/me";
 /// v1 Auth API: the calling identity's administrator memberships (roles per
 /// instance / organization / project / project grant).
 pub const AUTH_MY_MEMBERSHIPS_SEARCH_PATH: &str = "/auth/v1/memberships/me/_search";
+
+/// v2 User service: `POST` = `ListUsers` (search), `GET /{userId}` = `GetUserByID`.
+pub const USERS_V2_PATH: &str = "/v2/users";

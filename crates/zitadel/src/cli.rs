@@ -2,7 +2,7 @@
 //!
 //! Every flag uses `#[arg(long)]` only; no short aliases.
 
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 
 /// ZITADEL CLI for LLM agents — manage users, organizations and projects of a ZITADEL instance.
 #[derive(Debug, Parser)]
@@ -65,6 +65,11 @@ pub enum Command {
     /// of --select (an explicit --select is still honored).
     #[command(after_help = "Examples:\n  zitadel doctor\n  zitadel doctor --select memberships")]
     Doctor,
+    /// Work with users (human and service users) of the instance
+    User {
+        #[command(subcommand)]
+        command: UserCommand,
+    },
     /// Manage authentication with the ZITADEL instance
     Auth {
         #[command(subcommand)]
@@ -93,6 +98,52 @@ pub enum AuthCommand {
     /// --select is still honored.
     #[command(after_help = "Examples:\n  zitadel auth whoami\n  zitadel auth whoami --select user.id,user.userName,user.details.resourceOwner")]
     Whoami,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum UserCommand {
+    /// Search users across the organizations the identity may read
+    ///
+    /// Calls ZITADEL's v2 `ListUsers` (POST /v2/users). All filters are optional and
+    /// combined with AND; --email and --username match "contains", case-insensitive.
+    /// Without filters, lists every user the identity is allowed to read (requires
+    /// the user.read permission, e.g. `ORG_OWNER` or `ORG_USER_MANAGER` on the user's
+    /// organization). Pagination: --limit/--offset; the response's
+    /// details.totalResult is the total number of matches (absent when there are
+    /// none). Each result has userId, username, state, details.resourceOwner (its
+    /// organization) and either a "human" (profile, email, phone) or a "machine"
+    /// object. --select (or --select-all) is required.
+    #[command(after_help = "Examples:\n  zitadel user search --email @acme.com --select result.userId,result.username,result.human.email.email\n  zitadel user search --username john --state active --select result.userId,result.state\n  zitadel user search --organization-id 123456789 --limit 50 --offset 50 --select details.totalResult,result.userId")]
+    Search {
+        /// Email contains this text (case-insensitive), e.g. "@acme.com" or a full address
+        #[arg(long)]
+        email: Option<String>,
+        /// Username contains this text (case-insensitive)
+        #[arg(long)]
+        username: Option<String>,
+        /// Only users in this state
+        #[arg(long, value_enum)]
+        state: Option<UserState>,
+        /// Only users belonging to this organization id
+        #[arg(long)]
+        organization_id: Option<String>,
+        /// Maximum number of results to return
+        #[arg(long, default_value_t = 100, value_parser = clap::value_parser!(u32).range(1..))]
+        limit: u32,
+        /// Number of results to skip (for paging through results)
+        #[arg(long, default_value_t = 0)]
+        offset: u64,
+    },
+}
+
+/// User states accepted by `user search --state` (ZITADEL v2 `UserState`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum UserState {
+    Active,
+    Inactive,
+    Deleted,
+    Locked,
+    Initial,
 }
 
 #[cfg(test)]

@@ -2,7 +2,7 @@
 
 use clap::Parser;
 
-use super::{AuthCommand, Cli, Command};
+use super::{AuthCommand, Cli, Command, UserCommand, UserState};
 
 fn parse(args: &[&str]) -> Result<Cli, clap::Error> {
     Cli::try_parse_from(std::iter::once("zitadel").chain(args.iter().copied()))
@@ -75,6 +75,54 @@ fn parses_init_with_no_flags() {
         cli.command,
         Command::Init { instance_url: None, key_file: None, client_id: None }
     ));
+}
+
+#[test]
+fn parses_user_search_with_defaults() {
+    let cli = parse(&["user", "search"]).unwrap();
+
+    match cli.command {
+        Command::User { command: UserCommand::Search { email, username, state, organization_id, limit, offset } } => {
+            assert_eq!((email, username, state, organization_id), (None, None, None, None));
+            assert_eq!((limit, offset), (100, 0));
+        }
+        other => panic!("expected user search, got {other:?}"),
+    }
+}
+
+#[test]
+fn parses_user_search_with_all_flags() {
+    let cli = parse(&[
+        "user", "search", "--email", "@acme.com", "--username", "john", "--state", "locked",
+        "--organization-id", "org-1", "--limit", "10", "--offset", "20", "--select", "result.userId",
+    ])
+    .unwrap();
+
+    match cli.command {
+        Command::User { command: UserCommand::Search { email, username, state, organization_id, limit, offset } } => {
+            assert_eq!(email.as_deref(), Some("@acme.com"));
+            assert_eq!(username.as_deref(), Some("john"));
+            assert_eq!(state, Some(UserState::Locked));
+            assert_eq!(organization_id.as_deref(), Some("org-1"));
+            assert_eq!((limit, offset), (10, 20));
+        }
+        other => panic!("expected user search, got {other:?}"),
+    }
+    assert_eq!(cli.select.as_deref(), Some("result.userId"));
+}
+
+#[test]
+fn user_search_rejects_unknown_state() {
+    // ZITADEL silently returns zero results for an unknown state, so it must be
+    // rejected client-side.
+    assert!(parse(&["user", "search", "--state", "suspended"]).is_err());
+}
+
+#[test]
+fn user_search_rejects_zero_or_non_numeric_limit() {
+    assert!(parse(&["user", "search", "--limit", "0"]).is_err());
+    assert!(parse(&["user", "search", "--limit", "ten"]).is_err());
+    assert!(parse(&["user", "search", "--offset", "-1"]).is_err());
 }
 
 #[test]

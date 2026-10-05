@@ -4,7 +4,7 @@ Architecture and design notes for the `zitadel` crate. Global rules (TDD, error 
 
 ## Status
 
-`init`, `doctor`, `auth login` (service user), `auth whoami` implemented. Rest in progress — see "Planned commands" below and tracking issue #142.
+`init`, `doctor`, `auth login` (service user), `auth whoami`, `user search` implemented. Rest in progress — see "Planned commands" below and tracking issue #142.
 
 ## Module map (mirrors crates/google-chat)
 
@@ -17,7 +17,7 @@ src/
                        called by init as final check                    [implemented]
     init.rs          — run_init(), build_app_config() (merge flags over existing
                        app.json), write_app_config() (mode 0600)         [implemented]
-    user.rs          — run(UserCommand): search, get                     [planned]
+    user.rs          — run(UserCommand); build_search_body() (pure)    [search implemented, get planned]
     organization.rs  — run(OrganizationCommand): list                    [planned]
     project.rs       — run(ProjectCommand): list                         [planned]
   auth.rs         — AppConfig, ServiceUserKey (+ from_key_file: validates type/PEM),
@@ -25,7 +25,7 @@ src/
                     (service user), authorization code + PKCE login (--user),
                     renew(), load_credentials()/save_credentials(), callback parsing
   client.rs       — ZitadelClient (blocking reqwest); get_json/post_json helpers; ClientError::{Request, Status}
-                    [get_current_user, list_my_memberships implemented]
+                    [get_current_user, list_my_memberships, search_users implemented]
   cli.rs          — clap structs only, no logic
   context.rs      — config_dir(), load_app_config(), authenticated_client(),
                     client_error_to_cli() (401 → re-login hint, 403 → missing-role hint
@@ -90,6 +90,11 @@ Two identities, same `credentials.json` — the last login decides (bitbucket mo
   integrations); v1 (`/management/v1`, `/auth/v1`) only where v2 has no equivalent.
 - Searches are `POST` with a JSON body: `{"query": {"offset", "limit", "asc"}, "queries": [...]}`.
   Pagination is offset/limit; the raw response (incl. `details.totalResult`) is passed through.
+  Top-level `queries` are combined with AND. With zero matches the response has no `result`
+  and no `totalResult` (only `details.timestamp`).
+- **Enum filters must be validated client-side** (clap `ValueEnum`): ZITADEL answers an unknown
+  enum value (e.g. `"state": "BOGUS"`) with 200 and zero results, not an error — an LLM would
+  read that as "nothing matches".
 
 ## Implemented commands
 
@@ -98,6 +103,7 @@ Two identities, same `credentials.json` — the last login decides (bitbucket mo
 | `auth login` | `POST /oauth/v2/token` (jwt-bearer) | n/a (prints a confirmation line) |
 | `init` | writes app.json, logs in (`POST /oauth/v2/token`), runs doctor; flags only, no prompts; narrative on stderr, doctor report on stdout | exempt (`or_all`), like doctor |
 | `doctor` | `GET /auth/v1/users/me` + `POST /auth/v1/memberships/me/_search` (v1: no v2 equivalent for the caller's own roles) | exempt (`or_all`) |
+| `user search` | `POST /v2/users` (v2 `ListUsers`) | mandatory |
 | `auth whoami` | `GET /auth/v1/users/me` (v1: no v2 "me" endpoint; `/oidc/v1/userinfo` only returns `sub` with the `openid` scope) | exempt (`or_all`) |
 
 ## Planned commands (issue #142)
@@ -105,7 +111,6 @@ Two identities, same `credentials.json` — the last login decides (bitbucket mo
 | Command | Endpoint (verify in add-cli-command step 3) | `--select` |
 |---|---|---|
 | `auth login --user` | `/oauth/v2/authorize` + `/oauth/v2/token` | n/a |
-| `user search` | `POST /v2/users` | mandatory |
 | `user get <user-id>` | `GET /v2/users/{userId}` | exempt |
 | `organization list` | `POST /v2/organizations/_search` | mandatory |
 | `project list` | v2 ProjectService ListProjects (fallback v1 `/management/v1/projects/_search`) | mandatory |

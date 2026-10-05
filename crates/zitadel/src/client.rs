@@ -39,6 +39,11 @@ impl ZitadelClient {
         self.post_json(endpoints::AUTH_MY_MEMBERSHIPS_SEARCH_PATH, &serde_json::json!({}))
     }
 
+    /// Searches users (v2 ListUsers): `POST /v2/users` with a query/queries body.
+    pub fn search_users(&self, body: &serde_json::Value) -> Result<serde_json::Value, ClientError> {
+        self.post_json(endpoints::USERS_V2_PATH, body)
+    }
+
     fn get_json(&self, path: &str) -> Result<serde_json::Value, ClientError> {
         let response = self
             .http
