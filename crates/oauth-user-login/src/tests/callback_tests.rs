@@ -91,6 +91,10 @@ fn missing_code_or_state_is_reported_by_name() {
         parse_callback_request_line("GET /callback HTTP/1.1", "/callback"),
         Err(CallbackError::MissingParam("code"))
     );
+    assert_eq!(
+        parse_callback_request_line("GET /callback? HTTP/1.1", "/callback"),
+        Err(CallbackError::MissingParam("code"))
+    );
 }
 
 #[test]
