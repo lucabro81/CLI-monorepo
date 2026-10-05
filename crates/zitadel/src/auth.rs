@@ -162,9 +162,10 @@ pub enum LoginError {
         and run: zitadel init --client-id <client-id>"
     )]
     NativeAppNotConfigured,
-    #[error("{0}: zitadel auth login --user")]
+    // No retry command here: CliError::UserLoginFailed adds it.
+    #[error("{0}")]
     CallbackListener(oauth_user_login::ListenerError),
-    #[error("{0}: zitadel auth login --user")]
+    #[error("{0}")]
     Callback(oauth_user_login::WaitError),
     #[error(
         "ZITADEL issued no refresh token, so the session could not be renewed. In the console enable \

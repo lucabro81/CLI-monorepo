@@ -68,28 +68,26 @@ fn authorization_url_without_client_id_points_to_init() {
 }
 
 // ── callback errors ───────────────────────────────────────────────────────
-// Parsing and the listener loop are tested in crates/oauth-user-login; here
-// only the wrapping, which must add this CLI's retry command.
+// Parsing and the listener loop are tested in crates/oauth-user-login. The
+// retry command is added once, by CliError::UserLoginFailed.
 
+// Regression: the retry command appeared twice, once from LoginError and once
+// from CliError::UserLoginFailed.
 #[test]
-fn callback_errors_end_with_the_retry_command() {
+fn callback_errors_carry_the_library_message_unchanged() {
     let err = LoginError::Callback(WaitError::StateMismatch);
 
-    assert_eq!(
-        err.to_string(),
-        "the login callback's state did not match the one sent (possible CSRF, or a stale browser \
-        tab from an earlier attempt). Login aborted: retry it: zitadel auth login --user"
-    );
+    assert_eq!(err.to_string(), WaitError::StateMismatch.to_string());
 }
 
 #[test]
-fn a_busy_callback_port_ends_with_the_retry_command() {
+fn a_busy_callback_port_carries_the_library_message_unchanged() {
     let busy = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let address = busy.local_addr().unwrap().to_string();
-    let err = LoginError::CallbackListener(bind_listener(&address).unwrap_err());
+    let listener_err = bind_listener(&address).unwrap_err();
+    let expected = listener_err.to_string();
 
-    assert!(err.to_string().starts_with(&format!("cannot listen for the login callback on {address}")), "got {err}");
-    assert!(err.to_string().ends_with("and retry: zitadel auth login --user"), "got {err}");
+    assert_eq!(LoginError::CallbackListener(listener_err).to_string(), expected);
 }
 
 // ── code exchange and refresh ─────────────────────────────────────────────
@@ -190,4 +188,14 @@ fn expired_user_session_is_renewed_with_its_refresh_token_not_the_service_user()
 
     assert_eq!(form(&server.join().unwrap())["grant_type"], "refresh_token");
     assert_eq!(creds.refresh_token.as_deref(), Some("rt-new"));
+}
+
+// Guard: the listener only accepts requests on CALLBACK_PATH at
+// CALLBACK_LISTEN_ADDR's port, so the redirect URI sent to the provider must
+// point exactly there, or the login gets a 404 / WrongPath instead of the code.
+#[test]
+fn redirect_uri_points_at_the_callback_listener() {
+    let port = crate::endpoints::CALLBACK_LISTEN_ADDR.rsplit_once(':').unwrap().1;
+
+    assert_eq!(crate::endpoints::REDIRECT_URI, format!("http://localhost:{port}{}", crate::endpoints::CALLBACK_PATH));
 }
