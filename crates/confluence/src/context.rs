@@ -48,7 +48,9 @@ pub fn authenticated_client() -> Result<ConfluenceClient, CliError> {
     let credentials = auth::load_credentials(&oauth_config, &path).map_err(|e| {
         use crate::auth::LoginError;
         match e {
-            LoginError::TokenExchange(reason) => CliError::TokenRefreshFailed { reason },
+            LoginError::TokenExchange(reason) | LoginError::AccessibleResources(reason) => {
+                CliError::TokenRefreshFailed { reason }
+            }
             LoginError::NoAccessibleResources => CliError::TokenRefreshFailed {
                 reason: "no accessible Atlassian sites found for this account".to_string(),
             },

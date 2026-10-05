@@ -67,9 +67,15 @@ fn a_refused_code_explains_codes_are_single_use() {
     );
 }
 
+// Regression: once step 2 has consumed the pending login, every failure must
+// say to restart step 1 (it used to be a bare "OAuth login failed").
 #[test]
-fn other_failures_keep_the_generic_login_error() {
-    let err = remote_login_error(LoginError::NoAccessibleResources);
+fn every_other_step_two_failure_also_says_how_to_restart() {
+    for error in [LoginError::NoAccessibleResources, LoginError::AccessibleResources("500".to_string())] {
+        let err = remote_login_error(error).to_string();
 
-    assert_eq!(err.to_string(), "OAuth login failed: no accessible Atlassian resources found for this account");
+        assert!(err.starts_with("remote login failed: "), "got {err}");
+        assert!(!err.contains("refused the code"), "got {err}");
+        assert!(err.ends_with(RESTART), "got {err}");
+    }
 }
