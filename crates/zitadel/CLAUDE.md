@@ -23,7 +23,8 @@ src/
   auth.rs         — AppConfig, ServiceUserKey (+ from_key_file: validates type/PEM),
                     Credentials; JWT-profile login
                     (service user), authorization code + PKCE login (--user),
-                    renew(), load_credentials()/save_credentials(), callback parsing
+                    renew(), load_credentials()/save_credentials(); PKCE and the
+                    callback listener come from crates/oauth-user-login
   client.rs       — ZitadelClient (blocking reqwest); get_json/post_json helpers; url_with_segment()
                     percent-encodes ids as one path segment; ClientError::{Request, Status}
                     [get_current_user, list_my_memberships, search_users, get_user, list_organizations,
@@ -37,7 +38,7 @@ src/
   endpoints.rs    — path constants/builders relative to the instance URL, no logic
   error.rs        — CliError (thiserror), incl. transparent Select(cli_fields::RenderError)
   tests/          — *_tests.rs mirroring src/; auth_user_tests.rs = the --user flow
-                    (PKCE, callback listener, exchange, refresh, renew dispatch); (root CLAUDE.md "Test file convention");
+                    (authorize URL, callback error wrapping, exchange, refresh, renew dispatch); (root CLAUDE.md "Test file convention");
                     test_support.rs = one-shot / sequential local HTTP mock servers shared by
                     auth/client tests; fixtures/ = throwaway RSA key pair (test-only)
   main.rs         — pure dispatch: resolve --select/--select-all once, call commands::*
@@ -47,9 +48,9 @@ src/
 
 Zitadel is its own identity platform (Cloud `https://<instance>.zitadel.cloud` or
 self-hosted on a custom domain) — every URL is relative to the configured
-`instance_url`. Not Atlassian, so `crates/atlassian-auth` does not apply. The
-loopback/PKCE helpers are copy-adapted from `google-chat` (see issue #143 for the
-shared-library evaluation).
+`instance_url`. Not Atlassian, so `crates/atlassian-auth` does not apply. PKCE,
+`state` and the loopback callback listener come from the shared
+`crates/oauth-user-login` library (root CLAUDE.md).
 
 Two identities, same `credentials.json` — the last login decides (bitbucket model):
 

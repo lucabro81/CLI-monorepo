@@ -1,16 +1,15 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
-//! Tests for the human (`auth login --user`) flow: PKCE, authorization URL,
-//! loopback callback, code exchange, refresh, and renewal dispatch.
+//! Tests for the human (`auth login --user`) flow: authorization URL, callback
+//! error wrapping, code exchange, refresh, and renewal dispatch. PKCE and the
+//! loopback listener live in crates/oauth-user-login.
 
 use std::collections::HashMap;
-use std::io::{Read, Write};
-use std::net::{TcpListener, TcpStream};
-use std::thread;
+
+use oauth_user_login::{WaitError, bind_listener};
 
 use super::{
-    AppConfig, CallbackError, CallbackParams, Credentials, LoginError, authorization_url,
-    code_challenge, exchange_code, generate_code_verifier, generate_state, load_credentials,
-    parse_callback_request_line, refresh, save_credentials, wait_for_callback,
+    AppConfig, Credentials, LoginError, authorization_url, exchange_code, load_credentials,
+    refresh, save_credentials,
 };
 use crate::test_support::one_shot_server;
 
@@ -24,30 +23,6 @@ fn native_config(instance_url: &str) -> AppConfig {
 
 fn form(request: &str) -> HashMap<String, String> {
     serde_urlencoded::from_str(request.lines().last().unwrap()).unwrap()
-}
-
-// ── PKCE / state ──────────────────────────────────────────────────────────
-
-#[test]
-fn code_challenge_matches_rfc7636_example() {
-    assert_eq!(
-        code_challenge("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"),
-        "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
-    );
-}
-
-#[test]
-fn code_verifier_is_url_safe_random_and_within_rfc_length() {
-    let verifier = generate_code_verifier();
-
-    assert!((43..=128).contains(&verifier.len()), "len {}", verifier.len());
-    assert!(verifier.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'));
-    assert_ne!(verifier, generate_code_verifier());
-}
-
-#[test]
-fn state_values_are_random() {
-    assert_ne!(generate_state(), generate_state());
 }
 
 // ── authorization URL ─────────────────────────────────────────────────────
@@ -92,101 +67,29 @@ fn authorization_url_without_client_id_points_to_init() {
     );
 }
 
-// ── callback parsing ──────────────────────────────────────────────────────
+// ── callback errors ───────────────────────────────────────────────────────
+// Parsing and the listener loop are tested in crates/oauth-user-login; here
+// only the wrapping, which must add this CLI's retry command.
 
 #[test]
-fn parses_callback_with_code_and_state() {
+fn callback_errors_end_with_the_retry_command() {
+    let err = LoginError::Callback(WaitError::StateMismatch);
+
     assert_eq!(
-        parse_callback_request_line("GET /callback?code=abc%2F1&state=xyz HTTP/1.1"),
-        Ok(CallbackParams { code: "abc/1".to_string(), state: "xyz".to_string() })
+        err.to_string(),
+        "the login callback's state did not match the one sent (possible CSRF, or a stale browser \
+        tab from an earlier attempt). Login aborted: retry it: zitadel auth login --user"
     );
 }
 
 #[test]
-fn callback_with_error_reports_the_denial() {
-    assert_eq!(
-        parse_callback_request_line(
-            "GET /callback?error=access_denied&error_description=user+cancelled&state=xyz HTTP/1.1"
-        ),
-        Err(CallbackError::Denied("access_denied: user cancelled".to_string()))
-    );
-}
+fn a_busy_callback_port_ends_with_the_retry_command() {
+    let busy = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = busy.local_addr().unwrap().to_string();
+    let err = LoginError::CallbackListener(bind_listener(&address).unwrap_err());
 
-#[test]
-fn callback_missing_code_or_state_is_rejected() {
-    assert_eq!(
-        parse_callback_request_line("GET /callback?state=xyz HTTP/1.1"),
-        Err(CallbackError::MissingParam("code"))
-    );
-    assert_eq!(
-        parse_callback_request_line("GET /callback?code=abc HTTP/1.1"),
-        Err(CallbackError::MissingParam("state"))
-    );
-}
-
-#[test]
-fn non_callback_requests_are_not_callbacks() {
-    assert_eq!(
-        parse_callback_request_line("GET /favicon.ico HTTP/1.1"),
-        Err(CallbackError::NotCallback)
-    );
-    assert_eq!(parse_callback_request_line("garbage"), Err(CallbackError::NotCallback));
-}
-
-// ── loopback listener ─────────────────────────────────────────────────────
-
-fn send(addr: std::net::SocketAddr, request_line: &str) -> String {
-    let mut stream = TcpStream::connect(addr).unwrap();
-    stream.write_all(format!("{request_line}\r\nHost: localhost\r\n\r\n").as_bytes()).unwrap();
-    let mut response = String::new();
-    stream.read_to_string(&mut response).unwrap();
-    response
-}
-
-#[test]
-fn listener_answers_404_to_stray_requests_and_keeps_waiting_for_the_callback() {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let addr = listener.local_addr().unwrap();
-    let browser = thread::spawn(move || {
-        let favicon = send(addr, "GET /favicon.ico HTTP/1.1");
-        let callback = send(addr, "GET /callback?code=c1&state=s1 HTTP/1.1");
-        (favicon, callback)
-    });
-
-    let params = wait_for_callback(&listener, "s1").unwrap();
-    let (favicon, callback) = browser.join().unwrap();
-
-    assert_eq!(params, CallbackParams { code: "c1".to_string(), state: "s1".to_string() });
-    assert!(favicon.starts_with("HTTP/1.1 404"), "got {favicon}");
-    assert!(callback.starts_with("HTTP/1.1 200"), "got {callback}");
-}
-
-#[test]
-fn listener_rejects_a_state_mismatch() {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let addr = listener.local_addr().unwrap();
-    let browser = thread::spawn(move || send(addr, "GET /callback?code=c1&state=forged HTTP/1.1"));
-
-    let err = wait_for_callback(&listener, "expected").unwrap_err();
-    browser.join().unwrap();
-
-    assert!(matches!(err, LoginError::StateMismatch), "got {err:?}");
-}
-
-#[test]
-fn listener_reports_a_denied_consent() {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let addr = listener.local_addr().unwrap();
-    let browser =
-        thread::spawn(move || send(addr, "GET /callback?error=access_denied&state=s1 HTTP/1.1"));
-
-    let err = wait_for_callback(&listener, "s1").unwrap_err();
-    browser.join().unwrap();
-
-    assert!(
-        matches!(&err, LoginError::Callback(CallbackError::Denied(d)) if d == "access_denied"),
-        "got {err:?}"
-    );
+    assert!(err.to_string().starts_with(&format!("cannot listen for the login callback on {address}")), "got {err}");
+    assert!(err.to_string().ends_with("and retry: zitadel auth login --user"), "got {err}");
 }
 
 // ── code exchange and refresh ─────────────────────────────────────────────
