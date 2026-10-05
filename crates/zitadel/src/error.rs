@@ -27,7 +27,11 @@ pub enum CliError {
     )]
     NoHomeDirectory,
 
-    #[error("login failed: {reason}")]
+    #[error(
+        "login failed: {reason}. Check that instance_url in app.json is right and that the service \
+        user key still exists in the console (Users > Service Users > <user> > Keys); if it was \
+        deleted or expired, create a new JSON key and run: zitadel init --key-file <path-to-key.json>"
+    )]
     LoginFailed { reason: String },
 
     #[error(
@@ -67,7 +71,10 @@ pub enum CliError {
     )]
     ApiNotFound { body: String },
 
-    #[error("ZITADEL API returned status {status}: {body}")]
+    #[error(
+        "ZITADEL API returned status {status}: {body}. A 4xx means the request was rejected — \
+        check the flags against the command's --help; a 5xx is a ZITADEL-side error — retry later."
+    )]
     ApiError { status: u16, body: String },
 
     #[error("one or more doctor checks failed. See the JSON report above for details.")]
@@ -96,4 +103,9 @@ pub enum CliError {
 
     #[error("failed to write app config {path}: {reason}. Check that the directory is writable.")]
     WriteAppConfigFailed { path: String, reason: String },
+
+    /// Conditions that should be unreachable (e.g. re-parsing a config built from
+    /// typed fields) — never expected to fire.
+    #[error("internal error: {reason}. This is a bug in the zitadel CLI.")]
+    Internal { reason: String },
 }

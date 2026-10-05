@@ -125,9 +125,8 @@ pub(crate) fn build_app_config(
     AppConfig::from_json(&value.to_string()).map_err(|e| match e {
         AppConfigError::InvalidInstanceUrl(_) => CliError::InvalidInstanceUrl { value: url },
         // The value was just built from typed fields; only the URL can be invalid.
-        other => CliError::WriteAppConfigFailed {
-            path: "app.json".to_string(),
-            reason: other.to_string(),
+        other => CliError::Internal {
+            reason: format!("re-parsing the merged app config failed: {other}"),
         },
     })
 }

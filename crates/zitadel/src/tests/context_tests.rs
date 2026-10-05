@@ -13,31 +13,46 @@ fn status(status: u16) -> ClientError {
 
 #[test]
 fn unauthorized_points_to_auth_login() {
-    let err = client_error_to_cli(status(401));
-
-    assert!(matches!(err, CliError::ApiUnauthorized { .. }), "got {err:?}");
-    let msg = err.to_string();
-    assert!(msg.contains("zitadel auth login"), "got {msg}");
-    assert!(msg.contains(r#"{"message":"m"}"#), "body must be kept: {msg}");
+    assert_eq!(
+        client_error_to_cli(status(401)).to_string(),
+        r#"ZITADEL rejected the access token (401): {"message":"m"}. Run: zitadel auth login"#
+    );
 }
 
 #[test]
-fn forbidden_points_to_doctor_and_roles() {
+fn forbidden_keeps_the_body_and_points_to_doctor_and_roles() {
     let err = client_error_to_cli(status(403));
 
-    assert!(matches!(err, CliError::ApiForbidden { .. }), "got {err:?}");
-    let msg = err.to_string();
-    assert!(msg.contains("zitadel doctor"), "got {msg}");
-    assert!(msg.contains("role"), "got {msg}");
+    assert!(matches!(&err, CliError::ApiForbidden { body } if body == r#"{"message":"m"}"#), "got {err:?}");
+    assert_eq!(
+        err.to_string(),
+        "ZITADEL denied the operation (403): {\"message\":\"m\"}. The logged-in identity lacks the \
+        administrator role this operation requires (e.g. IAM_OWNER, ORG_OWNER, ORG_USER_MANAGER). \
+        Run: zitadel doctor to see its current roles, then grant the missing one in the console."
+    );
 }
 
 #[test]
-fn other_statuses_keep_status_and_body() {
+fn not_found_suggests_verifying_the_id() {
+    assert_eq!(
+        client_error_to_cli(status(404)).to_string(),
+        "ZITADEL found no such resource (404): {\"message\":\"m\"}. Verify the id — find the right one with the \
+        matching search/list command (e.g. zitadel user search)."
+    );
+}
+
+#[test]
+fn other_statuses_keep_status_and_body_and_say_what_to_do() {
     let err = client_error_to_cli(status(500));
 
     assert!(
         matches!(&err, CliError::ApiError { status: 500, body } if body == r#"{"message":"m"}"#),
         "got {err:?}"
+    );
+    assert_eq!(
+        err.to_string(),
+        "ZITADEL API returned status 500: {\"message\":\"m\"}. A 4xx means the request was rejected — \
+        check the flags against the command's --help; a 5xx is a ZITADEL-side error — retry later."
     );
 }
 
@@ -49,16 +64,6 @@ fn transport_errors_map_to_request_failed() {
         matches!(&err, CliError::ApiRequestFailed { reason } if reason == "connection refused"),
         "got {err:?}"
     );
-}
-
-#[test]
-fn not_found_suggests_verifying_the_id() {
-    let err = client_error_to_cli(status(404));
-
-    assert!(matches!(err, CliError::ApiNotFound { .. }), "got {err:?}");
-    let msg = err.to_string();
-    assert!(msg.contains("search"), "got {msg}");
-    assert!(msg.contains(r#"{"message":"m"}"#), "body must be kept: {msg}");
 }
 
 // ── login_error_to_cli (authenticated_client's credential-loading errors) ──
@@ -112,4 +117,19 @@ fn corrupted_credentials_mean_not_authenticated() {
     );
 
     assert!(matches!(err, CliError::NotAuthenticated { .. }), "got {err:?}");
+}
+
+#[test]
+fn login_failure_says_what_to_check_and_how_to_replace_the_key() {
+    let err = CliError::LoginFailed {
+        reason: "token exchange failed: 400 Bad Request: invalid_grant".to_string(),
+    };
+
+    assert_eq!(
+        err.to_string(),
+        "login failed: token exchange failed: 400 Bad Request: invalid_grant. Check that instance_url \
+        in app.json is right and that the service user key still exists in the console \
+        (Users > Service Users > <user> > Keys); if it was deleted or expired, create a new JSON key \
+        and run: zitadel init --key-file <path-to-key.json>"
+    );
 }
