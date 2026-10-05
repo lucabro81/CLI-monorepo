@@ -32,3 +32,6 @@ pub const AUTH_MY_MEMBERSHIPS_SEARCH_PATH: &str = "/auth/v1/memberships/me/_sear
 
 /// v2 User service: `POST` = `ListUsers` (search), `GET /{userId}` = `GetUserByID`.
 pub const USERS_V2_PATH: &str = "/v2/users";
+
+/// v2 Organization service: `ListOrganizations` (search).
+pub const ORGANIZATIONS_SEARCH_V2_PATH: &str = "/v2/organizations/_search";

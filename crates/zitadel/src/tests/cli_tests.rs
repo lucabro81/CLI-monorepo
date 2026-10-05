@@ -2,7 +2,7 @@
 
 use clap::Parser;
 
-use super::{AuthCommand, Cli, Command, UserCommand, UserState};
+use super::{AuthCommand, Cli, Command, OrganizationCommand, UserCommand, UserState};
 
 fn parse(args: &[&str]) -> Result<Cli, clap::Error> {
     Cli::try_parse_from(std::iter::once("zitadel").chain(args.iter().copied()))
@@ -138,6 +138,34 @@ fn user_search_rejects_zero_or_non_numeric_limit() {
     assert!(parse(&["user", "search", "--limit", "0"]).is_err());
     assert!(parse(&["user", "search", "--limit", "ten"]).is_err());
     assert!(parse(&["user", "search", "--offset", "-1"]).is_err());
+}
+
+#[test]
+fn parses_organization_list_with_defaults() {
+    let cli = parse(&["organization", "list"]).unwrap();
+
+    assert!(matches!(
+        cli.command,
+        Command::Organization { command: OrganizationCommand::List { name: None, limit: 100, offset: 0 } }
+    ));
+}
+
+#[test]
+fn parses_organization_list_with_all_flags() {
+    let cli = parse(&["organization", "list", "--name", "acme", "--limit", "5", "--offset", "10"]).unwrap();
+
+    match cli.command {
+        Command::Organization { command: OrganizationCommand::List { name, limit, offset } } => {
+            assert_eq!(name.as_deref(), Some("acme"));
+            assert_eq!((limit, offset), (5, 10));
+        }
+        other => panic!("expected organization list, got {other:?}"),
+    }
+}
+
+#[test]
+fn organization_list_rejects_zero_limit() {
+    assert!(parse(&["organization", "list", "--limit", "0"]).is_err());
 }
 
 #[test]

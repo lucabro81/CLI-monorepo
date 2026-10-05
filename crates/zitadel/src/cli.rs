@@ -70,6 +70,11 @@ pub enum Command {
         #[command(subcommand)]
         command: UserCommand,
     },
+    /// Work with organizations of the instance
+    Organization {
+        #[command(subcommand)]
+        command: OrganizationCommand,
+    },
     /// Manage authentication with the ZITADEL instance
     Auth {
         #[command(subcommand)]
@@ -145,6 +150,30 @@ pub enum UserCommand {
     Get {
         /// The user's id (`userId` in user search results)
         user_id: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum OrganizationCommand {
+    /// List the organizations the identity may read
+    ///
+    /// Calls ZITADEL's v2 `ListOrganizations` (POST /v2/organizations/_search).
+    /// Visibility depends on the identity's roles: an instance administrator
+    /// (`IAM_OWNER`) sees every organization, an `ORG_OWNER` only its own. Each result
+    /// has id, name, state, primaryDomain. Pagination: --limit/--offset; the
+    /// response's details.totalResult is the total number of matches (absent when
+    /// there are none). --select (or --select-all) is required.
+    #[command(after_help = "Examples:\n  zitadel organization list --select result.id,result.name,result.state\n  zitadel organization list --name acme --select result.id,result.name")]
+    List {
+        /// Name contains this text (case-insensitive)
+        #[arg(long)]
+        name: Option<String>,
+        /// Maximum number of results to return
+        #[arg(long, default_value_t = 100, value_parser = clap::value_parser!(u32).range(1..))]
+        limit: u32,
+        /// Number of results to skip (for paging through results)
+        #[arg(long, default_value_t = 0)]
+        offset: u64,
     },
 }
 

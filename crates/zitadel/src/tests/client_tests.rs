@@ -75,3 +75,14 @@ fn get_user_percent_encodes_the_id_as_a_single_path_segment() {
     let request = server.join().unwrap();
     assert!(request.starts_with("GET /v2/users/a%2Fb%20c "), "got {request}");
 }
+
+#[test]
+fn list_organizations_posts_body_to_v2_organizations_search() {
+    let (url, server) = one_shot_server("200 OK", r#"{"result":[]}"#);
+
+    client(&url).list_organizations(&serde_json::json!({"queries": []})).unwrap();
+
+    let request = server.join().unwrap();
+    assert!(request.starts_with("POST /v2/organizations/_search "), "got {request}");
+    assert!(request.ends_with(r#"{"queries":[]}"#), "got {request}");
+}

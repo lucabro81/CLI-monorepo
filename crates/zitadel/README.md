@@ -135,6 +135,23 @@ zitadel user get 123456789012345678
 zitadel user get 123456789012345678 --select user.username,user.state,user.human.email.email
 ```
 
+### `zitadel organization list`
+
+Organizations the identity may read (v2 `ListOrganizations`, `POST /v2/organizations/_search`). An instance administrator (`IAM_OWNER`) sees all of them, an `ORG_OWNER` only its own. Requires `--select` or `--select-all`.
+
+| Flag | Description |
+|---|---|
+| `--name <TEXT>` | Name contains this text, case-insensitive. |
+| `--limit <N>` | Max results, default 100. |
+| `--offset <N>` | Results to skip, default 0. |
+
+Response: `details.totalResult` and `result[]` with `id`, `name`, `state`, `primaryDomain` (both absent when nothing matches).
+
+```sh
+zitadel organization list --select result.id,result.name,result.state
+zitadel organization list --name acme --select result.id,result.name
+```
+
 ### `--select <PATHS>` / `--select-all` (global flags)
 
 List/search commands require `--select` (comma-separated dot paths) or `--select-all`; without either they fail and report the response size and top-level fields. See root `CLAUDE.md`.

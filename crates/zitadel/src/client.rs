@@ -44,6 +44,11 @@ impl ZitadelClient {
         self.post_json(endpoints::USERS_V2_PATH, body)
     }
 
+    /// Searches organizations (v2 `ListOrganizations`): `POST /v2/organizations/_search`.
+    pub fn list_organizations(&self, body: &serde_json::Value) -> Result<serde_json::Value, ClientError> {
+        self.post_json(endpoints::ORGANIZATIONS_SEARCH_V2_PATH, body)
+    }
+
     /// A single user by id (v2 `GetUserByID`): `GET /v2/users/{userId}`.
     pub fn get_user(&self, user_id: &str) -> Result<serde_json::Value, ClientError> {
         self.get_json(self.url_with_segment(endpoints::USERS_V2_PATH, user_id)?)

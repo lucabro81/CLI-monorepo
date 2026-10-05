@@ -8,10 +8,10 @@
 use serde_json::{Value, json};
 
 use crate::cli::{UserCommand, UserState};
-use crate::context::{authenticated_client, client_error_to_cli, print_json};
+use crate::context::{
+    CONTAINS_IGNORE_CASE, authenticated_client, client_error_to_cli, print_json, search_query,
+};
 use crate::error::CliError;
-
-const CONTAINS_IGNORE_CASE: &str = "TEXT_QUERY_METHOD_CONTAINS_IGNORE_CASE";
 
 pub fn run(command: UserCommand, select: cli_fields::Select<'_>) -> Result<(), CliError> {
     match command {
@@ -70,7 +70,7 @@ pub(crate) fn build_search_body(filters: &UserSearchFilters<'_>) -> Value {
         queries.push(json!({"organizationIdQuery": {"organizationId": organization_id}}));
     }
     json!({
-        "query": {"offset": filters.offset, "limit": filters.limit, "asc": true},
+        "query": search_query(filters.limit, filters.offset),
         "queries": queries,
     })
 }

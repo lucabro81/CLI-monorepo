@@ -5,6 +5,8 @@
 //! - `authenticated_client` — load config → load credentials → renew if expiring → build client.
 //! - `client_error_to_cli` — maps `ClientError` to an actionable `CliError` (401/403/404 hints).
 //! - `print_json` — renders a value via `cli_fields::render_json` honoring `--select`.
+//! - `search_query` / `CONTAINS_IGNORE_CASE` — the pagination block and text-match
+//!   method shared by every v2 search/list request body.
 
 use crate::auth::{self, AppConfig, AppConfigError, LoginError};
 use crate::client::{ClientError, ZitadelClient};
@@ -58,6 +60,14 @@ pub fn client_error_to_cli(error: ClientError) -> CliError {
         ClientError::Status { status: 404, body } => CliError::ApiNotFound { body },
         ClientError::Status { status, body } => CliError::ApiError { status, body },
     }
+}
+
+/// Text-match method used by every free-text search flag.
+pub const CONTAINS_IGNORE_CASE: &str = "TEXT_QUERY_METHOD_CONTAINS_IGNORE_CASE";
+
+/// The `query` (pagination/ordering) block of a v2 search/list request body.
+pub fn search_query(limit: u32, offset: u64) -> serde_json::Value {
+    serde_json::json!({"offset": offset, "limit": limit, "asc": true})
 }
 
 /// Prints `value` as pretty JSON according to `select` (see `cli_fields::Select`).

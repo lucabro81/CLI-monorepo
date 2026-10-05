@@ -4,3 +4,4 @@ pub mod auth;
 pub mod doctor;
 pub mod init;
 pub mod user;
+pub mod organization;
