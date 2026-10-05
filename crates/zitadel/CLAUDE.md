@@ -132,3 +132,5 @@ Two identities, same `credentials.json` — the last login decides (bitbucket mo
 cargo test -p zitadel                 # unit tests, no credentials
 cargo test -p zitadel -- --ignored    # e2e against a real instance (see ADDENDUM)
 ```
+
+`tests/e2e_tests.rs` is read-only and self-referential: the logged-in identity is the fixture.

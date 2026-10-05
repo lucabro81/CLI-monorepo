@@ -36,9 +36,12 @@ deviates from or adds to the generic skill are covered. Steps not listed follow
 `crates/zitadel/src/tests/e2e_tests.rs`, each test `#[ignore = "e2e: requires zitadel init"]`.
 
 - **Target**: the maintainer's own ZITADEL Cloud free-tier instance, configured
-  via `zitadel init` in the config dir and `ZITADEL_E2E_*` variables in the
-  workspace-root `.env` (never commit the instance URL or ids).
-- **Mutations allowed**: the instance may be freely mutated as long as usage
+  via `zitadel init` in the config dir in use (`XDG_CONFIG_HOME`; never commit
+  the instance URL or ids). No env variables are needed.
+- **Self-fixture for read-only commands**: `setup()` returns the logged-in
+  identity (user id, username, organization from `GET /auth/v1/users/me`) —
+  assert that read/search/list commands find *it*, instead of creating data.
+- **Mutations allowed** (for future write commands): the instance may be freely mutated as long as usage
   stays within the free tier. Tests may create their own fixtures, named with
   the prefix `zitadel-cli-e2e-` + timestamp, and must remove them on drop (RAII
   guard, as jira's `IssueGuard`), plus an `e2e_cleanup` test that deletes

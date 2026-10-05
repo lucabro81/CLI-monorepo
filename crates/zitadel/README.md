@@ -178,8 +178,10 @@ List/search commands require `--select` (comma-separated dot paths) or `--select
 
 ```sh
 cargo test -p zitadel                 # unit tests
-cargo test -p zitadel -- --ignored    # e2e, needs `zitadel init` done and ZITADEL_E2E_* in .env
+cargo test -p zitadel -- --ignored    # e2e against the configured instance (needs `zitadel init`)
 ```
+
+The e2e suite is read-only: it uses the logged-in identity itself (its id, username and organization) as the known fixture, so it creates nothing.
 
 ## Error design
 
