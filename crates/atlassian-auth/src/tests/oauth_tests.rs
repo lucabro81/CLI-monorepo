@@ -6,6 +6,7 @@ use oauth_user_login::{CallbackError, WaitError};
 
 use super::{
     app_config_path, authorization_code_body, authorization_url, complete_remote_login,
+    complete_remote_login_at,
     credentials_path, merge_scopes_for_cloud_id, pending_login_path, refresh, start_remote_login,
     AccessibleResource, Credentials, LoginError, OAuthConfig, OAuthConfigError,
 };
@@ -442,4 +443,115 @@ fn remote_complete_after_expiry_fails_and_removes_the_pending_login() {
         "got {err:?}"
     );
     assert!(!path.exists());
+}
+
+// ── remote login wiring, against a local stand-in for the two endpoints ───
+
+/// Serves `responses` in order (one per request) and returns the raw requests.
+fn mock_server(responses: Vec<(&'static str, String)>) -> (String, std::thread::JoinHandle<Vec<String>>) {
+    use std::io::{BufRead, BufReader, Read, Write};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    let handle = std::thread::spawn(move || {
+        responses
+            .into_iter()
+            .map(|(status, body)| {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut reader = BufReader::new(stream.try_clone().unwrap());
+                let mut request = String::new();
+                let mut content_length = 0;
+                loop {
+                    let mut line = String::new();
+                    reader.read_line(&mut line).unwrap();
+                    if let Some(v) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+                        content_length = v.trim().parse().unwrap();
+                    }
+                    request.push_str(&line);
+                    if line == "\r\n" {
+                        break;
+                    }
+                }
+                let mut body_in = vec![0; content_length];
+                reader.read_exact(&mut body_in).unwrap();
+                request.push_str(&String::from_utf8(body_in).unwrap());
+                let response = format!(
+                    "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                stream.write_all(response.as_bytes()).unwrap();
+                request
+            })
+            .collect()
+    });
+    (url, handle)
+}
+
+const TOKEN_OK: &str = r#"{"access_token":"at","refresh_token":"rt","expires_in":3600}"#;
+const RESOURCES_OK: &str = r#"[{"id":"cloud-1","url":"https://site.example.net","scopes":["read:jira-work"]}]"#;
+
+#[test]
+fn remote_complete_sends_the_stored_verifier_and_redirect_then_resolves_the_site() {
+    let (url, server) = mock_server(vec![("200 OK", TOKEN_OK.to_string()), ("200 OK", RESOURCES_OK.to_string())]);
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("pending-login.json");
+    let (_, pending) = start_remote_login(&local_config(), TEST_SCOPES, REMOTE_URI, &path, NOW).unwrap();
+
+    let creds = complete_remote_login_at(
+        &local_config(), &path, "code-9", &pending.state, NOW, &format!("{url}/token"), &format!("{url}/resources"),
+    )
+    .unwrap();
+
+    let requests = server.join().unwrap();
+    let token_body: serde_json::Value =
+        serde_json::from_str(requests[0].rsplit("\r\n\r\n").next().unwrap()).unwrap();
+    assert!(requests[0].starts_with("POST /token "), "got {}", requests[0]);
+    assert_eq!(
+        token_body,
+        authorization_code_body(&local_config(), "code-9", pending.code_verifier.as_deref().unwrap(), REMOTE_URI)
+    );
+    assert!(requests[1].starts_with("GET /resources "), "got {}", requests[1]);
+    assert_eq!(creds.cloud_id, "cloud-1");
+    assert_eq!(creds.site_url.as_deref(), Some("https://site.example.net"));
+    assert_eq!(creds.refresh_token.as_deref(), Some("rt"));
+    assert!(!path.exists());
+}
+
+#[test]
+fn remote_complete_with_a_refused_code_is_a_token_exchange_error_and_consumes_the_state() {
+    let (url, server) = mock_server(vec![("403 Forbidden", r#"{"error":"invalid_grant"}"#.to_string())]);
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("pending-login.json");
+    let (_, pending) = start_remote_login(&local_config(), TEST_SCOPES, REMOTE_URI, &path, NOW).unwrap();
+
+    let err = complete_remote_login_at(
+        &local_config(), &path, "used", &pending.state, NOW, &format!("{url}/token"), &format!("{url}/resources"),
+    )
+    .unwrap_err();
+    server.join().unwrap();
+
+    assert!(matches!(err, LoginError::TokenExchange(_)), "got {err:?}");
+    assert!(!path.exists());
+}
+
+// Regression: a failure listing the accessible sites, after the code had been
+// accepted, was typed TokenExchange, so step 2 reported "Atlassian refused the
+// code".
+#[test]
+fn a_failure_listing_sites_after_a_good_exchange_is_not_a_token_exchange_error() {
+    let (url, server) = mock_server(vec![("200 OK", TOKEN_OK.to_string()), ("500 Internal Server Error", "oops".to_string())]);
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("pending-login.json");
+    let (_, pending) = start_remote_login(&local_config(), TEST_SCOPES, REMOTE_URI, &path, NOW).unwrap();
+
+    let err = complete_remote_login_at(
+        &local_config(), &path, "code-9", &pending.state, NOW, &format!("{url}/token"), &format!("{url}/resources"),
+    )
+    .unwrap_err();
+    server.join().unwrap();
+
+    assert!(matches!(err, LoginError::AccessibleResources(_)), "got {err:?}");
+    assert!(
+        err.to_string().starts_with("could not list the Atlassian sites this account can access"),
+        "got {err}"
+    );
 }

@@ -122,6 +122,10 @@ pub enum LoginError {
     TokenExchange(String),
     #[error("no accessible Atlassian resources found for this account")]
     NoAccessibleResources,
+    /// The accessible-resources call itself failed (network, status, JSON),
+    /// e.g. after a successful code exchange — not a refused code.
+    #[error("could not list the Atlassian sites this account can access ({0}). Retry the login")]
+    AccessibleResources(String),
     /// A condition that should be unreachable given valid inputs.
     /// If this surfaces it indicates a bug in the CLI itself.
     #[error("internal error: {0}")]
@@ -205,6 +209,28 @@ pub fn complete_remote_login(
     state: &str,
     now: u64,
 ) -> Result<Credentials, LoginError> {
+    complete_remote_login_at(
+        config,
+        path,
+        code,
+        state,
+        now,
+        endpoints::ATLASSIAN_TOKEN_URL,
+        endpoints::ATLASSIAN_ACCESSIBLE_RESOURCES_URL,
+    )
+}
+
+/// [`complete_remote_login`] against explicit endpoints, so tests can point
+/// it at a local server.
+pub(crate) fn complete_remote_login_at(
+    config: &OAuthConfig,
+    path: &Path,
+    code: &str,
+    state: &str,
+    now: u64,
+    token_url: &str,
+    resources_url: &str,
+) -> Result<Credentials, LoginError> {
     let pending =
         oauth_user_login::take_pending_login(path, state, now).map_err(LoginError::PendingLogin)?;
     let verifier = pending
@@ -215,20 +241,24 @@ pub fn complete_remote_login(
         .redirect_uri
         .as_deref()
         .ok_or_else(|| LoginError::Internal("the pending login has no redirect URI".to_string()))?;
-    let token = request_token(&authorization_code_body(config, code, verifier, redirect_uri))?;
-    credentials_from_code_exchange(token)
+    let token = request_token_at(token_url, &authorization_code_body(config, code, verifier, redirect_uri))?;
+    let resource = first_resource(fetch_accessible_resources_at(resources_url, &token.access_token)?)?;
+    Ok(credentials_from(token, resource))
 }
 
 fn credentials_from_code_exchange(token: TokenResponse) -> Result<Credentials, LoginError> {
     let resource = fetch_primary_resource(&token.access_token)?;
+    Ok(credentials_from(token, resource))
+}
 
-    Ok(Credentials {
+fn credentials_from(token: TokenResponse, resource: AccessibleResource) -> Credentials {
+    Credentials {
         access_token: token.access_token,
         refresh_token: token.refresh_token,
         expires_at: now_unix() + token.expires_in,
         cloud_id: resource.id,
         site_url: resource.url,
-    })
+    }
 }
 
 /// Current Unix time in seconds (the `now` the remote-login functions take).
@@ -320,8 +350,12 @@ pub fn login_client_credentials(config: &OAuthConfig) -> Result<Credentials, Log
 }
 
 fn request_token(body: &serde_json::Value) -> Result<TokenResponse, LoginError> {
+    request_token_at(endpoints::ATLASSIAN_TOKEN_URL, body)
+}
+
+fn request_token_at(url: &str, body: &serde_json::Value) -> Result<TokenResponse, LoginError> {
     let response = reqwest::blocking::Client::new()
-        .post(endpoints::ATLASSIAN_TOKEN_URL)
+        .post(url)
         .json(body)
         .send()
         .map_err(|e| LoginError::TokenExchange(e.to_string()))?;
@@ -338,21 +372,31 @@ fn request_token(body: &serde_json::Value) -> Result<TokenResponse, LoginError> 
 }
 
 fn fetch_accessible_resources(access_token: &str) -> Result<Vec<AccessibleResource>, LoginError> {
-    reqwest::blocking::Client::new()
-        .get(endpoints::ATLASSIAN_ACCESSIBLE_RESOURCES_URL)
+    fetch_accessible_resources_at(endpoints::ATLASSIAN_ACCESSIBLE_RESOURCES_URL, access_token)
+}
+
+fn fetch_accessible_resources_at(url: &str, access_token: &str) -> Result<Vec<AccessibleResource>, LoginError> {
+    let failed = |e: reqwest::Error| LoginError::AccessibleResources(e.to_string());
+    let response = reqwest::blocking::Client::new()
+        .get(url)
         .bearer_auth(access_token)
         .header("Accept", "application/json")
         .send()
-        .map_err(|e| LoginError::TokenExchange(e.to_string()))?
-        .json()
-        .map_err(|e| LoginError::TokenExchange(e.to_string()))
+        .map_err(failed)?;
+    let status = response.status();
+    if !status.is_success() {
+        let text = response.text().unwrap_or_default();
+        return Err(LoginError::AccessibleResources(format!("{status}: {text}")));
+    }
+    response.json().map_err(failed)
+}
+
+fn first_resource(resources: Vec<AccessibleResource>) -> Result<AccessibleResource, LoginError> {
+    resources.into_iter().next().ok_or(LoginError::NoAccessibleResources)
 }
 
 fn fetch_primary_resource(access_token: &str) -> Result<AccessibleResource, LoginError> {
-    fetch_accessible_resources(access_token)?
-        .into_iter()
-        .next()
-        .ok_or(LoginError::NoAccessibleResources)
+    first_resource(fetch_accessible_resources(access_token)?)
 }
 
 /// Fetches the OAuth scopes granted to `access_token` for the resource matching
