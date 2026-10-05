@@ -61,6 +61,12 @@ pub enum CliError {
     )]
     ApiForbidden { body: String },
 
+    #[error(
+        "ZITADEL found no such resource (404): {body}. Verify the id — find the right one with the \
+        matching search/list command (e.g. zitadel user search)."
+    )]
+    ApiNotFound { body: String },
+
     #[error("ZITADEL API returned status {status}: {body}")]
     ApiError { status: u16, body: String },
 

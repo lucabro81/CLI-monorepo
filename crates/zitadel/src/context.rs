@@ -3,7 +3,7 @@
 //! - `config_dir` — resolves the XDG config directory (`$XDG_CONFIG_HOME` or `~/.config`).
 //! - `load_app_config` — loads and validates `app.json`, mapping `AppConfigError` to `CliError`.
 //! - `authenticated_client` — load config → load credentials → renew if expiring → build client.
-//! - `client_error_to_cli` — maps `ClientError` to an actionable `CliError` (401/403 hints).
+//! - `client_error_to_cli` — maps `ClientError` to an actionable `CliError` (401/403/404 hints).
 //! - `print_json` — renders a value via `cli_fields::render_json` honoring `--select`.
 
 use crate::auth::{self, AppConfig, AppConfigError, LoginError};
@@ -55,6 +55,7 @@ pub fn client_error_to_cli(error: ClientError) -> CliError {
         ClientError::Request(reason) => CliError::ApiRequestFailed { reason },
         ClientError::Status { status: 401, body } => CliError::ApiUnauthorized { body },
         ClientError::Status { status: 403, body } => CliError::ApiForbidden { body },
+        ClientError::Status { status: 404, body } => CliError::ApiNotFound { body },
         ClientError::Status { status, body } => CliError::ApiError { status, body },
     }
 }

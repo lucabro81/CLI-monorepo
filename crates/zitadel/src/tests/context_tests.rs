@@ -50,3 +50,13 @@ fn transport_errors_map_to_request_failed() {
         "got {err:?}"
     );
 }
+
+#[test]
+fn not_found_suggests_verifying_the_id() {
+    let err = client_error_to_cli(status(404));
+
+    assert!(matches!(err, CliError::ApiNotFound { .. }), "got {err:?}");
+    let msg = err.to_string();
+    assert!(msg.contains("search"), "got {msg}");
+    assert!(msg.contains(r#"{"message":"m"}"#), "body must be kept: {msg}");
+}

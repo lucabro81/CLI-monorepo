@@ -134,6 +134,18 @@ pub enum UserCommand {
         #[arg(long, default_value_t = 0)]
         offset: u64,
     },
+    /// Get one user by id
+    ///
+    /// Calls ZITADEL's v2 `GetUserByID` (GET /v2/users/<user-id>). Returns
+    /// details plus user: userId, username, state, loginNames, details.resourceOwner
+    /// (its organization) and a "human" (profile, email, phone) or "machine" object.
+    /// Always prints the full response regardless of --select — it is a single
+    /// object (an explicit --select is still honored). Use user search to find ids.
+    #[command(after_help = "Examples:\n  zitadel user get 123456789012345678\n  zitadel user get 123456789012345678 --select user.username,user.state,user.human.email.email")]
+    Get {
+        /// The user's id (`userId` in user search results)
+        user_id: String,
+    },
 }
 
 /// User states accepted by `user search --state` (ZITADEL v2 `UserState`).

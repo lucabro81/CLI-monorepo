@@ -4,7 +4,7 @@ Architecture and design notes for the `zitadel` crate. Global rules (TDD, error 
 
 ## Status
 
-`init`, `doctor`, `auth login` (service user), `auth whoami`, `user search` implemented. Rest in progress — see "Planned commands" below and tracking issue #142.
+`init`, `doctor`, `auth login` (service user), `auth whoami`, `user search`, `user get` implemented. Rest in progress — see "Planned commands" below and tracking issue #142.
 
 ## Module map (mirrors crates/google-chat)
 
@@ -17,19 +17,20 @@ src/
                        called by init as final check                    [implemented]
     init.rs          — run_init(), build_app_config() (merge flags over existing
                        app.json), write_app_config() (mode 0600)         [implemented]
-    user.rs          — run(UserCommand); build_search_body() (pure)    [search implemented, get planned]
+    user.rs          — run(UserCommand); build_search_body() (pure)    [search, get implemented]
     organization.rs  — run(OrganizationCommand): list                    [planned]
     project.rs       — run(ProjectCommand): list                         [planned]
   auth.rs         — AppConfig, ServiceUserKey (+ from_key_file: validates type/PEM),
                     Credentials; JWT-profile login
                     (service user), authorization code + PKCE login (--user),
                     renew(), load_credentials()/save_credentials(), callback parsing
-  client.rs       — ZitadelClient (blocking reqwest); get_json/post_json helpers; ClientError::{Request, Status}
-                    [get_current_user, list_my_memberships, search_users implemented]
+  client.rs       — ZitadelClient (blocking reqwest); get_json/post_json helpers; url_with_segment()
+                    percent-encodes ids as one path segment; ClientError::{Request, Status}
+                    [get_current_user, list_my_memberships, search_users, get_user implemented]
   cli.rs          — clap structs only, no logic
   context.rs      — config_dir(), load_app_config(), authenticated_client(),
                     client_error_to_cli() (401 → re-login hint, 403 → missing-role hint
-                    pointing to doctor), print_json(value, select)
+                    pointing to doctor, 404 → verify-id hint), print_json(value, select)
   endpoints.rs    — path constants/builders relative to the instance URL, no logic
   error.rs        — CliError (thiserror), incl. transparent Select(cli_fields::RenderError)
   tests/          — *_tests.rs mirroring src/ (root CLAUDE.md "Test file convention");
@@ -104,6 +105,7 @@ Two identities, same `credentials.json` — the last login decides (bitbucket mo
 | `init` | writes app.json, logs in (`POST /oauth/v2/token`), runs doctor; flags only, no prompts; narrative on stderr, doctor report on stdout | exempt (`or_all`), like doctor |
 | `doctor` | `GET /auth/v1/users/me` + `POST /auth/v1/memberships/me/_search` (v1: no v2 equivalent for the caller's own roles) | exempt (`or_all`) |
 | `user search` | `POST /v2/users` (v2 `ListUsers`) | mandatory |
+| `user get <user-id>` | `GET /v2/users/{userId}` (v2 `GetUserByID`) | exempt (`or_all`) |
 | `auth whoami` | `GET /auth/v1/users/me` (v1: no v2 "me" endpoint; `/oidc/v1/userinfo` only returns `sub` with the `openid` scope) | exempt (`or_all`) |
 
 ## Planned commands (issue #142)
@@ -111,7 +113,6 @@ Two identities, same `credentials.json` — the last login decides (bitbucket mo
 | Command | Endpoint (verify in add-cli-command step 3) | `--select` |
 |---|---|---|
 | `auth login --user` | `/oauth/v2/authorize` + `/oauth/v2/token` | n/a |
-| `user get <user-id>` | `GET /v2/users/{userId}` | exempt |
 | `organization list` | `POST /v2/organizations/_search` | mandatory |
 | `project list` | v2 ProjectService ListProjects (fallback v1 `/management/v1/projects/_search`) | mandatory |
 

@@ -126,6 +126,15 @@ zitadel user search --username john --state active --select result.userId,result
 zitadel user search --limit 50 --offset 50 --select details.totalResult,result.userId
 ```
 
+### `zitadel user get <user-id>`
+
+One user by id (v2 `GetUserByID`, `GET /v2/users/{userId}`): `details` plus `user` with the same fields as a `user search` result. Always printed in full (an explicit `--select` is honored). An unknown id fails with a 404 error suggesting `user search`.
+
+```sh
+zitadel user get 123456789012345678
+zitadel user get 123456789012345678 --select user.username,user.state,user.human.email.email
+```
+
 ### `--select <PATHS>` / `--select-all` (global flags)
 
 List/search commands require `--select` (comma-separated dot paths) or `--select-all`; without either they fail and report the response size and top-level fields. See root `CLAUDE.md`.

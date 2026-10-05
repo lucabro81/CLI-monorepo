@@ -30,7 +30,7 @@ impl ZitadelClient {
 
     /// The authenticated identity (service user or human): `GET /auth/v1/users/me`.
     pub fn get_current_user(&self) -> Result<serde_json::Value, ClientError> {
-        self.get_json(endpoints::AUTH_USERS_ME_PATH)
+        self.get_json(format!("{}{}", self.instance_url, endpoints::AUTH_USERS_ME_PATH))
     }
 
     /// The calling identity's administrator memberships and roles:
@@ -44,10 +44,26 @@ impl ZitadelClient {
         self.post_json(endpoints::USERS_V2_PATH, body)
     }
 
-    fn get_json(&self, path: &str) -> Result<serde_json::Value, ClientError> {
+    /// A single user by id (v2 `GetUserByID`): `GET /v2/users/{userId}`.
+    pub fn get_user(&self, user_id: &str) -> Result<serde_json::Value, ClientError> {
+        self.get_json(self.url_with_segment(endpoints::USERS_V2_PATH, user_id)?)
+    }
+
+    /// `instance_url + base_path + "/" + segment`, with `segment` percent-encoded
+    /// as one path segment (so an id containing `/` can't reach another endpoint).
+    fn url_with_segment(&self, base_path: &str, segment: &str) -> Result<reqwest::Url, ClientError> {
+        let mut url = reqwest::Url::parse(&format!("{}{base_path}", self.instance_url))
+            .map_err(|e| ClientError::Request(format!("invalid URL: {e}")))?;
+        url.path_segments_mut()
+            .map_err(|()| ClientError::Request("instance URL cannot have path segments".to_string()))?
+            .push(segment);
+        Ok(url)
+    }
+
+    fn get_json(&self, url: impl reqwest::IntoUrl) -> Result<serde_json::Value, ClientError> {
         let response = self
             .http
-            .get(format!("{}{path}", self.instance_url))
+            .get(url)
             .bearer_auth(&self.access_token)
             .header(reqwest::header::ACCEPT, "application/json")
             .send()

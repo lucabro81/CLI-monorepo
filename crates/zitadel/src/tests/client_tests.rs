@@ -54,3 +54,24 @@ fn unreachable_instance_returns_request_error() {
 
     assert!(matches!(err, ClientError::Request(_)), "got {err:?}");
 }
+
+#[test]
+fn get_user_sends_get_to_v2_users_id() {
+    let (url, server) = one_shot_server("200 OK", r#"{"user":{"userId":"42"}}"#);
+
+    let value = client(&url).get_user("42").unwrap();
+
+    assert!(server.join().unwrap().starts_with("GET /v2/users/42 "));
+    assert_eq!(value, serde_json::json!({"user": {"userId": "42"}}));
+}
+
+#[test]
+fn get_user_percent_encodes_the_id_as_a_single_path_segment() {
+    // An id containing "/" must not turn into a different endpoint path.
+    let (url, server) = one_shot_server("404 Not Found", r#"{"code":5,"message":"Not Found"}"#);
+
+    let _ = client(&url).get_user("a/b c");
+
+    let request = server.join().unwrap();
+    assert!(request.starts_with("GET /v2/users/a%2Fb%20c "), "got {request}");
+}

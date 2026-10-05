@@ -112,6 +112,21 @@ fn parses_user_search_with_all_flags() {
 }
 
 #[test]
+fn parses_user_get() {
+    let cli = parse(&["user", "get", "123456789012345678"]).unwrap();
+
+    assert!(matches!(
+        cli.command,
+        Command::User { command: UserCommand::Get { ref user_id } } if user_id == "123456789012345678"
+    ));
+}
+
+#[test]
+fn user_get_requires_a_user_id() {
+    assert!(parse(&["user", "get"]).is_err());
+}
+
+#[test]
 fn user_search_rejects_unknown_state() {
     // ZITADEL silently returns zero results for an unknown state, so it must be
     // rejected client-side.

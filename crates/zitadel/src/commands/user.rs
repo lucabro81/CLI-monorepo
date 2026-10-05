@@ -2,7 +2,8 @@
 //!
 //! `search` builds a v2 `ListUsers` body from the typed flags (`build_search_body`,
 //! pure and unit-tested) and prints the raw response; `--select` is mandatory
-//! because the result list is unbounded.
+//! because the result list is unbounded. `get` prints a single user and is
+//! exempt (`select.or_all()`).
 
 use serde_json::{Value, json};
 
@@ -34,6 +35,12 @@ pub fn run(command: UserCommand, select: cli_fields::Select<'_>) -> Result<(), C
                 .search_users(&body)
                 .map_err(client_error_to_cli)?;
             print_json(&result, select)
+        }
+        UserCommand::Get { user_id } => {
+            let user = authenticated_client()?
+                .get_user(&user_id)
+                .map_err(client_error_to_cli)?;
+            print_json(&user, select.or_all())
         }
     }
 }
