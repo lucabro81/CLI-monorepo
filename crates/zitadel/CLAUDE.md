@@ -4,7 +4,7 @@ Architecture and design notes for the `zitadel` crate. Global rules (TDD, error 
 
 ## Status
 
-`init`, `doctor`, `auth login [--user]`, `auth whoami`, `user search`, `user get`, `organization list`, `project list` implemented. Rest in progress — see "Planned commands" below and tracking issue #142.
+`init`, `doctor`, `auth login [--user]`, `auth whoami`, `user search`, `user get`, `organization list`, `project list` implemented (issue #142). New commands are added one at a time via the `add-cli-command` skill.
 
 ## Module map (mirrors crates/google-chat)
 
@@ -121,11 +121,6 @@ Two identities, same `credentials.json` — the last login decides (bitbucket mo
 | `organization list` | `POST /v2/organizations/_search` (v2 `ListOrganizations`); visibility follows roles (`IAM_OWNER` all, `ORG_OWNER` own only) | mandatory |
 | `project list` | `POST /zitadel.project.v2.ProjectService/ListProjects` (Connect path, see API notes) | mandatory |
 | `auth whoami` | `GET /auth/v1/users/me` (v1: no v2 "me" endpoint; `/oidc/v1/userinfo` only returns `sub` with the `openid` scope) | exempt (`or_all`) |
-
-## Planned commands (issue #142)
-
-| Command | Endpoint (verify in add-cli-command step 3) | `--select` |
-|---|---|---|
 
 ## Testing
 
