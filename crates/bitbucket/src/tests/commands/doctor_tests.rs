@@ -70,6 +70,7 @@ fn pending_login_reports_its_expiry() {
         check_pending_login(dir.path(), NOW + 1),
         serde_json::json!({"status": "pending", "expires_at": "2027-01-15T08:10:00Z", "expired": false})
     );
+    assert_eq!(check_pending_login(dir.path(), NOW + 600)["expired"], true);
 }
 
 #[test]

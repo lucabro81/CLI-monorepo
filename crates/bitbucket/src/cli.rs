@@ -46,6 +46,8 @@ pub enum Command {
     },
     /// Check that the CLI is correctly configured and can reach the Bitbucket API
     ///
+    /// Also reports `pending_login` (a two-step `auth login --user --remote`
+    /// waiting for its code): informational, never counted in the exit code.
     /// Always prints its full result regardless of --select — the report is
     /// generated internally and is always small and fixed-shape.
     #[command(after_help = "Example:\n  bitbucket doctor")]
