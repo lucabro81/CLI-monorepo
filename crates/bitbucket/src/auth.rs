@@ -10,6 +10,7 @@
 //!   for tokens. Every action is attributed to the human who consented. Issues
 //!   a `refresh_token`, which rotates on every use. Bitbucket documents no PKCE
 //!   and no `redirect_uri` parameter for this grant; `state` guards against CSRF.
+//!   `state` and the callback listener come from `crates/oauth-user-login`.
 //!
 //! - **App identity** (`OAuthConfig`) — the static OAuth consumer credentials
 //!   loaded from `app.json`.
@@ -90,18 +91,10 @@ pub enum LoginError {
     Io(#[from] std::io::Error),
     #[error("token exchange failed: {0}")]
     TokenExchange(String),
-    #[error(
-        "cannot listen for the login callback on {address}: {reason}. \
-        Another process is probably using that port: stop it (e.g. find it with `lsof -i :8080`) and retry"
-    )]
-    CallbackListener { address: String, reason: String },
-    #[error("{0}")]
-    Callback(#[from] CallbackError),
-    #[error(
-        "the login callback's state did not match the one sent (possible CSRF or a stale browser tab). \
-        Retry: bitbucket auth login --user"
-    )]
-    StateMismatch,
+    #[error("{0}: bitbucket auth login --user")]
+    CallbackListener(oauth_user_login::ListenerError),
+    #[error("{0}: bitbucket auth login --user")]
+    Callback(oauth_user_login::WaitError),
     /// A condition that should be unreachable given valid inputs.
     /// If this surfaces it indicates a bug in the CLI itself.
     #[error("internal error: {0}")]
@@ -213,22 +206,16 @@ pub fn login_client_credentials(config: &OAuthConfig) -> Result<Credentials, Log
 pub fn login(config: &OAuthConfig) -> Result<Credentials, LoginError> {
     // Bind before opening the browser, so a busy port fails fast instead of
     // after the user has already consented.
-    let listener = std::net::TcpListener::bind(endpoints::CALLBACK_LISTEN_ADDRESS).map_err(|e| {
-        LoginError::CallbackListener {
-            address: endpoints::CALLBACK_LISTEN_ADDRESS.to_string(),
-            reason: e.to_string(),
-        }
-    })?;
+    let listener = oauth_user_login::bind_listener(endpoints::CALLBACK_LISTEN_ADDRESS)
+        .map_err(LoginError::CallbackListener)?;
 
-    let state = generate_state();
+    let state = oauth_user_login::generate_state();
     let url = authorization_url(config, &state)?;
     eprintln!("Opening the browser for Bitbucket consent. If it does not open, visit:\n{url}");
     let _ = webbrowser::open(&url);
 
-    let params = wait_for_callback(&listener)?;
-    if params.state != state {
-        return Err(LoginError::StateMismatch);
-    }
+    let params = oauth_user_login::wait_for_callback(&listener, endpoints::CALLBACK_PATH, &state)
+        .map_err(LoginError::Callback)?;
 
     let token = request_token(config, &authorization_code_form(&params.code))?;
     Ok(credentials_from_token(token, now_unix(), None))
@@ -253,105 +240,6 @@ fn authorization_code_form(code: &str) -> Vec<(&'static str, String)> {
         ("grant_type", "authorization_code".to_string()),
         ("code", code.to_string()),
     ]
-}
-
-/// Generates a random opaque state string used to protect against CSRF in the OAuth flow.
-pub fn generate_state() -> String {
-    use base64::Engine;
-    use rand::RngCore;
-
-    let mut bytes = [0u8; 32];
-    rand::thread_rng().fill_bytes(&mut bytes);
-    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes)
-}
-
-/// Accepts connections on `listener` until one carries the authorization
-/// callback, replies with a small confirmation page, and returns its params.
-/// Requests without a query string (e.g. a browser's `/favicon.ico`) are skipped.
-fn wait_for_callback(listener: &std::net::TcpListener) -> Result<CallbackParams, LoginError> {
-    use std::io::{BufRead, BufReader, Write};
-
-    loop {
-        let (mut stream, _) = listener.accept()?;
-        let mut request_line = String::new();
-        BufReader::new(&stream).read_line(&mut request_line)?;
-
-        let result = parse_callback_request_line(request_line.trim_end());
-        if result == Err(CallbackError::MalformedRequestLine) {
-            let _ = stream.write_all(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
-            continue;
-        }
-
-        let body = match &result {
-            Ok(_) => "Login complete. You can close this window and return to the terminal.",
-            Err(_) => "Login failed. Return to the terminal for details.",
-        };
-        let response = format!(
-            "HTTP/1.1 200 OK\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-            body.len()
-        );
-        let _ = stream.write_all(response.as_bytes());
-
-        return Ok(result?);
-    }
-}
-
-/// `code` and `state` extracted from the authorization callback.
-#[derive(Debug, PartialEq, Eq)]
-pub struct CallbackParams {
-    pub code: String,
-    pub state: String,
-}
-
-#[derive(Debug, PartialEq, Eq, thiserror::Error)]
-pub enum CallbackError {
-    #[error("the login callback request was malformed. Retry: bitbucket auth login --user")]
-    MalformedRequestLine,
-    #[error(
-        "the login callback is missing the `{0}` parameter. \
-        Check that the OAuth consumer's callback URL is exactly http://localhost:8080/callback, then retry: bitbucket auth login --user"
-    )]
-    MissingParam(&'static str),
-    #[error(
-        "Bitbucket refused the authorization: {error}{}. \
-        Approve the consent page to continue, then retry: bitbucket auth login --user",
-        description.as_deref().map(|d| format!(" ({d})")).unwrap_or_default()
-    )]
-    Denied {
-        error: String,
-        description: Option<String>,
-    },
-}
-
-/// Parses the first line of the local callback HTTP request, e.g.
-/// `GET /callback?code=XYZ&state=abc HTTP/1.1`, extracting `code` and `state`.
-/// An `error` parameter (e.g. the user clicked "Deny") takes precedence.
-pub fn parse_callback_request_line(line: &str) -> Result<CallbackParams, CallbackError> {
-    let mut parts = line.split_whitespace();
-    let (Some(_method), Some(target), Some(_version)) = (parts.next(), parts.next(), parts.next())
-    else {
-        return Err(CallbackError::MalformedRequestLine);
-    };
-
-    let query = target
-        .split_once('?')
-        .map(|(_, query)| query)
-        .ok_or(CallbackError::MalformedRequestLine)?;
-
-    let mut pairs: std::collections::HashMap<String, String> =
-        serde_urlencoded::from_str(query).map_err(|_| CallbackError::MalformedRequestLine)?;
-
-    if let Some(error) = pairs.remove("error") {
-        return Err(CallbackError::Denied {
-            error,
-            description: pairs.remove("error_description"),
-        });
-    }
-
-    Ok(CallbackParams {
-        code: pairs.remove("code").ok_or(CallbackError::MissingParam("code"))?,
-        state: pairs.remove("state").ok_or(CallbackError::MissingParam("state"))?,
-    })
 }
 
 /// Form body renewing `credentials`: the `refresh_token` grant for `--user`

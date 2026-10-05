@@ -16,6 +16,8 @@ pub const BITBUCKET_AUTHORIZE_URL: &str = "https://bitbucket.org/site/oauth2/aut
 /// Local address `auth login --user` listens on for the authorization callback.
 /// The OAuth consumer's callback URL must point here: `http://localhost:8080/callback`.
 pub const CALLBACK_LISTEN_ADDRESS: &str = "127.0.0.1:8080";
+/// Path of the consumer's callback URL (`http://localhost:8080/callback`).
+pub const CALLBACK_PATH: &str = "/callback";
 
 // ── Bitbucket REST API v2.0 (client.rs) ────────────────────────────────────
 
