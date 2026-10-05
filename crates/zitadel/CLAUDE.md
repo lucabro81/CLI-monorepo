@@ -20,7 +20,8 @@ src/
     user.rs          — run(UserCommand): search, get                     [planned]
     organization.rs  — run(OrganizationCommand): list                    [planned]
     project.rs       — run(ProjectCommand): list                         [planned]
-  auth.rs         — AppConfig, ServiceUserKey, Credentials; JWT-profile login
+  auth.rs         — AppConfig, ServiceUserKey (+ from_key_file: validates type/PEM),
+                    Credentials; JWT-profile login
                     (service user), authorization code + PKCE login (--user),
                     renew(), load_credentials()/save_credentials(), callback parsing
   client.rs       — ZitadelClient (blocking reqwest); get_json/post_json helpers; ClientError::{Request, Status}

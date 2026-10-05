@@ -30,10 +30,10 @@ Only needed if a human wants to use the CLI as themselves:
 ### 3. Initialize
 
 ```sh
-zitadel init --instance-url https://<instance>.zitadel.cloud --key-file ~/path/to/key.json [--client-id <native-app-client-id>]
+zitadel init --instance-url https://<instance>.zitadel.cloud --key-file ~/path/to/key.json
 ```
 
-TODO: final flags/behaviour documented once `init` is implemented.
+The key file's content is copied into `app.json` (mode `0600`); the original file is no longer needed by the CLI afterwards. See [`zitadel init`](#zitadel-init) below.
 
 ## How the OAuth flow works
 
@@ -53,7 +53,57 @@ Config lives in `$XDG_CONFIG_HOME/zitadel-cli/` (fallback `~/.config/zitadel-cli
 
 ## Usage
 
-TODO — one section per command as they are implemented: `init`, `doctor`, `auth login`, `auth whoami`, `user search`, `user get`, `organization list`, `project list`.
+Every command prints JSON on stdout and a single plain-text error on stderr (non-zero exit) on failure.
+
+### `zitadel init`
+
+Writes `app.json`, logs in as the service user (if a key is configured) and prints the [`doctor`](#zitadel-doctor) report. Flag-driven, no prompts. Re-running merges with the existing `app.json`: omitted flags keep their value.
+
+| Flag | Description |
+|---|---|
+| `--instance-url <URL>` | Instance base URL (Cloud or self-hosted). Required on the first run. Trailing `/` is stripped. |
+| `--key-file <PATH>` | Service user JSON key from the console. Validated (JSON, `"type": "serviceaccount"`, RSA PEM) before anything is written. |
+| `--client-id <ID>` | Native app client id, only needed for `auth login --user`. |
+
+```sh
+zitadel init --instance-url https://acme.zitadel.cloud --key-file ~/Downloads/123456789.json
+zitadel init --client-id 123456789@zitadel-cli    # later: add the Native app, keep everything else
+```
+
+Progress lines go to stderr; stdout carries only the doctor report. Exits non-zero if any doctor check fails.
+
+### `zitadel doctor`
+
+Four cascading checks, each with `"status": "ok" | "error" | "skipped"`:
+
+- `app_config` — `app.json` valid; `instance_url`, `service_user_configured`, `native_app_configured`.
+- `credentials` — stored token usable (renewed if expiring); `identity` is `service_user` or `user`, plus `expires_at`.
+- `api` — `GET /auth/v1/users/me`: `user_id`, `user_name`, `type` (`machine`/`human`), `organization_id`.
+- `memberships` — the identity's administrator roles, one entry per `{level, id, display_name, roles}` with `level` in `instance` / `organization` / `project` / `project_grant`. ZITADEL authorizes by these roles, so they decide which commands succeed; no membership at all is an error.
+
+Always prints the full report (an explicit `--select` is honored). Exits non-zero unless every check is `ok`.
+
+```sh
+zitadel doctor
+zitadel doctor --select memberships
+```
+
+### `zitadel auth login`
+
+Logs in as the service user from `app.json` (private key JWT, see [above](#service-user-login-default-private-key-jwt)) and saves `credentials.json`. Normally only needed once: tokens are renewed automatically.
+
+```sh
+zitadel auth login
+```
+
+### `zitadel auth whoami`
+
+The identity behind the stored credentials (`GET /auth/v1/users/me`): `id`, `userName`, `loginNames`, `details.resourceOwner` (its organization), and a `machine` (service user) or `human` object. Always printed in full (an explicit `--select` is honored).
+
+```sh
+zitadel auth whoami
+zitadel auth whoami --select user.id,user.userName,user.details.resourceOwner
+```
 
 ### `--select <PATHS>` / `--select-all` (global flags)
 
@@ -68,4 +118,8 @@ cargo test -p zitadel -- --ignored    # e2e, needs `zitadel init` done and ZITAD
 
 ## Error design
 
-Every error is a single plain-text sentence: what went wrong and what to run or change to fix it (e.g. a missing `app.json` points to `zitadel init`, a 403 points to the role the identity is missing).
+Every error is a single plain-text sentence: what went wrong and what to run or change to fix it. In particular:
+
+- missing/invalid `app.json` → the exact `zitadel init ...` command to run;
+- `401` from the API → `zitadel auth login`;
+- `403` from the API → the identity lacks an administrator role for that operation; run `zitadel doctor` to see its roles and grant the missing one in the console.
