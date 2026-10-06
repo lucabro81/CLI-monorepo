@@ -11,8 +11,8 @@ pub mod endpoints;
 mod oauth;
 
 pub use oauth::{
-    app_config_path, authorization_url, check_identity, complete_remote_login, legacy_credentials_path,
-    get_granted_scopes, load_credentials, login, login_client_credentials, now_unix, pending_login_path,
+    app_config_path, authorization_url, check_identity, complete_remote_login,
+    get_granted_scopes, load_credentials, login, login_client_credentials, now_unix,
     refresh, renew, save_credentials, start_remote_login, AppConfig, Credentials, Identity, LoginError, OAuthConfig,
     OAuthConfigError,
 };
