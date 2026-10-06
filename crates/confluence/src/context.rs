@@ -37,6 +37,11 @@ pub fn load_oauth_config() -> Result<OAuthConfig, CliError> {
             path: path.display().to_string(),
             reason,
         },
+        // Only returned by `AppConfig`, not yet used by this crate.
+        other @ OAuthConfigError::LegacyFormat => CliError::AppConfigInvalid {
+            path: path.display().to_string(),
+            reason: other.to_string(),
+        },
     })
 }
 

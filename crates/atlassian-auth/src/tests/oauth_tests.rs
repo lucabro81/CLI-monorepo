@@ -8,7 +8,7 @@ use super::{
     app_config_path, authorization_code_body, authorization_url, complete_remote_login,
     complete_remote_login_at,
     credentials_path, merge_scopes_for_cloud_id, pending_login_path, refresh, start_remote_login,
-    AccessibleResource, Credentials, LoginError, OAuthConfig, OAuthConfigError,
+    AccessibleResource, AppConfig, Credentials, Identity, LoginError, OAuthConfig, OAuthConfigError,
 };
 
 const TEST_SCOPES: &str = "read:example write:example offline_access";
@@ -554,4 +554,125 @@ fn a_failure_listing_sites_after_a_good_exchange_is_not_a_token_exchange_error()
         err.to_string().starts_with("could not list the Atlassian sites this account can access"),
         "got {err}"
     );
+}
+
+#[test]
+fn identity_follows_the_user_flag() {
+    assert_eq!(Identity::from_user_flag(false), Identity::Service);
+    assert_eq!(Identity::from_user_flag(true), Identity::User);
+}
+
+#[test]
+fn each_identity_has_its_own_credentials_file_under_the_cli_dir() {
+    let config_dir = Path::new("/home/user/.config");
+
+    assert_eq!(
+        Identity::Service.credentials_path(config_dir, "jira-cli"),
+        PathBuf::from("/home/user/.config/jira-cli/credentials-service.json")
+    );
+    assert_eq!(
+        Identity::User.credentials_path(config_dir, "jira-cli"),
+        PathBuf::from("/home/user/.config/jira-cli/credentials-user.json")
+    );
+}
+
+fn section(client_id: &str, client_secret: &str) -> OAuthConfig {
+    OAuthConfig {
+        client_id: client_id.to_string(),
+        client_secret: client_secret.to_string(),
+        redirect_uri: OAuthConfig::REDIRECT_URI.to_string(),
+    }
+}
+
+#[test]
+fn parses_app_config_with_both_sections() {
+    let json = r#"{
+        "service": {"client_id": "svc-id", "client_secret": "svc-secret"},
+        "user": {"client_id": "usr-id", "client_secret": "usr-secret"}
+    }"#;
+
+    let config = AppConfig::from_json(json).expect("should parse");
+
+    assert_eq!(
+        config,
+        AppConfig {
+            service: Some(section("svc-id", "svc-secret")),
+            user: Some(section("usr-id", "usr-secret")),
+        }
+    );
+    assert_eq!(config.section(Identity::Service), Some(&section("svc-id", "svc-secret")));
+    assert_eq!(config.section(Identity::User), Some(&section("usr-id", "usr-secret")));
+}
+
+#[test]
+fn parses_app_config_with_only_the_service_section() {
+    let json = r#"{"service": {"client_id": "svc-id", "client_secret": "svc-secret"}}"#;
+
+    let config = AppConfig::from_json(json).expect("should parse");
+
+    assert_eq!(config.section(Identity::Service), Some(&section("svc-id", "svc-secret")));
+    assert_eq!(config.section(Identity::User), None);
+}
+
+#[test]
+fn parses_app_config_with_only_the_user_section() {
+    let json = r#"{"user": {"client_id": "usr-id", "client_secret": "usr-secret"}}"#;
+
+    let config = AppConfig::from_json(json).expect("should parse");
+
+    assert_eq!(config.section(Identity::Service), None);
+    assert_eq!(config.section(Identity::User), Some(&section("usr-id", "usr-secret")));
+}
+
+#[test]
+fn parses_app_config_with_no_sections() {
+    let config = AppConfig::from_json("{}").expect("should parse");
+
+    assert_eq!(config, AppConfig { service: None, user: None });
+}
+
+#[test]
+fn rejects_the_legacy_flat_app_config() {
+    // Before issue #164 app.json held one client_id/client_secret pair at top
+    // level; it must fail loudly instead of being read as "no sections".
+    let result = AppConfig::from_json(r#"{"client_id": "abc", "client_secret": "shh"}"#);
+
+    assert!(matches!(result, Err(OAuthConfigError::LegacyFormat)));
+}
+
+#[test]
+fn rejects_an_app_config_section_missing_its_secret() {
+    let result = AppConfig::from_json(r#"{"user": {"client_id": "usr-id"}}"#);
+
+    assert!(matches!(result, Err(OAuthConfigError::InvalidJson(_))));
+}
+
+#[test]
+fn rejects_a_malformed_app_config() {
+    assert!(matches!(AppConfig::from_json("not json"), Err(OAuthConfigError::InvalidJson(_))));
+}
+
+#[test]
+fn app_config_load_reports_a_missing_file_with_its_path() {
+    let path = std::env::temp_dir().join("atlassian-auth-no-such-dir").join("app.json");
+
+    let result = AppConfig::load(&path);
+
+    assert!(matches!(result, Err(OAuthConfigError::NotFound(p)) if p == path));
+}
+
+#[test]
+fn app_config_round_trips_through_json() {
+    // init rewrites app.json one section at a time, so serialising must
+    // produce exactly what from_json reads back.
+    let config = AppConfig {
+        service: Some(section("svc-id", "svc-secret")),
+        user: None,
+    };
+
+    let json = config.to_json().expect("should serialize");
+
+    assert_eq!(AppConfig::from_json(&json).expect("should parse"), config);
+    assert!(!json.contains("redirect_uri"), "redirect_uri is fixed, never stored: {json}");
+    assert!(!json.contains("\"user\""), "an absent section is omitted: {json}");
 }

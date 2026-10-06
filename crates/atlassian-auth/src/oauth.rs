@@ -67,10 +67,118 @@ impl OAuthConfig {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 struct AppCredentials {
     client_id: String,
     client_secret: String,
+}
+
+/// Which of the two stored identities a command acts as (issue #164): the
+/// service identity (`client_credentials`, the default) or the human who
+/// logged in with `auth login --user`. Each has its own `app.json` section and
+/// its own credentials file, so logging in as one never touches the other.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Identity {
+    Service,
+    User,
+}
+
+impl Identity {
+    /// Maps the global `--user` flag to the identity it selects.
+    pub fn from_user_flag(user: bool) -> Self {
+        if user {
+            Identity::User
+        } else {
+            Identity::Service
+        }
+    }
+
+    /// This identity's credentials file:
+    /// `<config_dir>/<cli_dir>/credentials-service.json` or `credentials-user.json`.
+    pub fn credentials_path(self, config_dir: &Path, cli_dir: &str) -> PathBuf {
+        let file = match self {
+            Identity::Service => "credentials-service.json",
+            Identity::User => "credentials-user.json",
+        };
+        config_dir.join(cli_dir).join(file)
+    }
+}
+
+/// A crate's `app.json`: one optional OAuth app per identity.
+///
+/// ```json
+/// { "service": { "client_id": "...", "client_secret": "..." },
+///   "user":    { "client_id": "...", "client_secret": "..." } }
+/// ```
+///
+/// For Atlassian the two are different apps: `service` is a Service Account
+/// credential, `user` a 3LO app. The pre-#164 flat shape (`client_id` at top
+/// level) is rejected with [`OAuthConfigError::LegacyFormat`].
+#[derive(Debug, PartialEq, Eq)]
+pub struct AppConfig {
+    pub service: Option<OAuthConfig>,
+    pub user: Option<OAuthConfig>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct AppConfigFile {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    service: Option<AppCredentials>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    user: Option<AppCredentials>,
+    /// Only read to recognise the legacy flat shape.
+    #[serde(default, skip_serializing)]
+    client_id: Option<serde_json::Value>,
+}
+
+impl AppConfig {
+    /// Parses the contents of `app.json`.
+    pub fn from_json(json: &str) -> Result<Self, OAuthConfigError> {
+        let file: AppConfigFile =
+            serde_json::from_str(json).map_err(|e| OAuthConfigError::InvalidJson(e.to_string()))?;
+        if file.client_id.is_some() {
+            return Err(OAuthConfigError::LegacyFormat);
+        }
+        let to_config = |app: AppCredentials| OAuthConfig {
+            client_id: app.client_id,
+            client_secret: app.client_secret,
+            redirect_uri: OAuthConfig::REDIRECT_URI.to_string(),
+        };
+        Ok(AppConfig {
+            service: file.service.map(to_config),
+            user: file.user.map(to_config),
+        })
+    }
+
+    /// Loads `app.json` at `path`.
+    pub fn load(path: &Path) -> Result<Self, OAuthConfigError> {
+        let raw = std::fs::read_to_string(path)
+            .map_err(|_| OAuthConfigError::NotFound(path.to_path_buf()))?;
+        Self::from_json(&raw)
+    }
+
+    /// Serialises back to the `app.json` shape (absent sections omitted,
+    /// `redirect_uri` never stored).
+    pub fn to_json(&self) -> Result<String, OAuthConfigError> {
+        let to_file = |config: &OAuthConfig| AppCredentials {
+            client_id: config.client_id.clone(),
+            client_secret: config.client_secret.clone(),
+        };
+        let file = AppConfigFile {
+            service: self.service.as_ref().map(to_file),
+            user: self.user.as_ref().map(to_file),
+            client_id: None,
+        };
+        serde_json::to_string_pretty(&file).map_err(|e| OAuthConfigError::InvalidJson(e.to_string()))
+    }
+
+    /// The OAuth app configured for `identity`, if its section is present.
+    pub fn section(&self, identity: Identity) -> Option<&OAuthConfig> {
+        match identity {
+            Identity::Service => self.service.as_ref(),
+            Identity::User => self.user.as_ref(),
+        }
+    }
 }
 
 /// Path to a crate's app credentials file: `<config_dir>/<cli_dir>/app.json`.
@@ -93,6 +201,9 @@ pub fn pending_login_path(config_dir: &Path, cli_dir: &str) -> PathBuf {
 pub enum OAuthConfigError {
     NotFound(PathBuf),
     InvalidJson(String),
+    /// `app.json` still has the pre-#164 flat `client_id`/`client_secret`
+    /// shape instead of `service`/`user` sections.
+    LegacyFormat,
 }
 
 impl std::fmt::Display for OAuthConfigError {
@@ -104,6 +215,11 @@ impl std::fmt::Display for OAuthConfigError {
             OAuthConfigError::InvalidJson(msg) => {
                 write!(f, "invalid app credentials file: {msg}")
             }
+            OAuthConfigError::LegacyFormat => write!(
+                f,
+                "app credentials file uses the old single-identity format (client_id at top level) \
+                 instead of \"service\"/\"user\" sections"
+            ),
         }
     }
 }
