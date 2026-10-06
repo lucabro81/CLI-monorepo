@@ -50,7 +50,7 @@ pub fn remove_identity(config_dir: &Path, identity: &Identity) -> std::io::Resul
     oauth_user_login::remove_identity(config_dir, CLI_DIR, identity)
 }
 
-/// Step 1 of `auth login --user --remote`, requesting this crate's [`SCOPES`].
+/// Step 1 of `auth login --user <id> --remote`, requesting this crate's [`SCOPES`].
 pub fn start_remote_login(
     config: &OAuthConfig,
     redirect_uri: &str,
@@ -59,7 +59,7 @@ pub fn start_remote_login(
     atlassian_auth::start_remote_login(config, SCOPES, redirect_uri, pending_path, atlassian_auth::now_unix())
 }
 
-/// Step 2 of `auth login --user --remote` (`--code --state`).
+/// Step 2 of `auth login --user <id> --remote` (`--code --state`).
 pub fn complete_remote_login(
     config: &OAuthConfig,
     pending_path: &Path,

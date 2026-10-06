@@ -38,7 +38,7 @@ pub enum LoginMode {
 }
 
 impl LoginMode {
-    /// Clap enforces every flag combination except "remote needs --user": a
+    /// Clap enforces every flag combination except "remote needs --user <id>": a
     /// global --user written before the subcommand is invisible to clap's
     /// `requires`, so that one is checked here.
     pub fn from_flags(
