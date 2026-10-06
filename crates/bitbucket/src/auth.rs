@@ -199,7 +199,8 @@ struct TokenResponse {
     refresh_token: Option<String>,
 }
 
-/// Dynamic session credentials persisted to `credentials.json`.
+/// Dynamic session credentials persisted to the identity's credentials file
+/// (`credentials-service.json` / `credentials-user.json`).
 /// Fully managed by the CLI — never edit by hand. Renewed transparently before expiry.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Credentials {

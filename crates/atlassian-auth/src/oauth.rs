@@ -568,7 +568,8 @@ pub fn save_credentials(path: &Path, credentials: &Credentials) -> Result<(), Lo
     std::fs::write(path, json).map_err(LoginError::Io)
 }
 
-/// Dynamic session credentials persisted to `credentials.json`.
+/// Dynamic session credentials persisted to the identity's credentials file
+/// (`credentials-service.json` / `credentials-user.json`).
 /// Fully managed by the CLI — never edit by hand. Refreshed transparently before expiry.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Credentials {

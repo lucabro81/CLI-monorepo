@@ -488,7 +488,7 @@ cargo run -p bitbucket -- <command> ...        # against a real workspace
 All errors are plain text, no colors or symbols — designed to be read by an LLM. Each message is self-contained: it states what went wrong and what to do next. Example:
 
 ```
-not authenticated. Run: bitbucket auth login
+not logged in as the OAuth app. Run: bitbucket auth login. To act as the human logged in with bitbucket auth login --user, pass --user instead
 ```
 
 Errors are typed with `thiserror` (`CliError` in `error.rs`). Internal module errors (`ClientError`, `OAuthConfigError`) are mapped to `CliError` at the top-level `run()` function and never surface directly to the user.

@@ -253,7 +253,7 @@ None yet — this crate has not been exercised against a real Confluence site. S
 All errors are plain text, no colors or symbols — designed to be read by an LLM. Each message is self-contained: it states what went wrong and what to do next. Example:
 
 ```
-not authenticated. Run: confluence auth login
+not logged in as the service account. Run: confluence auth login. To act as the human logged in with confluence auth login --user, pass --user instead
 ```
 
 Errors are typed with `thiserror` (`CliError` in `error.rs`). Internal module errors (`LoginError`, `ClientError`) are mapped to `CliError` at the top-level `run()` function and never surface directly to the user.

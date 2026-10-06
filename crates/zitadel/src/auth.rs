@@ -16,7 +16,8 @@
 //! - **App configuration** (`AppConfig`) — `app.json`: the instance URL, the
 //!   service user's key (the console key file, copied verbatim), and the Native
 //!   app `client_id` used by the human login.
-//! - **Session credentials** (`Credentials`) — `credentials.json`: access token,
+//! - **Session credentials** (`Credentials`) — the identity's credentials file
+//!   (`credentials-service.json` / `credentials-user.json`): access token,
 //!   optional refresh token, expiry. Fully managed by the CLI.
 
 use serde::{Deserialize, Serialize};
@@ -194,7 +195,7 @@ pub enum LoginError {
     /// The credentials file doesn't hold the identity it is named after.
     #[error("{0}")]
     WrongIdentity(&'static str),
-    /// Writing `credentials.json` failed (e.g. after a successful renewal) —
+    /// Writing the credentials file failed (e.g. after a successful renewal) —
     /// distinct from `Io`, which only covers reading it.
     #[error("could not write credentials file: {0}")]
     SaveCredentials(String),
@@ -213,7 +214,8 @@ struct TokenResponse {
     expires_in: u64,
 }
 
-/// Dynamic session credentials persisted to `credentials.json`.
+/// Dynamic session credentials persisted to the identity's credentials file
+/// (`credentials-service.json` / `credentials-user.json`).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Credentials {
     pub access_token: String,

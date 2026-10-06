@@ -104,7 +104,7 @@ pub enum Command {
 
 #[derive(Debug, Subcommand)]
 pub enum AuthCommand {
-    /// Log in and save credentials to credentials.json
+    /// Log in and save credentials to credentials-service.json (or credentials-user.json with --user)
     ///
     /// Default: logs in as the service user configured in app.json (private key
     /// JWT) — no browser, no human interaction; this is the mode for agents.

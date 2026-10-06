@@ -434,7 +434,7 @@ This searches for all `[jira-cli-e2e]` issues in the project and deletes them.
 All errors are plain text, no colors or symbols — designed to be read by an LLM. Each message is self-contained: it states what went wrong and what to do next. Example:
 
 ```
-not authenticated. Run: jira auth login
+not logged in as the service account. Run: jira auth login. To act as the human logged in with jira auth login --user, pass --user instead
 ```
 
 Errors are typed with `thiserror` (`CliError` in `error.rs`). Internal module errors (`LoginError`, `ClientError`) are mapped to `CliError` at the top-level `run()` function and never surface directly to the user.
