@@ -208,7 +208,7 @@ fn save_and_load_credentials_roundtrip_without_expiry() {
         client_id: "ignored".to_string(),
         client_secret: "ignored".to_string(),
     };
-    let loaded = load_credentials(&config, &path).expect("should load without renewing");
+    let loaded = load_credentials(&config, &path, Identity::Service).expect("should load without renewing");
 
     assert_eq!(loaded, creds);
 }
@@ -536,4 +536,57 @@ fn remote_complete_with_a_refused_code_still_consumes_the_state() {
 
     assert!(matches!(err, LoginError::TokenExchange(_)), "got {err:?}");
     assert!(!path.exists());
+}
+
+fn unexpired(refresh_token: Option<&str>) -> Credentials {
+    Credentials {
+        access_token: "at".to_string(),
+        expires_at: u64::MAX,
+        scopes: vec![],
+        refresh_token: refresh_token.map(str::to_string),
+    }
+}
+
+fn ignored_config() -> OAuthConfig {
+    OAuthConfig { client_id: "ignored".to_string(), client_secret: "ignored".to_string() }
+}
+
+#[test]
+fn a_user_slot_without_a_refresh_token_is_refused_before_any_renewal() {
+    // Regression guard (issue #164 review): renewal picks client_credentials
+    // when there is no refresh token, which would act as the app.
+    let dir = tempfile::tempdir().unwrap();
+    let path = credentials_path(dir.path(), Identity::User);
+    save_credentials(&path, &unexpired(None)).unwrap();
+
+    let err = load_credentials(&ignored_config(), &path, Identity::User).unwrap_err();
+
+    assert!(matches!(err, LoginError::WrongIdentity(_)), "got {err:?}");
+}
+
+#[test]
+fn a_service_slot_holding_a_human_login_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = credentials_path(dir.path(), Identity::Service);
+    save_credentials(&path, &unexpired(Some("rt"))).unwrap();
+
+    let err = load_credentials(&ignored_config(), &path, Identity::Service).unwrap_err();
+
+    assert!(matches!(err, LoginError::WrongIdentity(_)), "got {err:?}");
+}
+
+#[test]
+fn saving_one_identity_leaves_the_other_identity_file_untouched() {
+    let dir = tempfile::tempdir().unwrap();
+    let service = credentials_path(dir.path(), Identity::Service);
+    save_credentials(&service, &unexpired(None)).unwrap();
+    let before = std::fs::read(&service).unwrap();
+
+    save_credentials(&credentials_path(dir.path(), Identity::User), &unexpired(Some("rt"))).unwrap();
+
+    assert_eq!(std::fs::read(&service).unwrap(), before);
+    assert_eq!(
+        load_credentials(&ignored_config(), &credentials_path(dir.path(), Identity::User), Identity::User).unwrap(),
+        unexpired(Some("rt"))
+    );
 }

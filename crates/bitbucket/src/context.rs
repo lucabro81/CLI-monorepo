@@ -69,7 +69,7 @@ pub(crate) fn login_command(identity: Identity) -> &'static str {
 /// Maps a failure to load or renew `identity`'s stored credentials.
 pub(crate) fn login_error_to_cli(error: LoginError, identity: Identity) -> CliError {
     let reason = match error {
-        LoginError::Io(_) => {
+        LoginError::Io(_) | LoginError::WrongIdentity(_) => {
             return match identity {
                 Identity::Service => CliError::NotAuthenticatedService,
                 Identity::User => CliError::NotAuthenticatedUser,
@@ -94,7 +94,7 @@ pub fn authenticated_client(identity: Identity) -> Result<BitbucketClient, CliEr
     let oauth_config = load_oauth_config(identity)?;
     let path = auth::credentials_path(&config_dir()?, identity);
     let credentials =
-        auth::load_credentials(&oauth_config, &path).map_err(|e| login_error_to_cli(e, identity))?;
+        auth::load_credentials(&oauth_config, &path, identity).map_err(|e| login_error_to_cli(e, identity))?;
     Ok(BitbucketClient::new(&credentials))
 }
 

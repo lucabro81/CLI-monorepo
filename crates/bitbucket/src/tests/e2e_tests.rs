@@ -59,7 +59,7 @@ fn setup() -> (BitbucketClient, Credentials) {
         context::load_oauth_config(auth::Identity::Service).expect("app.json has no service section — run `bitbucket init` first");
     let config_dir = context::config_dir().expect("could not resolve config dir");
     let path = auth::credentials_path(&config_dir, auth::Identity::Service);
-    let credentials = auth::load_credentials(&oauth_config, &path)
+    let credentials = auth::load_credentials(&oauth_config, &path, auth::Identity::Service)
         .expect("not authenticated — run `bitbucket auth login` first");
     let client = BitbucketClient::new(&credentials);
     (client, credentials)
