@@ -126,7 +126,7 @@ pub enum AuthCommand {
     /// to hand to the person. Atlassian then redirects the person to
     /// --redirect-uri (it must be one of the 3LO app's callback URLs) with `code`
     /// and `state`. Step 2 (--code --state) exchanges the code, saves the
-    /// credentials, then prints what `auth whoami` prints. The pending login
+    /// credentials, then prints what `auth whoami --user` prints. The pending login
     /// expires after 10 minutes, its state is single-use, and it lives in this
     /// config folder (`XDG_CONFIG_HOME`). Uses the "user" section (a 3LO app).
     ///
