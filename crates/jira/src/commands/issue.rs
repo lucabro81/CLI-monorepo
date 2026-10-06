@@ -30,7 +30,7 @@ use crate::error::CliError;
 // without reducing complexity, so the line-count lint is allowed here rather than
 // worked around structurally.
 #[allow(clippy::too_many_lines)]
-pub fn run(command: IssueCommand, select: cli_fields::Select<'_>, identity: Identity) -> Result<(), CliError> {
+pub fn run(command: IssueCommand, select: cli_fields::Select<'_>, identity: &Identity) -> Result<(), CliError> {
     match command {
         IssueCommand::Search { jql, max_results, page_token, fields, stale_days } => {
             let client = authenticated_client(identity)?;

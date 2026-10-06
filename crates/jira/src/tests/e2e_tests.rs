@@ -59,10 +59,10 @@ fn project_key() -> String {
 fn setup() -> (JiraClient, Credentials) {
     dotenvy::dotenv().ok();
     let config_dir = context::config_dir().expect("could not resolve config dir");
-    let oauth_config = context::load_oauth_config(auth::Identity::Service)
+    let oauth_config = context::load_oauth_config(&auth::Identity::Service)
         .expect("app.json has no service section — run `jira init` first");
     let credentials =
-        auth::load_credentials(&oauth_config, &auth::credentials_path(&config_dir, auth::Identity::Service), auth::Identity::Service)
+        auth::load_credentials(&oauth_config, &auth::credentials_path(&config_dir, &auth::Identity::Service), &auth::Identity::Service)
             .expect("not authenticated — run `jira auth login` first");
     let client = JiraClient::new(&credentials);
     (client, credentials)
@@ -144,7 +144,7 @@ impl Drop for IssueGuard {
 #[test]
 #[ignore = "e2e: requires credentials and JIRA_E2E_PROJECT"]
 fn e2e_smoke_doctor() {
-    let (report, all_ok) = crate::commands::doctor::run_doctor(auth::Identity::Service)
+    let (report, all_ok) = crate::commands::doctor::run_doctor(&auth::Identity::Service)
         .expect("doctor should not fail with a CliError");
 
     assert!(all_ok, "doctor reported a failing check: {report}");
@@ -180,17 +180,17 @@ fn e2e_renew_service_account_credentials() {
     // service account (client_credentials) credentials don't have, so it
     // returned LoginError::Internal instead of renewing — doctor would report
     // "token expired and refresh failed: internal error: ..." for a perfectly
-    // healthy service account. auth::renew() must dispatch to
+    // healthy service account. atlassian_auth::renew() must dispatch to
     // login_client_credentials() for credentials with refresh_token: None.
     let (_, creds) = setup();
-    let oauth_config = context::load_oauth_config(auth::Identity::Service)
+    let oauth_config = context::load_oauth_config(&auth::Identity::Service)
         .expect("app.json has no service section — run `jira init` first");
 
     let mut expired = creds;
     expired.expires_at = 0;
     expired.refresh_token = None;
 
-    let renewed = auth::renew(&oauth_config, &expired)
+    let renewed = atlassian_auth::renew(&oauth_config, &expired)
         .expect("renew should renew service-account credentials via client_credentials");
 
     assert!(renewed.expires_at > 0, "renewed credentials must have a future expiry");

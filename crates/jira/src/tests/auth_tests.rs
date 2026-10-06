@@ -3,8 +3,9 @@
 use std::path::{Path, PathBuf};
 
 use atlassian_auth::Identity;
+use oauth_user_login::UserId;
 
-use super::{app_config_path, credentials_path, legacy_credentials_path, pending_login_path, SCOPES};
+use super::{app_config_path, credentials_path, pending_login_path, SCOPES};
 
 // `auth.rs` is now a thin wrapper over `atlassian_auth` — the OAuth flows
 // (local and remote) it delegates to are covered by that crate's own test
@@ -17,20 +18,12 @@ fn each_identity_has_its_own_credentials_file_under_jira_cli_dir() {
     let config_dir = Path::new("/home/user/.config");
 
     assert_eq!(
-        credentials_path(config_dir, Identity::Service),
+        credentials_path(config_dir, &Identity::Service),
         PathBuf::from("/home/user/.config/jira-cli/credentials-service.json")
     );
     assert_eq!(
-        credentials_path(config_dir, Identity::User),
-        PathBuf::from("/home/user/.config/jira-cli/credentials-user.json")
-    );
-}
-
-#[test]
-fn legacy_credentials_path_is_the_pre_164_single_file() {
-    assert_eq!(
-        legacy_credentials_path(Path::new("/home/user/.config")),
-        PathBuf::from("/home/user/.config/jira-cli/credentials.json")
+        credentials_path(config_dir, &Identity::User(UserId::parse("alice").unwrap())),
+        PathBuf::from("/home/user/.config/jira-cli/users/alice/credentials.json")
     );
 }
 
@@ -52,9 +45,9 @@ fn scopes_include_offline_access() {
 }
 
 #[test]
-fn pending_login_path_is_under_jira_cli_dir() {
+fn each_persons_pending_login_is_under_jira_cli_dir() {
     assert_eq!(
-        pending_login_path(Path::new("/cfg")),
-        PathBuf::from("/cfg/jira-cli/pending-login.json")
+        pending_login_path(Path::new("/cfg"), &UserId::parse("alice").unwrap()),
+        PathBuf::from("/cfg/jira-cli/users/alice/pending-login.json")
     );
 }

@@ -5,7 +5,7 @@ use crate::auth::Identity;
 use crate::context::{authenticated_client, client_error_to_cli, print_json};
 use crate::error::CliError;
 
-pub fn run(command: UserCommand, select: cli_fields::Select<'_>, identity: Identity) -> Result<(), CliError> {
+pub fn run(command: UserCommand, select: cli_fields::Select<'_>, identity: &Identity) -> Result<(), CliError> {
     match command {
         UserCommand::Search { query } => {
             let client = authenticated_client(identity)?;

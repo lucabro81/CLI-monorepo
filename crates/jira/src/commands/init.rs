@@ -2,18 +2,19 @@
 //!
 //! This is the only command in the crate with narrative (non-JSON) output.
 //! It is run once per identity per machine (`jira init` for the Service
-//! Account, `jira init --user` for the human's 3LO app).
+//! Account, `jira init --user <id>` for the 3LO app every person logs in with,
+//! logging that person in).
 //!
 //! The flow is:
 //! 1. Print numbered setup instructions for the identity's credential: a
 //!    Service Account at admin.atlassian.com, or a 3LO app at
-//!    developer.atlassian.com (`--user`).
+//!    developer.atlassian.com (`--user <id>`).
 //! 2. Read the Client ID and Client Secret — from `--client-id`/`--client-secret`
 //!    flags if provided, otherwise from interactive stdin prompts.
 //! 3. Write that identity's section of `app.json` via `write_app_config`,
 //!    keeping the other section.
 //! 4. Log in as that identity (`client_credentials`, or the browser flow with
-//!    `--user`) and save its credentials file.
+//!    `--user <id>`) and save its credentials file.
 //! 5. Call `doctor::run_doctor` for that identity and print its JSON report.
 //!
 //! `write_app_config` is kept as a separate public function so it can be unit-tested
@@ -38,11 +39,11 @@ Step 3: Click \"Create credentials\" -> \"OAuth 2.0\" and select the Jira scopes
         write:jira-work
 Step 4: Copy the Client ID and Client Secret (shown once).
 
-For a human identity (commands run with --user), run `jira init --user` instead.
+For a person (commands run with --user <USER_ID>), run `jira init --user <USER_ID>` instead.
 ";
 
 const USER_INSTRUCTIONS: &str = "\
-=== jira init --user: 3LO app setup (the human identity, used with --user) ===
+=== jira init --user: 3LO app setup (every person logs in with it, used with --user) ===
 
 Step 1: Go to https://developer.atlassian.com/console/myapps/
 Step 2: Click \"Create\" and choose \"OAuth 2.0 integration\".
@@ -63,7 +64,7 @@ Step 6: Under \"Settings\", copy the Client ID and Client Secret.
 /// Creates parent directories if they do not exist.
 pub fn write_app_config(
     config_dir: &Path,
-    identity: Identity,
+    identity: &Identity,
     client_id: &str,
     client_secret: &str,
 ) -> Result<(), CliError> {
@@ -79,8 +80,8 @@ pub fn write_app_config(
                 Run jira init{} again if the other identity needs them.",
                 path.display(),
                 match identity {
-                    Identity::Service => " --user",
-                    Identity::User => "",
+                    Identity::Service => " --user <USER_ID>",
+                    Identity::User(_) => "",
                 }
             );
             AppConfig { service: None, user: None }
@@ -94,17 +95,12 @@ pub fn write_app_config(
     });
     match identity {
         Identity::Service => app.service = section,
-        Identity::User => app.user = section,
+        Identity::User(_) => app.user = section,
     }
 
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir).map_err(|e| CliError::SaveCredentialsFailed {
-            path: dir.display().to_string(),
-            reason: e.to_string(),
-        })?;
-    }
+    // It holds the client secrets: written owner-only (#165).
     let serialized = app.to_json().map_err(|e| CliError::JsonSerialize { reason: e.to_string() })?;
-    std::fs::write(&path, serialized).map_err(|e| CliError::SaveCredentialsFailed {
+    oauth_user_login::write_secret_file(&path, serialized.as_bytes()).map_err(|e| CliError::SaveCredentialsFailed {
         path: path.display().to_string(),
         reason: e.to_string(),
     })
@@ -124,10 +120,10 @@ fn prompt(label: &str) -> Result<String, CliError> {
 }
 
 /// Runs the init onboarding flow for `identity`.
-pub fn run_init(identity: Identity, client_id: Option<String>, client_secret: Option<String>) -> Result<(), CliError> {
+pub fn run_init(identity: &Identity, client_id: Option<String>, client_secret: Option<String>) -> Result<(), CliError> {
     match identity {
         Identity::Service => println!("{SERVICE_INSTRUCTIONS}"),
-        Identity::User => println!("{USER_INSTRUCTIONS}"),
+        Identity::User(_) => println!("{USER_INSTRUCTIONS}"),
     }
 
     let client_id = match client_id {
@@ -150,7 +146,7 @@ pub fn run_init(identity: Identity, client_id: Option<String>, client_secret: Op
     };
     let credentials = match identity {
         Identity::Service => auth::login_client_credentials(&oauth_config),
-        Identity::User => {
+        Identity::User(_) => {
             println!("\nStarting OAuth login flow — your browser will open.\n");
             auth::login(&oauth_config)
         }
@@ -177,8 +173,8 @@ pub fn run_init(identity: Identity, client_id: Option<String>, client_secret: Op
     }
 
     let whoami = match identity {
-        Identity::Service => "jira auth whoami",
-        Identity::User => "jira auth whoami --user",
+        Identity::Service => "jira auth whoami".to_string(),
+        Identity::User(id) => format!("jira auth whoami --user {id}"),
     };
     println!("\nSetup complete. Run `{whoami}` to verify the identity.");
     Ok(())

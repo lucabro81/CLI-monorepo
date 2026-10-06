@@ -10,6 +10,7 @@
 //! example rather than reconstructing it from abstract parameter descriptions.
 
 use clap::{Parser, Subcommand};
+use oauth_user_login::UserId;
 
 /// Jira CLI for LLM agents — query Jira issues from the command line.
 #[derive(Debug, Parser)]
@@ -36,14 +37,16 @@ pub struct Cli {
     #[arg(long, global = true, conflicts_with = "select")]
     pub select_all: bool,
 
-    /// Act as the human who logged in with `jira auth login --user` instead of the
-    /// Service Account. Without it every command acts as the Service Account
-    /// (`jira auth login`). Both identities are stored side by side and renewed
-    /// automatically, so switching between them needs no new login. On `init`,
-    /// `auth login`, `auth whoami` and `doctor` it selects which identity to set
-    /// up, log in or check.
-    #[arg(long, global = true)]
-    pub user: bool,
+    /// Act as the person with this id instead of the Service Account: the human
+    /// who logged in with `jira auth login --user <USER_ID>`. The id is your own
+    /// name for that person, a lowercase slug (a-z, 0-9, '.', '_', '-', e.g.
+    /// jane.doe). Without it every command acts as the Service Account
+    /// (`jira auth login`). The Service Account and every person are stored side
+    /// by side and renewed automatically, so switching between them needs no new
+    /// login. On `init`, `auth login`, `auth whoami`, `auth logout` and `doctor` it
+    /// selects which identity to set up, log in, check or remove.
+    #[arg(long, global = true, value_name = "USER_ID", value_parser = UserId::parse)]
+    pub user: Option<UserId>,
 
     #[command(subcommand)]
     pub command: Command,
@@ -54,12 +57,14 @@ pub enum Command {
     /// Onboarding: save an identity's OAuth app to app.json, log in, verify with doctor
     ///
     /// Without --user: sets up the Service Account (admin.atlassian.com credential),
-    /// writes app.json's "service" section, runs the non-interactive login. With --user:
-    /// sets up the 3LO app (developer console) for the human identity, writes the "user"
-    /// section, runs the browser login. The other section of app.json is left untouched.
-    /// Then prints a doctor JSON report for that identity. Pass --client-id and
-    /// --client-secret to skip interactive prompts.
-    #[command(after_help = "Examples:\n  jira init --client-id <ID> --client-secret <SECRET>          # Service Account\n  jira init --user --client-id <ID> --client-secret <SECRET>   # 3LO app, human login in the browser\n  jira init                                                    # interactive prompts")]
+    /// writes app.json's "service" section, runs the non-interactive login. With
+    /// `--user <USER_ID>`: sets up the 3LO app (developer console) that every person
+    /// logs in with, writes the "user" section, and logs that person in through the
+    /// browser. The other section of app.json is left untouched. Then prints a doctor
+    /// JSON report for that identity. Pass --client-id and --client-secret to skip
+    /// interactive prompts. To log in more people once the 3LO app is set up, use
+    /// `jira auth login --user <USER_ID>`.
+    #[command(after_help = "Examples:\n  jira init --client-id <ID> --client-secret <SECRET>          # Service Account\n  jira init --user jane.doe --client-id <ID> --client-secret <SECRET>   # 3LO app, jane.doe logs in in the browser\n  jira init                                                    # interactive prompts")]
     Init {
         /// OAuth client ID of the identity being set up (skips interactive prompt if provided)
         #[arg(long)]
@@ -74,13 +79,15 @@ pub enum Command {
     /// API call, granted OAuth scopes, global and per-project permissions.
     /// Prints a JSON object with a status field per check. Exits non-zero if any
     /// check fails or is skipped. Also reports `pending_login` (a two-step
-    /// `auth login --user --remote` waiting for its code): informational, never
-    /// counted in the exit code. Checks the Service Account, or the human with
-    /// --user; `identities` (informational) shows which of the two are logged in
-    /// and flags a leftover pre-#164 credentials.json. Always prints its full
+    /// `auth login --user <USER_ID> --remote` waiting for its code): informational, never
+    /// counted in the exit code. Checks the Service Account, or the person with
+    /// `--user <USER_ID>`; `identities` (informational) shows whether the Service
+    /// Account is logged in, lists the ids of the people logged in, and flags
+    /// credentials files of earlier layouts (credentials.json,
+    /// credentials-user.json), no longer read. Always prints its full
     /// result regardless of --select — the report is generated internally and is
     /// always small and fixed-shape.
-    #[command(after_help = "Examples:\n  jira doctor\n  jira doctor --user\n  jira doctor --select app_config.status,credentials.status,api.status\n\nEach check has a status field: \"ok\", \"error\", or \"skipped\".\nLater checks are skipped if an earlier one fails.")]
+    #[command(after_help = "Examples:\n  jira doctor\n  jira doctor --user jane.doe\n  jira doctor --select app_config.status,credentials.status,api.status\n\nEach check has a status field: \"ok\", \"error\", or \"skipped\".\nLater checks are skipped if an earlier one fails.")]
     Doctor,
     /// Manage authentication with Jira
     Auth {
@@ -112,30 +119,32 @@ pub enum AuthCommand {
     /// browser, no user interaction — the access token is exchanged directly
     /// from app.json's "service" section. Saved to credentials-service.json.
     ///
-    /// Pass --user for the interactive OAuth 2.0 (3LO) + PKCE flow for a human
-    /// Atlassian account, with app.json's "user" section (a 3LO app): opens the
-    /// browser for consent, receives the callback on localhost:8080, exchanges the
-    /// code for tokens, and stores a `refresh_token` for automatic renewal in
-    /// credentials-user.json. Each login replaces only its own identity's
-    /// credentials: afterwards every command acts as the Service Account, or as
-    /// the human when it is given --user.
+    /// Pass `--user <USER_ID>` for the interactive OAuth 2.0 (3LO) + PKCE flow for a
+    /// person's Atlassian account, with app.json's "user" section (a 3LO app shared
+    /// by every person): opens the browser for consent, receives the callback on
+    /// localhost:8080, exchanges the code for tokens, and stores a `refresh_token`
+    /// for automatic renewal in `users/<USER_ID>/credentials.json`. Each login
+    /// replaces only its own identity's credentials: afterwards every command acts
+    /// as the Service Account, or as that person when it is given `--user <USER_ID>`.
     ///
-    /// With --user --remote: a two-step login for a person who is not at this
+    /// With `--user <USER_ID> --remote`: a two-step login for a person who is not at this
     /// machine. Step 1 (--remote --redirect-uri) opens no browser and listens on
     /// no port: it prints JSON `{authorize_url, state, expires_at}` for the caller
     /// to hand to the person. Atlassian then redirects the person to
     /// --redirect-uri (it must be one of the 3LO app's callback URLs) with `code`
     /// and `state`. Step 2 (--code --state) exchanges the code, saves the
-    /// credentials, then prints what `auth whoami --user` prints. The pending login
-    /// expires after 10 minutes, its state is single-use, and it lives in this
-    /// config folder (`XDG_CONFIG_HOME`). Uses the "user" section (a 3LO app).
+    /// credentials, then prints what `auth whoami --user <USER_ID>` prints. The
+    /// pending login expires after 10 minutes, its state is single-use, and it lives
+    /// in that person's folder of this config folder (`XDG_CONFIG_HOME`), so several
+    /// people can be mid-login at once. Uses the "user" section (a 3LO app).
     ///
-    /// Run this once per machine; tokens are renewed automatically after that.
-    #[command(after_help = "Examples:\n  jira auth login              # service account (client_credentials)\n  jira auth login --user       # human account (OAuth 2.0 3LO + PKCE)\n  jira auth login --user --remote --redirect-uri https://app.example.com/oauth/callback   # step 1\n  jira auth login --user --code <CODE> --state <STATE>                                   # step 2\n\nRequires app.json at ~/.config/jira-cli/app.json with the identity's section.\nRun `jira init` (or `jira init --user`) first if it is missing.")]
+    /// Run this once per identity per machine; tokens are renewed automatically
+    /// after that (one renewal at a time per identity, so parallel calls are safe).
+    #[command(after_help = "Examples:\n  jira auth login              # service account (client_credentials)\n  jira auth login --user jane.doe       # a person (OAuth 2.0 3LO + PKCE)\n  jira auth login --user jane.doe --remote --redirect-uri https://app.example.com/oauth/callback   # step 1\n  jira auth login --user jane.doe --code <CODE> --state <STATE>                                   # step 2\n\nRequires app.json at ~/.config/jira-cli/app.json with the identity's section.\nRun `jira init` (or `jira init --user <USER_ID>`) first if it is missing.")]
     Login {
         /// Step 1 of a two-step login for someone not at this machine: print the authorize URL instead of opening a browser
-        // "needs --user" is checked in LoginMode::from_flags: clap's `requires`
-        // cannot see a global --user written before the subcommand.
+        // "needs --user <USER_ID>" is checked in LoginMode::from_flags: clap's
+        // `requires` cannot see a global --user written before the subcommand.
         #[arg(long, requires = "redirect_uri", conflicts_with_all = ["code", "state"])]
         remote: bool,
         /// With --remote: where Atlassian sends the person back; must be a callback URL of the 3LO app
@@ -148,12 +157,23 @@ pub enum AuthCommand {
         #[arg(long, requires = "code")]
         state: Option<String>,
     },
-    /// Print the account the CLI acts as, as JSON: the Service Account, or the human with --user
+    /// Print the account the CLI acts as, as JSON: the Service Account, or the person with `--user <USER_ID>`
     ///
     /// Always prints its full result regardless of --select — an identity check,
     /// small and fixed-shape.
-    #[command(after_help = "Examples:\n  jira auth whoami\n  jira auth whoami --user\n  jira auth whoami --select displayName,emailAddress,accountId")]
+    #[command(after_help = "Examples:\n  jira auth whoami\n  jira auth whoami --user jane.doe\n  jira auth whoami --select displayName,emailAddress,accountId")]
     Whoami,
+    /// Remove the stored login of the Service Account, or of the person with `--user <USER_ID>`
+    ///
+    /// Deletes that identity's credentials (for a person, their whole folder,
+    /// including a pending remote login) from this machine, so commands can no
+    /// longer act as it until it logs in again. Other identities are untouched.
+    /// app.json is kept. Local only: the tokens are not revoked at Atlassian
+    /// (a person can revoke the app's access from their Atlassian account).
+    /// Prints JSON `{"logged_out": "service"}` or `{"logged_out": "user:<USER_ID>"}`;
+    /// fails if that identity had no stored login.
+    #[command(after_help = "Examples:\n  jira auth logout --user jane.doe\n  jira auth logout")]
+    Logout,
 }
 
 #[derive(Debug, Subcommand)]
@@ -179,7 +199,7 @@ pub enum IssueCommand {
         key: String,
     },
     /// Search issues using JQL (Jira Query Language) and return matching issues as JSON
-    #[command(after_help = "Examples:\n  jira issue search --jql \"project=KAN AND status=\\\"In Progress\\\"\" --select issues.key,issues.fields.summary\n  jira issue search --jql \"assignee=5b10ac8d82e05b22cc7d4ef5 ORDER BY created DESC\" --max-results 10 --select issues.key,issues.fields.summary,nextPageToken\n  jira issue search --jql \"project=KAN\" --fields summary,status,priority --select issues.key,issues.fields.summary,issues.fields.status.name,issues.fields.priority.name\n  jira issue search --jql \"project=KAN AND status!=Done\" --stale-days 14 --select issues.key,issues.fields.summary,issues.fields.updated\n  jira issue search --jql \"project=KAN\" --select issues.fields.summary,issues.fields.status.name\n\nPagination: the response includes a nextPageToken field when more results exist.\nPass its value to --page-token on the next call to fetch the following page.\n\nTo filter by a person, use their account ID (find it with `jira user search --query <name>`),\nnot currentUser(): that resolves to the account the CLI acts as (the service account, or\nthe human with --user), not necessarily the person you are working for.\n\n--stale-days N adds \"AND updated <= -Nd\" to --jql (inserted before ORDER BY, if present) to\nfind issues that have not been updated in at least N days.")]
+    #[command(after_help = "Examples:\n  jira issue search --jql \"project=KAN AND status=\\\"In Progress\\\"\" --select issues.key,issues.fields.summary\n  jira issue search --jql \"assignee=5b10ac8d82e05b22cc7d4ef5 ORDER BY created DESC\" --max-results 10 --select issues.key,issues.fields.summary,nextPageToken\n  jira issue search --jql \"project=KAN\" --fields summary,status,priority --select issues.key,issues.fields.summary,issues.fields.status.name,issues.fields.priority.name\n  jira issue search --jql \"project=KAN AND status!=Done\" --stale-days 14 --select issues.key,issues.fields.summary,issues.fields.updated\n  jira issue search --jql \"project=KAN\" --select issues.fields.summary,issues.fields.status.name\n\nPagination: the response includes a nextPageToken field when more results exist.\nPass its value to --page-token on the next call to fetch the following page.\n\nTo filter by a person, use their account ID (find it with `jira user search --query <name>`),\nnot currentUser(): that resolves to the account the CLI acts as (the service account, or\nthe person with --user <USER_ID>), not necessarily the person you are working for.\n\n--stale-days N adds \"AND updated <= -Nd\" to --jql (inserted before ORDER BY, if present) to\nfind issues that have not been updated in at least N days.")]
     Search {
         /// JQL query string, e.g. "project=KAN AND status=\"Done\""
         #[arg(long)]
