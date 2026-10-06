@@ -17,6 +17,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - fix stale references after the identity split
 - *(zitadel)* remote login step 2 prints auth whoami --user
 - Merge pull request #166 from lucabro81/issue164 ([#166](https://github.com/lucabro81/CLI-monorepo/pull/166))
+- Release
+- Merge pull request #167 from lucabro81/release/zitadel ([#167](https://github.com/lucabro81/CLI-monorepo/pull/167))
+## [1.0.0](https://github.com/lucabro81/CLI-monorepo/compare/zitadel-v0.2.0...zitadel-v1.0.0) - 2026-10-06
+
+### Added
+- *(zitadel)* keep service user and human credentials side by side, pick one per call with --user
+
+### Fixed
+- *(zitadel)* refuse credentials that don't match the identity they are loaded as
+
+### Other
+- document side-by-side service and user identities
+- fix stale references after the identity split
+- *(zitadel)* remote login step 2 prints auth whoami --user
+- Merge pull request #166 from lucabro81/issue164 ([#166](https://github.com/lucabro81/CLI-monorepo/pull/166))
 ## [0.2.0](https://github.com/lucabro81/CLI-monorepo/compare/zitadel-v0.1.0...zitadel-v0.2.0) - 2026-10-05
 
 ### Added
