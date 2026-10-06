@@ -54,14 +54,36 @@ pub enum CliError {
     )]
     SaveCredentialsFailed { path: String, reason: String },
 
-    #[error("not authenticated ({reason}). Run: zitadel auth login")]
-    NotAuthenticated { reason: String },
+    #[error(
+        "not logged in as the service user ({reason}). Run: zitadel auth login. \
+        To act as the human logged in with zitadel auth login --user, pass --user instead"
+    )]
+    NotAuthenticatedService { reason: String },
+
+    #[error(
+        "not logged in as a human ({reason}). \
+        Run: zitadel auth login --user (a person must approve the login in a browser)"
+    )]
+    NotAuthenticatedUser { reason: String },
 
     #[error(
         "failed to renew the access token: {reason}. Run: zitadel auth login \
         (if it keeps failing, check the service user key in app.json is still valid in the console)"
     )]
-    TokenRefreshFailed { reason: String },
+    TokenRenewalFailedService { reason: String },
+
+    #[error(
+        "failed to refresh the human's token: {reason}. \
+        The refresh token may have expired or been revoked. Run: zitadel auth login --user"
+    )]
+    TokenRefreshFailedUser { reason: String },
+
+    #[error(
+        "a remote login (--remote, --code, --state) logs in the human identity and needs --user. \
+        Retry with --user: zitadel auth login --user --remote --redirect-uri <redirect-uri>, \
+        then zitadel auth login --user --code <CODE> --state <STATE>"
+    )]
+    RemoteLoginNeedsUser,
 
     #[error(transparent)]
     Select(#[from] cli_fields::RenderError),
@@ -69,7 +91,10 @@ pub enum CliError {
     #[error("ZITADEL API request failed: {reason}. Check instance_url in app.json and network connectivity.")]
     ApiRequestFailed { reason: String },
 
-    #[error("ZITADEL rejected the access token (401): {body}. Run: zitadel auth login")]
+    #[error(
+        "ZITADEL rejected the access token (401): {body}. Run: zitadel auth login \
+        (zitadel auth login --user if the command was run with --user)"
+    )]
     ApiUnauthorized { body: String },
 
     #[error(

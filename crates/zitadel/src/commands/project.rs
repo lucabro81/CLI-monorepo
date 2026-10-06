@@ -8,13 +8,14 @@
 
 use serde_json::{Value, json};
 
+use crate::auth::Identity;
 use crate::cli::ProjectCommand;
 use crate::context::{authenticated_client, client_error_to_cli, print_json, search_query};
 use crate::error::CliError;
 
 const FILTER_CONTAINS_IGNORE_CASE: &str = "TEXT_FILTER_METHOD_CONTAINS_IGNORE_CASE";
 
-pub fn run(command: ProjectCommand, select: cli_fields::Select<'_>) -> Result<(), CliError> {
+pub fn run(command: ProjectCommand, select: cli_fields::Select<'_>, identity: Identity) -> Result<(), CliError> {
     match command {
         ProjectCommand::List {
             name,
@@ -23,7 +24,7 @@ pub fn run(command: ProjectCommand, select: cli_fields::Select<'_>) -> Result<()
             offset,
         } => {
             let body = build_list_body(name.as_deref(), organization_id.as_deref(), limit, offset);
-            let result = authenticated_client()?
+            let result = authenticated_client(identity)?
                 .list_projects(&body)
                 .map_err(client_error_to_cli)?;
             print_json(&result, select)

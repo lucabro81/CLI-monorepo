@@ -1,5 +1,6 @@
 //! Handler for the `init` command: writes `app.json`, logs in as the service
-//! user (if configured), and runs `doctor` as the final verification.
+//! user (if configured) or, with `--user`, as the human through the browser,
+//! and runs `doctor` for that identity as the final verification.
 //!
 //! Flag-driven only (no interactive prompts — an LLM caller can't answer them).
 //! Re-running merges with the existing `app.json`: omitted flags keep their
@@ -10,12 +11,13 @@ use std::path::Path;
 
 use serde_json::json;
 
-use crate::auth::{self, AppConfig, AppConfigError, ServiceUserKey};
+use crate::auth::{self, AppConfig, AppConfigError, Identity, ServiceUserKey};
 use crate::commands::doctor;
 use crate::context::{config_dir, print_json};
 use crate::error::CliError;
 
 pub fn run_init(
+    identity: Identity,
     instance_url: Option<&str>,
     key_file: Option<&Path>,
     client_id: Option<&str>,
@@ -38,31 +40,41 @@ pub fn run_init(
     write_app_config(&app_path, &config)?;
     eprintln!("Wrote {}", app_path.display());
 
-    let creds_path = auth::credentials_path(&config_dir);
     if instance_changed(previous.as_ref(), &config) {
-        discard_credentials(&creds_path)?;
+        for stale in [Identity::Service, Identity::User] {
+            discard_credentials(&auth::credentials_path(&config_dir, stale))?;
+        }
         eprintln!("Instance URL changed: removed the credentials of the previous instance.");
     }
 
-    if config.service_user.is_some() {
-        let credentials = auth::login_service_user(&config).map_err(|e| CliError::LoginFailed {
-            reason: e.to_string(),
-        })?;
+    let creds_path = auth::credentials_path(&config_dir, identity);
+    let credentials = match identity {
+        Identity::Service if config.service_user.is_none() => {
+            eprintln!(
+                "No service user key configured (--key-file): skipping login. \
+                Run zitadel init --user --client-id <ID> to log in as yourself instead."
+            );
+            None
+        }
+        Identity::Service => Some(
+            auth::login_service_user(&config).map_err(|e| CliError::LoginFailed { reason: e.to_string() })?,
+        ),
+        Identity::User => {
+            eprintln!("Starting the browser login as yourself.");
+            Some(auth::login_user(&config).map_err(|e| CliError::UserLoginFailed { reason: e.to_string() })?)
+        }
+    };
+    if let Some(credentials) = credentials {
         auth::save_credentials(&creds_path, &credentials).map_err(|e| {
             CliError::SaveCredentialsFailed {
                 path: creds_path.display().to_string(),
                 reason: e.to_string(),
             }
         })?;
-        eprintln!("Logged in as the service user. Credentials saved to {}", creds_path.display());
-    } else {
-        eprintln!(
-            "No service user key configured (--key-file): skipping login. \
-            Run zitadel auth login --user if a Native app client id is configured."
-        );
+        eprintln!("Logged in. Credentials saved to {}", creds_path.display());
     }
 
-    let (report, all_ok) = doctor::run_doctor_in(&config_dir);
+    let (report, all_ok) = doctor::run_doctor_in(&config_dir, identity);
     // Same exemption as `doctor`: full report unless an explicit --select is given.
     print_json(&report, select.or_all())?;
     if !all_ok {
@@ -88,7 +100,7 @@ pub(crate) fn instance_changed(previous: Option<&AppConfig>, new: &AppConfig) ->
     previous.is_some_and(|p| p.instance_url != new.instance_url)
 }
 
-/// Removes `credentials.json`; a missing file is fine.
+/// Removes a credentials file; a missing file is fine.
 pub(crate) fn discard_credentials(path: &Path) -> Result<(), CliError> {
     match std::fs::remove_file(path) {
         Ok(()) => Ok(()),

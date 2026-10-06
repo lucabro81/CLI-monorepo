@@ -134,8 +134,17 @@ pub fn app_config_path(config_dir: &Path) -> PathBuf {
     config_dir.join("zitadel-cli").join("app.json")
 }
 
-/// `<config_dir>/zitadel-cli/credentials.json`
-pub fn credentials_path(config_dir: &Path) -> PathBuf {
+pub use oauth_user_login::Identity;
+
+/// `identity`'s credentials file:
+/// `<config_dir>/zitadel-cli/credentials-service.json` or `credentials-user.json`.
+pub fn credentials_path(config_dir: &Path, identity: Identity) -> PathBuf {
+    identity.credentials_path(config_dir, "zitadel-cli")
+}
+
+/// The single credentials file used before issue #164
+/// (`<config_dir>/zitadel-cli/credentials.json`); no longer read, only reported by `doctor`.
+pub fn legacy_credentials_path(config_dir: &Path) -> PathBuf {
     config_dir.join("zitadel-cli").join("credentials.json")
 }
 
@@ -180,7 +189,7 @@ pub enum LoginError {
         \"Refresh Token\" in the Native application's token settings, then run: zitadel auth login --user"
     )]
     NoRefreshToken,
-    #[error("credentials file is corrupted ({0}). Run: zitadel auth login")]
+    #[error("credentials file is corrupted ({0})")]
     InvalidCredentialsFile(String),
     /// Writing `credentials.json` failed (e.g. after a successful renewal) —
     /// distinct from `Io`, which only covers reading it.

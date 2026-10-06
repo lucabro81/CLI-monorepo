@@ -2,14 +2,16 @@
 //!
 //! `run_login` logs in as the service user (private key JWT) or, with `--user`,
 //! as a human via the browser (authorization code + PKCE), and saves the
-//! resulting credentials to `credentials.json`. With `--user --remote` it runs
+//! resulting credentials to that identity's file (`credentials-service.json` /
+//! `credentials-user.json`), leaving the other identity logged in. With `--user --remote` it runs
 //! the two-step login for a person not at this machine: step 1 prints the
 //! authorize URL and stores a pending login, step 2 (`--code --state`) completes
-//! it and prints the identity. `run_whoami` prints the authenticated identity.
+//! it and prints the identity. `run_whoami` prints the account the selected
+//! identity acts as.
 
 use serde_json::{Value, json};
 
-use crate::auth::{self, LoginError};
+use crate::auth::{self, Identity, LoginError};
 use crate::context::{authenticated_client, client_error_to_cli, config_dir, load_app_config, print_json};
 use crate::error::CliError;
 
@@ -24,22 +26,41 @@ pub enum LoginMode {
 }
 
 impl LoginMode {
+    /// Clap enforces every flag combination except "remote needs --user": a
+    /// global --user written before the subcommand is invisible to clap's
+    /// `requires`, so that one is checked here.
     pub fn from_flags(
-        user: bool,
+        identity: Identity,
         redirect_uri: Option<String>,
         code: Option<String>,
         state: Option<String>,
-    ) -> Self {
-        match (user, redirect_uri, code, state) {
-            (_, Some(redirect_uri), _, _) => LoginMode::RemoteStart { redirect_uri },
-            (_, None, Some(code), Some(state)) => LoginMode::RemoteComplete { code, state },
-            (true, ..) => LoginMode::UserBrowser,
-            (false, ..) => LoginMode::ServiceUser,
+    ) -> Result<Self, CliError> {
+        match (identity, redirect_uri, code, state) {
+            (Identity::Service, Some(_), ..) | (Identity::Service, None, Some(_), _) => {
+                Err(CliError::RemoteLoginNeedsUser)
+            }
+            (_, Some(redirect_uri), _, _) => Ok(LoginMode::RemoteStart { redirect_uri }),
+            (_, None, Some(code), Some(state)) => Ok(LoginMode::RemoteComplete { code, state }),
+            (Identity::User, ..) => Ok(LoginMode::UserBrowser),
+            (Identity::Service, ..) => Ok(LoginMode::ServiceUser),
+        }
+    }
+
+    /// The identity this login sets up, i.e. the credentials file it writes.
+    pub fn identity(&self) -> Identity {
+        match self {
+            LoginMode::ServiceUser => Identity::Service,
+            LoginMode::UserBrowser | LoginMode::RemoteStart { .. } | LoginMode::RemoteComplete { .. } => {
+                Identity::User
+            }
         }
     }
 }
 
+/// Runs the login selected by `mode` and saves credentials to that identity's file,
+/// leaving the other identity's credentials untouched.
 pub fn run_login(mode: LoginMode, select: cli_fields::Select<'_>) -> Result<(), CliError> {
+    let identity = mode.identity();
     let config = load_app_config()?;
     let dir = config_dir()?;
     let pending_path = auth::pending_login_path(&dir);
@@ -64,14 +85,14 @@ pub fn run_login(mode: LoginMode, select: cli_fields::Select<'_>) -> Result<(), 
             (credentials, true)
         }
     };
-    let path = auth::credentials_path(&dir);
+    let path = auth::credentials_path(&dir, identity);
     auth::save_credentials(&path, &credentials).map_err(|e| CliError::SaveCredentialsFailed {
         path: path.display().to_string(),
         reason: e.to_string(),
     })?;
     if remote {
         // The caller (e.g. an agent) learns who just logged in.
-        return run_whoami(select);
+        return run_whoami(select, identity);
     }
     println!("Logged in. Credentials saved to {}", path.display());
     Ok(())
@@ -101,8 +122,9 @@ pub(crate) fn remote_login_error(error: LoginError) -> CliError {
     }
 }
 
-pub fn run_whoami(select: cli_fields::Select<'_>) -> Result<(), CliError> {
-    let user = authenticated_client()?
+/// Prints the account `identity` acts as.
+pub fn run_whoami(select: cli_fields::Select<'_>, identity: Identity) -> Result<(), CliError> {
+    let user = authenticated_client(identity)?
         .get_current_user()
         .map_err(client_error_to_cli)?;
     // Exempt from mandatory --select: a single, small, fixed-shape object.

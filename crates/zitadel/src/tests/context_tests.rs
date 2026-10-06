@@ -15,7 +15,7 @@ fn status(status: u16) -> ClientError {
 fn unauthorized_points_to_auth_login() {
     assert_eq!(
         client_error_to_cli(status(401)).to_string(),
-        r#"ZITADEL rejected the access token (401): {"message":"m"}. Run: zitadel auth login"#
+        r#"ZITADEL rejected the access token (401): {"message":"m"}. Run: zitadel auth login (zitadel auth login --user if the command was run with --user)"#
     );
 }
 
@@ -69,17 +69,21 @@ fn transport_errors_map_to_request_failed() {
 // ── login_error_to_cli (authenticated_client's credential-loading errors) ──
 
 use super::login_error_to_cli;
-use crate::auth::LoginError;
+use crate::auth::{Identity, LoginError};
 
 #[test]
 fn missing_credentials_file_means_not_authenticated() {
     let err = login_error_to_cli(
         LoginError::Io(std::io::Error::from(std::io::ErrorKind::NotFound)),
-        std::path::Path::new("/c/credentials.json"),
+        std::path::Path::new("/c/credentials-service.json"),
+        Identity::Service,
     );
 
-    assert!(matches!(err, CliError::NotAuthenticated { .. }), "got {err:?}");
-    assert!(err.to_string().ends_with("Run: zitadel auth login"));
+    assert_eq!(
+        err.to_string(),
+        "not logged in as the service user (I/O error: entity not found). Run: zitadel auth login. \
+        To act as the human logged in with zitadel auth login --user, pass --user instead"
+    );
 }
 
 #[test]
@@ -88,6 +92,7 @@ fn failed_save_after_renewal_names_the_file_not_a_relogin() {
     let err = login_error_to_cli(
         LoginError::SaveCredentials("permission denied".to_string()),
         std::path::Path::new("/c/credentials.json"),
+        Identity::Service,
     );
 
     assert!(
@@ -104,8 +109,8 @@ fn renewal_failures_map_to_token_refresh_failed() {
         LoginError::ServiceUserNotConfigured,
         LoginError::InvalidPrivateKey("bad pem".to_string()),
     ] {
-        let err = login_error_to_cli(e, std::path::Path::new("/c/credentials.json"));
-        assert!(matches!(err, CliError::TokenRefreshFailed { .. }), "got {err:?}");
+        let err = login_error_to_cli(e, std::path::Path::new("/c/credentials.json"), Identity::Service);
+        assert!(matches!(err, CliError::TokenRenewalFailedService { .. }), "got {err:?}");
     }
 }
 
@@ -113,10 +118,41 @@ fn renewal_failures_map_to_token_refresh_failed() {
 fn corrupted_credentials_mean_not_authenticated() {
     let err = login_error_to_cli(
         LoginError::InvalidCredentialsFile("eof".to_string()),
-        std::path::Path::new("/c/credentials.json"),
+        std::path::Path::new("/c/credentials-user.json"),
+        Identity::User,
     );
 
-    assert!(matches!(err, CliError::NotAuthenticated { .. }), "got {err:?}");
+    assert!(matches!(err, CliError::NotAuthenticatedUser { .. }), "got {err:?}");
+}
+
+#[test]
+fn missing_user_credentials_say_a_human_must_log_in() {
+    let err = login_error_to_cli(
+        LoginError::Io(std::io::Error::from(std::io::ErrorKind::NotFound)),
+        std::path::Path::new("/c/credentials-user.json"),
+        Identity::User,
+    );
+
+    assert_eq!(
+        err.to_string(),
+        "not logged in as a human (I/O error: entity not found). \
+        Run: zitadel auth login --user (a person must approve the login in a browser)"
+    );
+}
+
+#[test]
+fn a_failed_user_refresh_says_to_log_in_again_as_the_human() {
+    let err = login_error_to_cli(
+        LoginError::TokenExchange("400 Bad Request: invalid_grant".to_string()),
+        std::path::Path::new("/c/credentials-user.json"),
+        Identity::User,
+    );
+
+    assert_eq!(
+        err.to_string(),
+        "failed to refresh the human's token: token exchange failed: 400 Bad Request: invalid_grant. \
+        The refresh token may have expired or been revoked. Run: zitadel auth login --user"
+    );
 }
 
 #[test]

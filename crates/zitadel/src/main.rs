@@ -23,6 +23,7 @@ mod test_support;
 use std::process::ExitCode;
 
 use clap::Parser;
+use auth::Identity;
 use cli::{AuthCommand, Cli, Command};
 use error::CliError;
 
@@ -45,19 +46,23 @@ fn run() -> Result<(), CliError> {
         cli_fields::Select::Fields(&select_paths)
     };
 
+    // Global --user: act as the human instead of the service user.
+    let identity = Identity::from_user_flag(cli.user);
+
     match cli.command {
         Command::Init {
             instance_url,
             key_file,
             client_id,
         } => commands::init::run_init(
+            identity,
             instance_url.as_deref(),
             key_file.as_deref(),
             client_id.as_deref(),
             select,
         ),
         Command::Doctor => {
-            let (report, all_ok) = commands::doctor::run_doctor()?;
+            let (report, all_ok) = commands::doctor::run_doctor(identity)?;
             // Exempt from mandatory --select: internally generated, small, fixed shape.
             context::print_json(&report, select.or_all())?;
             if !all_ok {
@@ -65,18 +70,18 @@ fn run() -> Result<(), CliError> {
             }
             Ok(())
         }
-        Command::User { command } => commands::user::run(command, select),
-        Command::Organization { command } => commands::organization::run(command, select),
-        Command::Project { command } => commands::project::run(command, select),
+        Command::User { command } => commands::user::run(command, select, identity),
+        Command::Organization { command } => commands::organization::run(command, select, identity),
+        Command::Project { command } => commands::project::run(command, select, identity),
         Command::Auth {
-            command: AuthCommand::Login { user, remote: _, redirect_uri, code, state },
+            command: AuthCommand::Login { remote: _, redirect_uri, code, state },
         } => commands::auth::run_login(
-            commands::auth::LoginMode::from_flags(user, redirect_uri, code, state),
+            commands::auth::LoginMode::from_flags(identity, redirect_uri, code, state)?,
             select,
         ),
         Command::Auth {
             command: AuthCommand::Whoami,
-        } => commands::auth::run_whoami(select),
+        } => commands::auth::run_whoami(select, identity),
     }
 }
 

@@ -7,13 +7,14 @@
 
 use serde_json::{Value, json};
 
+use crate::auth::Identity;
 use crate::cli::{UserCommand, UserState};
 use crate::context::{
     CONTAINS_IGNORE_CASE, authenticated_client, client_error_to_cli, print_json, search_query,
 };
 use crate::error::CliError;
 
-pub fn run(command: UserCommand, select: cli_fields::Select<'_>) -> Result<(), CliError> {
+pub fn run(command: UserCommand, select: cli_fields::Select<'_>, identity: Identity) -> Result<(), CliError> {
     match command {
         UserCommand::Search {
             email,
@@ -31,13 +32,13 @@ pub fn run(command: UserCommand, select: cli_fields::Select<'_>) -> Result<(), C
                 limit,
                 offset,
             });
-            let result = authenticated_client()?
+            let result = authenticated_client(identity)?
                 .search_users(&body)
                 .map_err(client_error_to_cli)?;
             print_json(&result, select)
         }
         UserCommand::Get { user_id } => {
-            let user = authenticated_client()?
+            let user = authenticated_client(identity)?
                 .get_user(&user_id)
                 .map_err(client_error_to_cli)?;
             print_json(&user, select.or_all())

@@ -4,8 +4,10 @@
 //!
 //! 1. `app_config` — `app.json` exists and is valid; reports the instance URL and
 //!    whether the service user key / Native app client id are configured.
-//! 2. `credentials` — `credentials.json` holds a usable token (renewed first if
-//!    expiring); reports the identity kind (`service_user` / `user`) and expiry.
+//! 2. `credentials` — the selected identity's credentials file
+//!    (`credentials-service.json`, or `credentials-user.json` with `--user`) holds
+//!    a usable token (renewed first if expiring); reports the identity kind
+//!    (`service_user` / `user`) and expiry.
 //! 3. `api` — live `GET /auth/v1/users/me`: user id, name, type, organization.
 //! 4. `memberships` — the identity's administrator roles per instance /
 //!    organization / project / project grant. ZITADEL authorizes by these roles,
@@ -13,6 +15,9 @@
 //!
 //! 5. `pending_login` — informational, outside the cascade and `all_ok`: whether a
 //!    two-step `auth login --user --remote` is waiting for its code, and until when.
+//! 6. `identities` — informational, outside the cascade and `all_ok`, no network:
+//!    the identity checked, which identities have a credentials file, and whether
+//!    a pre-#164 `credentials.json` is still lying around.
 //!
 //! Checks cascade: a failed check marks every later check `skipped`. Failures
 //! never surface as `Err` — they are captured in the report, and the caller
@@ -22,20 +27,20 @@ use std::path::Path;
 
 use serde_json::{Value, json};
 
-use crate::auth::{self, AppConfig, Credentials, LoginError};
+use crate::auth::{self, AppConfig, Credentials, Identity, LoginError};
 use crate::client::ZitadelClient;
-use crate::context::{client_error_to_cli, config_dir};
+use crate::context::{client_error_to_cli, config_dir, login_command};
 use crate::error::CliError;
 
-pub fn run_doctor() -> Result<(Value, bool), CliError> {
-    Ok(run_doctor_in(&config_dir()?))
+pub fn run_doctor(identity: Identity) -> Result<(Value, bool), CliError> {
+    Ok(run_doctor_in(&config_dir()?, identity))
 }
 
-/// Runs every check against `config_dir`. Returns `(report, all_ok)`.
-pub(crate) fn run_doctor_in(config_dir: &Path) -> (Value, bool) {
+/// Runs every check against `config_dir` for `identity`. Returns `(report, all_ok)`.
+pub(crate) fn run_doctor_in(config_dir: &Path, identity: Identity) -> (Value, bool) {
     let (app_check, config) = check_app_config(config_dir);
     let (creds_check, client) = match &config {
-        Some(config) => check_credentials(config, config_dir),
+        Some(config) => check_credentials(config, config_dir, identity),
         None => (skipped("app_config check failed"), None),
     };
     let identity_check = match &client {
@@ -57,6 +62,7 @@ pub(crate) fn run_doctor_in(config_dir: &Path) -> (Value, bool) {
         "api": identity_check,
         "memberships": memberships_check,
         "pending_login": check_pending_login(config_dir, auth::now_unix()),
+        "identities": check_identities(config_dir, identity),
     });
     (report, all_ok)
 }
@@ -78,6 +84,29 @@ pub(crate) fn check_pending_login(config_dir: &Path, now: u64) -> Value {
             ),
         }),
     }
+}
+
+/// Informational, no network: which identity this report checks, which
+/// identities have a credentials file, and whether a pre-#164
+/// `credentials.json` (no longer read) is still there to be deleted.
+pub(crate) fn check_identities(config_dir: &Path, selected: Identity) -> Value {
+    let name = |identity: Identity| match identity {
+        Identity::Service => "service",
+        Identity::User => "user",
+    };
+    let presence = |identity: Identity| {
+        if auth::credentials_path(config_dir, identity).exists() {
+            "present"
+        } else {
+            "missing"
+        }
+    };
+    json!({
+        "selected": name(selected),
+        "service": presence(Identity::Service),
+        "user": presence(Identity::User),
+        "legacy_credentials_file": auth::legacy_credentials_path(config_dir).exists(),
+    })
 }
 
 fn skipped(reason: &str) -> Value {
@@ -117,8 +146,9 @@ fn check_app_config(config_dir: &Path) -> (Value, Option<AppConfig>) {
     }
 }
 
-fn check_credentials(config: &AppConfig, config_dir: &Path) -> (Value, Option<ZitadelClient>) {
-    let path = auth::credentials_path(config_dir);
+fn check_credentials(config: &AppConfig, config_dir: &Path, identity: Identity) -> (Value, Option<ZitadelClient>) {
+    let path = auth::credentials_path(config_dir, identity);
+    let login = login_command(identity);
     match auth::load_credentials(config, &path) {
         Ok(credentials) => (
             json!({
@@ -130,11 +160,11 @@ fn check_credentials(config: &AppConfig, config_dir: &Path) -> (Value, Option<Zi
             Some(ZitadelClient::new(&config.instance_url, &credentials)),
         ),
         Err(LoginError::Io(e)) if e.kind() == std::io::ErrorKind::NotFound => (
-            error(Some(&path), "no stored credentials. Run: zitadel auth login"),
+            error(Some(&path), &format!("no stored credentials. Run: {login}")),
             None,
         ),
         Err(e) => (
-            error(Some(&path), &format!("{e}. Run: zitadel auth login")),
+            error(Some(&path), &format!("{e}. Run: {login}")),
             None,
         ),
     }
