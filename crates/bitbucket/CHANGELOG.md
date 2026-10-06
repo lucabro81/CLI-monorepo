@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.0.0](https://github.com/lucabro81/CLI-monorepo/compare/bitbucket-v0.11.0...bitbucket-v1.0.0) - 2026-10-06
 
 ### Added
+- *(bitbucket)* --user <id> selects a person, one credentials folder each, auth logout
+
+### Fixed
+- *(bitbucket)* browser login retry hints name --user <USER_ID>
+- *(bitbucket)* name the identity in the nothing-to-log-out error
+- *(bitbucket)* report an unwritable credentials file instead of asking to log in again
+
+### Other
+- *(bitbucket)* document --user <id>, per-person folders and auth logout (#175)
+- *(bitbucket)* explain the .lock file next to the credentials (#175)
+- Merge pull request #176 from lucabro81/issue175 ([#176](https://github.com/lucabro81/CLI-monorepo/pull/176))
+## [1.0.0](https://github.com/lucabro81/CLI-monorepo/compare/bitbucket-v0.11.0...bitbucket-v1.0.0) - 2026-10-06
+
+### Added
 - *(bitbucket)* keep app and human credentials side by side, pick one per call with --user
 
 ### Fixed
