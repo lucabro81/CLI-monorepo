@@ -121,7 +121,7 @@ pub enum AuthCommand {
     /// to the OAuth consumer's callback URL, so remote logins need a consumer
     /// whose callback URL is the caller's own endpoint, in the "user" section (a
     /// browser login on this machine instead needs the localhost callback). Step 2 (--code --state) exchanges
-    /// the code, saves the credentials, then prints what `auth whoami` prints.
+    /// the code, saves the credentials, then prints what `auth whoami --user` prints.
     /// The pending login expires after 10 minutes, its state is single-use, and
     /// it lives in this config folder (`XDG_CONFIG_HOME`).
     ///
