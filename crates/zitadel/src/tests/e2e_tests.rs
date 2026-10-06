@@ -39,7 +39,7 @@ fn setup() -> (ZitadelClient, Me) {
     let config_dir = context::config_dir().expect("could not resolve config dir");
     let config = AppConfig::load(&auth::app_config_path(&config_dir))
         .expect("app.json not found — run `zitadel init` first");
-    let credentials = auth::load_credentials(&config, &auth::credentials_path(&config_dir, auth::Identity::Service))
+    let credentials = auth::load_credentials(&config, &auth::credentials_path(&config_dir, auth::Identity::Service), auth::Identity::Service)
         .expect("not authenticated — run `zitadel auth login` first");
     let client = ZitadelClient::new(&config.instance_url, &credentials);
     let me = client.get_current_user().expect("GET /auth/v1/users/me failed");

@@ -386,7 +386,7 @@ fn credentials_round_trip_through_disk() {
     );
     // Far-future expiry: returned as-is, no network call.
     let config = config_with("https://unused.invalid", None);
-    assert_eq!(load_credentials(&config, &path).unwrap(), creds);
+    assert_eq!(load_credentials(&config, &path, Identity::User).unwrap(), creds);
 }
 
 #[test]
@@ -415,7 +415,7 @@ fn load_credentials_renews_expired_service_user_token_and_persists_it() {
     )
     .unwrap();
 
-    let creds = load_credentials(&config_with(&url, Some(test_key())), &path).unwrap();
+    let creds = load_credentials(&config_with(&url, Some(test_key())), &path, Identity::Service).unwrap();
     server.join().unwrap();
 
     assert_eq!(creds.access_token, "fresh");
@@ -452,7 +452,7 @@ fn renewal_that_cannot_be_saved_is_reported_as_a_save_failure() {
     .unwrap();
     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o444)).unwrap();
 
-    let err = load_credentials(&config_with(&url, Some(test_key())), &path).unwrap_err();
+    let err = load_credentials(&config_with(&url, Some(test_key())), &path, Identity::Service).unwrap_err();
     server.join().unwrap();
 
     assert!(matches!(err, LoginError::SaveCredentials(_)), "got {err:?}");
@@ -464,7 +464,7 @@ fn corrupted_credentials_file_is_reported_as_such() {
     let path = dir.path().join("credentials.json");
     std::fs::write(&path, "{not json").unwrap();
 
-    let err = load_credentials(&config_with("https://unused.invalid", None), &path).unwrap_err();
+    let err = load_credentials(&config_with("https://unused.invalid", None), &path, Identity::Service).unwrap_err();
 
     assert!(matches!(err, LoginError::InvalidCredentialsFile(_)), "got {err:?}");
     // The login command depends on the identity, so the caller (CliError) adds it.
@@ -481,7 +481,7 @@ fn expired_service_user_token_without_key_cannot_be_renewed() {
     )
     .unwrap();
 
-    let err = load_credentials(&config_with("https://unused.invalid", None), &path).unwrap_err();
+    let err = load_credentials(&config_with("https://unused.invalid", None), &path, Identity::Service).unwrap_err();
 
     assert!(matches!(err, LoginError::ServiceUserNotConfigured), "got {err:?}");
 }
@@ -504,4 +504,46 @@ fn saved_credentials_are_readable_only_by_owner() {
     .unwrap();
 
     assert_eq!(std::fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
+}
+
+// ── identity guard (issue #164 review) ─────────────────────────────────────
+
+fn unexpired(refresh_token: Option<&str>) -> Credentials {
+    Credentials { access_token: "at".to_string(), refresh_token: refresh_token.map(str::to_string), expires_at: u64::MAX }
+}
+
+#[test]
+fn a_user_slot_without_a_refresh_token_is_refused_before_any_renewal() {
+    // Renewal re-signs the service user's JWT when there is no refresh token,
+    // which would make a --user command act as the service user.
+    let dir = tempfile::tempdir().unwrap();
+    let path = credentials_path(dir.path(), Identity::User);
+    save_credentials(&path, &unexpired(None)).unwrap();
+
+    let err = load_credentials(&config_with("https://unused.invalid", None), &path, Identity::User).unwrap_err();
+
+    assert!(matches!(err, LoginError::WrongIdentity(_)), "got {err:?}");
+}
+
+#[test]
+fn a_service_slot_holding_a_human_login_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = credentials_path(dir.path(), Identity::Service);
+    save_credentials(&path, &unexpired(Some("rt"))).unwrap();
+
+    let err = load_credentials(&config_with("https://unused.invalid", None), &path, Identity::Service).unwrap_err();
+
+    assert!(matches!(err, LoginError::WrongIdentity(_)), "got {err:?}");
+}
+
+#[test]
+fn saving_one_identity_leaves_the_other_identity_file_untouched() {
+    let dir = tempfile::tempdir().unwrap();
+    let service = credentials_path(dir.path(), Identity::Service);
+    save_credentials(&service, &unexpired(None)).unwrap();
+    let before = std::fs::read(&service).unwrap();
+
+    save_credentials(&credentials_path(dir.path(), Identity::User), &unexpired(Some("rt"))).unwrap();
+
+    assert_eq!(std::fs::read(&service).unwrap(), before);
 }

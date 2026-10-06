@@ -182,3 +182,14 @@ fn user_login_failure_points_at_the_native_app_not_the_service_user_key() {
         zitadel auth login --user"
     );
 }
+
+#[test]
+fn credentials_of_the_wrong_identity_mean_that_identity_is_not_logged_in() {
+    let err = login_error_to_cli(
+        LoginError::WrongIdentity("x"),
+        std::path::Path::new("/c/credentials-user.json"),
+        Identity::User,
+    );
+
+    assert!(matches!(err, CliError::NotAuthenticatedUser { .. }), "got {err:?}");
+}

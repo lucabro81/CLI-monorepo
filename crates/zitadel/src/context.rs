@@ -46,7 +46,7 @@ pub fn authenticated_client(identity: Identity) -> Result<ZitadelClient, CliErro
     let config = load_app_config()?;
     let path = auth::credentials_path(&config_dir()?, identity);
     let credentials =
-        auth::load_credentials(&config, &path).map_err(|e| login_error_to_cli(e, &path, identity))?;
+        auth::load_credentials(&config, &path, identity).map_err(|e| login_error_to_cli(e, &path, identity))?;
     Ok(ZitadelClient::new(&config.instance_url, &credentials))
 }
 
@@ -56,10 +56,10 @@ pub fn authenticated_client(identity: Identity) -> Result<ZitadelClient, CliErro
 pub fn login_error_to_cli(error: LoginError, credentials_path: &std::path::Path, identity: Identity) -> CliError {
     let reason = error.to_string();
     match (error, identity) {
-        (LoginError::Io(_) | LoginError::InvalidCredentialsFile(_), Identity::Service) => {
+        (LoginError::Io(_) | LoginError::InvalidCredentialsFile(_) | LoginError::WrongIdentity(_), Identity::Service) => {
             CliError::NotAuthenticatedService { reason }
         }
-        (LoginError::Io(_) | LoginError::InvalidCredentialsFile(_), Identity::User) => {
+        (LoginError::Io(_) | LoginError::InvalidCredentialsFile(_) | LoginError::WrongIdentity(_), Identity::User) => {
             CliError::NotAuthenticatedUser { reason }
         }
         (LoginError::SaveCredentials(reason), _) => CliError::SaveCredentialsFailed {

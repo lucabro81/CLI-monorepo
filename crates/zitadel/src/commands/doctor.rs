@@ -149,7 +149,7 @@ fn check_app_config(config_dir: &Path) -> (Value, Option<AppConfig>) {
 fn check_credentials(config: &AppConfig, config_dir: &Path, identity: Identity) -> (Value, Option<ZitadelClient>) {
     let path = auth::credentials_path(config_dir, identity);
     let login = login_command(identity);
-    match auth::load_credentials(config, &path) {
+    match auth::load_credentials(config, &path, identity) {
         Ok(credentials) => (
             json!({
                 "status": "ok",
