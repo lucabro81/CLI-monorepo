@@ -2,7 +2,8 @@
 //!
 //! This is the only command in the crate with narrative (non-JSON) output.
 //! It is run once per identity per machine (`bitbucket init` for the OAuth
-//! app, `bitbucket init --user` for the human).
+//! app, `bitbucket init --user <id>` for the consumer every person logs in
+//! through, logging that person in).
 //!
 //! The flow is:
 //! 1. Print numbered setup instructions for creating a Bitbucket OAuth consumer.
@@ -12,7 +13,7 @@
 //! 3. Write that identity's section of `app.json` via `write_app_config`,
 //!    keeping the other section.
 //! 4. Log in as that identity: the `client_credentials` exchange (no browser),
-//!    or the browser consent with `--user`.
+//!    or the browser consent with `--user <id>`.
 //! 5. Call `doctor::run_doctor` for that identity and print its JSON report.
 //!
 //! `write_app_config` is kept as a separate public function so it can be unit-tested
@@ -38,8 +39,8 @@ Step 4: Grant the permissions your commands need (e.g. Account: Read,
 Step 5: Save, then copy the consumer's Key (client_id) and Secret (client_secret).
 
 `bitbucket init` sets up the OAuth app identity (the default); `bitbucket init
---user` sets up the human identity used with --user. The same consumer can
-serve both.
+--user <USER_ID>` sets up the consumer every person logs in through (used with
+--user <USER_ID>) and logs that person in. The same consumer can serve both.
 ";
 
 /// Writes `identity`'s section of `<config_dir>/bitbucket-cli/app.json`, keeping the
@@ -49,7 +50,7 @@ serve both.
 /// Creates parent directories if they do not exist.
 pub fn write_app_config(
     config_dir: &Path,
-    identity: Identity,
+    identity: &Identity,
     client_id: &str,
     client_secret: &str,
 ) -> Result<(), CliError> {
@@ -65,8 +66,8 @@ pub fn write_app_config(
                 Run bitbucket init{} again if the other identity needs them.",
                 path.display(),
                 match identity {
-                    Identity::Service => " --user",
-                    Identity::User => "",
+                    Identity::Service => " --user <USER_ID>",
+                    Identity::User(_) => "",
                 }
             );
             AppConfig { service: None, user: None }
@@ -79,17 +80,12 @@ pub fn write_app_config(
     });
     match identity {
         Identity::Service => app.service = section,
-        Identity::User => app.user = section,
+        Identity::User(_) => app.user = section,
     }
 
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir).map_err(|e| CliError::SaveCredentialsFailed {
-            path: dir.display().to_string(),
-            reason: e.to_string(),
-        })?;
-    }
+    // It holds the consumer secrets: written owner-only (#165).
     let serialized = app.to_json().map_err(|e| CliError::JsonSerialize { reason: e.to_string() })?;
-    std::fs::write(&path, serialized).map_err(|e| CliError::SaveCredentialsFailed {
+    oauth_user_login::write_secret_file(&path, serialized.as_bytes()).map_err(|e| CliError::SaveCredentialsFailed {
         path: path.display().to_string(),
         reason: e.to_string(),
     })
@@ -109,7 +105,7 @@ fn prompt(label: &str) -> Result<String, CliError> {
 }
 
 /// Runs the init onboarding flow for `identity`.
-pub fn run_init(identity: Identity, client_id: Option<String>, client_secret: Option<String>) -> Result<(), CliError> {
+pub fn run_init(identity: &Identity, client_id: Option<String>, client_secret: Option<String>) -> Result<(), CliError> {
     println!("{INSTRUCTIONS}");
 
     let client_id = match client_id {
@@ -131,7 +127,7 @@ pub fn run_init(identity: Identity, client_id: Option<String>, client_secret: Op
             println!("\nRequesting access token via client_credentials...\n");
             auth::login_client_credentials(&oauth_config)
         }
-        Identity::User => {
+        Identity::User(_) => {
             println!("\nStarting OAuth login flow — your browser will open.\n");
             auth::login(&oauth_config)
         }
@@ -158,8 +154,8 @@ pub fn run_init(identity: Identity, client_id: Option<String>, client_secret: Op
     }
 
     let whoami = match identity {
-        Identity::Service => "bitbucket auth whoami",
-        Identity::User => "bitbucket auth whoami --user",
+        Identity::Service => "bitbucket auth whoami".to_string(),
+        Identity::User(id) => format!("bitbucket auth whoami --user {id}"),
     };
     println!("\nSetup complete. Run `{whoami}` to verify the identity.");
     Ok(())

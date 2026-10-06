@@ -6,7 +6,7 @@
 //!   the config dir (whole file / one identity's section), mapping
 //!   `OAuthConfigError` to `CliError`.
 //! - `authenticated_client` — the standard sequence for commands that call the
-//!   Bitbucket API as an identity (the OAuth app, or the human with `--user`):
+//!   Bitbucket API as an identity (the OAuth app, or a person with `--user <id>`):
 //!   load its config section -> load its credentials -> renew if expired -> build client.
 //! - `print_json` — renders a `serde_json::Value` via `cli_fields::render_json`
 //!   (see that crate for the `--select`/`--select-all` contract) and prints it.
@@ -35,7 +35,7 @@ pub fn load_app_config() -> Result<AppConfig, CliError> {
 }
 
 /// Loads the OAuth consumer of `identity` from `app.json`.
-pub fn load_oauth_config(identity: Identity) -> Result<OAuthConfig, CliError> {
+pub fn load_oauth_config(identity: &Identity) -> Result<OAuthConfig, CliError> {
     let path = auth::app_config_path(&config_dir()?);
     oauth_section(load_app_config()?, identity, &path)
 }
@@ -50,29 +50,31 @@ pub(crate) fn app_config_error(error: OAuthConfigError, path: &Path) -> CliError
 }
 
 /// `app`'s section for `identity`, or an error naming the `init` command that adds it.
-pub(crate) fn oauth_section(app: AppConfig, identity: Identity, path: &Path) -> Result<OAuthConfig, CliError> {
+pub(crate) fn oauth_section(app: AppConfig, identity: &Identity, path: &Path) -> Result<OAuthConfig, CliError> {
     let path_str = || path.display().to_string();
     match identity {
         Identity::Service => app.service.ok_or_else(|| CliError::ServiceAppMissing { path: path_str() }),
-        Identity::User => app.user.ok_or_else(|| CliError::UserAppMissing { path: path_str() }),
+        Identity::User(id) => {
+            app.user.ok_or_else(|| CliError::UserAppMissing { path: path_str(), id: id.to_string() })
+        }
     }
 }
 
 /// The command that logs `identity` in again.
-pub(crate) fn login_command(identity: Identity) -> &'static str {
+pub(crate) fn login_command(identity: &Identity) -> String {
     match identity {
-        Identity::Service => "bitbucket auth login",
-        Identity::User => "bitbucket auth login --user",
+        Identity::Service => "bitbucket auth login".to_string(),
+        Identity::User(id) => format!("bitbucket auth login --user {id}"),
     }
 }
 
 /// Maps a failure to load or renew `identity`'s stored credentials.
-pub(crate) fn login_error_to_cli(error: LoginError, identity: Identity) -> CliError {
+pub(crate) fn login_error_to_cli(error: LoginError, identity: &Identity) -> CliError {
     let reason = match error {
         LoginError::Io(_) | LoginError::WrongIdentity(_) => {
             return match identity {
                 Identity::Service => CliError::NotAuthenticatedService,
-                Identity::User => CliError::NotAuthenticatedUser,
+                Identity::User(id) => CliError::NotAuthenticatedUser { id: id.to_string() },
             };
         }
         LoginError::TokenExchange(reason) | LoginError::Internal(reason) => reason,
@@ -84,13 +86,13 @@ pub(crate) fn login_error_to_cli(error: LoginError, identity: Identity) -> CliEr
     };
     match identity {
         Identity::Service => CliError::TokenRenewalFailedService { reason },
-        Identity::User => CliError::TokenRefreshFailedUser { reason },
+        Identity::User(id) => CliError::TokenRefreshFailedUser { reason, id: id.to_string() },
     }
 }
 
 /// Loads and auto-renews `identity`'s credentials, then builds an authenticated Bitbucket client.
 /// Returns a clear error if that identity is not logged in or renewal fails.
-pub fn authenticated_client(identity: Identity) -> Result<BitbucketClient, CliError> {
+pub fn authenticated_client(identity: &Identity) -> Result<BitbucketClient, CliError> {
     let oauth_config = load_oauth_config(identity)?;
     let path = auth::credentials_path(&config_dir()?, identity);
     let credentials =
