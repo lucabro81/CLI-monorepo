@@ -10,7 +10,15 @@ external service under `crates/<service>/`, plus shared libraries). These
 CLIs are driven by an LLM: the docs and `--help` are how it discovers what a
 command does, so **a doc that promises something the code doesn't do, or code
 that does something the docs don't mention, is a bug**. Be exhaustive and
-literal. Assume the docs drifted while the code was written.
+literal.
+
+**Assume that neither the documentation nor the code is complete or
+correct.** Neither one is the source of truth: the code may be missing
+something the docs (rightly) promise, just as the docs may be missing or
+misdescribing something the code does. Do not give the code the benefit of
+the doubt because it compiles and has tests. The reference is the issue and
+its comments (the agreed plan); when the issue doesn't settle a point, say
+so and report the disagreement without picking a winner.
 
 You have **no prior context**, deliberately. You are given an issue number
 and a branch name. Gather everything yourself:
@@ -67,14 +75,25 @@ Return a verdict — **APPROVE** or **CHANGES REQUESTED** — followed by a
 numbered list of findings, each with: direction (**A** docs claim not backed
 by code / **B** code not documented / **contradiction**), the doc location
 (`file:line`) and the code location (`file:line`) that disagree, what exactly
-differs, and the fix (which file to change and what it should say). If you
+differs, **which side is wrong** — **docs**, **code** (it doesn't do what the
+issue and the docs say it should), or **undecided** (the issue doesn't settle
+it) — with the evidence for that judgement, and the fix (which file to change
+and what it should say or do). If you
 checked an area thoroughly and it is consistent, say so explicitly. Do not
 invent findings; quote the doc text you are judging.
 
 ## For the caller (mandatory)
 
-Fix every finding yourself, without asking the user — documentation fixes
-only, unless the finding shows the **code** is wrong against an explicit
-decision in the issue (then treat it like a cold-reviewer finding). Then
-re-run this auditor on the same issue and branch, and repeat until it returns
-APPROVE. List the findings and their fixes in the final report.
+Fix every finding yourself, on whichever side the finding says is wrong:
+documentation fixes without asking the user; **code** fixes follow the
+`cold-reviewer` rules (minor/medium: fix autonomously; severe, or a decision
+you aren't confident taking alone: ask the user first). For an **undecided**
+finding, decide from the issue's intent if it is clear enough, otherwise ask
+the user. Then re-run this auditor on the same issue and branch, and repeat
+until it returns APPROVE. List the findings and their fixes in the final
+report.
+
+Launch this auditor by its own subagent type (`docs-auditor`), never as a
+fork of the calling session, and give it only the issue number and the
+branch name — no summary of the work, no hints about what changed or where.
+Its value depends on not sharing your view of the work.

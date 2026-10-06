@@ -247,19 +247,24 @@ correct it, and re-run the full loop — don't patch around it locally.
 ## 10. Independent review — last step of every plan
 
 Before pushing and opening the PR, launch the two project subagents in
-`.claude/agents/` in parallel, each with **only** the issue number from step
-0 and the branch name — no summary of what you did, so their review stays
-independent:
+`.claude/agents/` in parallel, by their own subagent types (never as a fork
+of this session), each with **only** the issue number from step 0 and the
+branch name — no summary of what you did and no hints, so their review
+doesn't share this session's context:
 
 - `cold-reviewer` — adversarial review of the branch against the issue:
   spec match, dead code, edge-case test coverage, correctness bugs, root
   `CLAUDE.md` rules (it runs `cargo test`/`cargo clippy` itself).
 - `docs-auditor` — README, crate `CLAUDE.md`, `ADDENDUM.md`, root docs and
-  `--help` against the code, in both directions.
+  `--help` against the code, in both directions. It assumes neither the docs
+  nor the code is complete and judges against the issue, so a finding may
+  say the code is the wrong side.
 
 Then follow each agent's "For the caller" section:
 
-- `docs-auditor`: fix every finding, commit, re-run it, until APPROVE.
+- `docs-auditor`: fix every finding on the side it says is wrong (docs
+  freely; code under the `cold-reviewer` rules below), commit, re-run it,
+  until APPROVE.
 - `cold-reviewer`: fix minor and medium findings yourself, commit, re-run it,
   until APPROVE (a finding you reject needs a stated reason). Stop and ask
   the user only for **severe** findings or anything you aren't confident
