@@ -23,13 +23,14 @@
 use serde_json::json;
 
 use crate::cli::PageCommand;
+use crate::auth::Identity;
 use crate::context::{authenticated_client, client_error_to_cli, print_json};
 use crate::error::CliError;
 
-pub fn run(command: PageCommand, select: cli_fields::Select<'_>) -> Result<(), CliError> {
+pub fn run(command: PageCommand, select: cli_fields::Select<'_>, identity: Identity) -> Result<(), CliError> {
     match command {
         PageCommand::Get { id } => {
-            let value = authenticated_client()?
+            let value = authenticated_client(identity)?
                 .get_page(&id)
                 .map_err(client_error_to_cli)?;
             print_json(&value, select)
@@ -41,17 +42,21 @@ pub fn run(command: PageCommand, select: cli_fields::Select<'_>) -> Result<(), C
             body,
             body_file,
             template_id,
-        } => run_create(&space_id, &title, parent_id, body, body_file, template_id, select),
+        } => {
+            // Validated before authenticating: free and local.
+            let source = parse_body_source(body, body_file, template_id)?;
+            run_create(&space_id, &title, parent_id, source, select, identity)
+        }
         PageCommand::Update { id, title, body } => {
-            run_update(&id, title.as_deref(), body.as_deref(), select)
+            run_update(&id, title.as_deref(), body.as_deref(), select, identity)
         }
         PageCommand::Search { cql, limit, start } => {
-            let value = authenticated_client()?
+            let value = authenticated_client(identity)?
                 .search_content(&cql, limit, start)
                 .map_err(client_error_to_cli)?;
             print_json(&value, select)
         }
-        PageCommand::Delete { id, confirm, purge } => run_delete(&id, confirm, purge, select),
+        PageCommand::Delete { id, confirm, purge } => run_delete(&id, confirm, purge, select, identity),
     }
 }
 
@@ -88,13 +93,11 @@ fn run_create(
     space_id: &str,
     title: &str,
     parent_id: Option<String>,
-    body: Option<String>,
-    body_file: Option<String>,
-    template_id: Option<String>,
+    source: BodySource,
     select: cli_fields::Select<'_>,
+    identity: Identity,
 ) -> Result<(), CliError> {
-    let source = parse_body_source(body, body_file, template_id)?;
-    let client = authenticated_client()?;
+    let client = authenticated_client(identity)?;
 
     let resolved_body = match source {
         BodySource::Body(text) => text,
@@ -146,10 +149,11 @@ fn run_update(
     title: Option<&str>,
     body: Option<&str>,
     select: cli_fields::Select<'_>,
+    identity: Identity,
 ) -> Result<(), CliError> {
     validate_update_target(title, body)?;
 
-    let client = authenticated_client()?;
+    let client = authenticated_client(identity)?;
     let current = client.get_page(id).map_err(client_error_to_cli)?;
 
     let current_title = current["title"].as_str().unwrap_or_default();
@@ -183,12 +187,13 @@ fn run_delete(
     confirm: bool,
     purge: bool,
     select: cli_fields::Select<'_>,
+    identity: Identity,
 ) -> Result<(), CliError> {
     if !confirm {
         return Err(CliError::PageDeleteNotConfirmed { id: id.to_string() });
     }
 
-    authenticated_client()?
+    authenticated_client(identity)?
         .delete_page(id, purge)
         .map_err(client_error_to_cli)?;
 

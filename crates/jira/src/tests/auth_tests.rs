@@ -2,7 +2,9 @@
 
 use std::path::{Path, PathBuf};
 
-use super::{app_config_path, credentials_path, pending_login_path, SCOPES};
+use atlassian_auth::Identity;
+
+use super::{app_config_path, credentials_path, legacy_credentials_path, pending_login_path, SCOPES};
 
 // `auth.rs` is now a thin wrapper over `atlassian_auth` — the OAuth flows
 // (local and remote) it delegates to are covered by that crate's own test
@@ -11,11 +13,23 @@ use super::{app_config_path, credentials_path, pending_login_path, SCOPES};
 // resolve under, and what scopes it requests.
 
 #[test]
-fn credentials_path_is_under_jira_cli_dir() {
-    let path = credentials_path(Path::new("/home/user/.config"));
+fn each_identity_has_its_own_credentials_file_under_jira_cli_dir() {
+    let config_dir = Path::new("/home/user/.config");
 
     assert_eq!(
-        path,
+        credentials_path(config_dir, Identity::Service),
+        PathBuf::from("/home/user/.config/jira-cli/credentials-service.json")
+    );
+    assert_eq!(
+        credentials_path(config_dir, Identity::User),
+        PathBuf::from("/home/user/.config/jira-cli/credentials-user.json")
+    );
+}
+
+#[test]
+fn legacy_credentials_path_is_the_pre_164_single_file() {
+    assert_eq!(
+        legacy_credentials_path(Path::new("/home/user/.config")),
         PathBuf::from("/home/user/.config/jira-cli/credentials.json")
     );
 }

@@ -18,9 +18,9 @@ CLI for the [ZITADEL](https://zitadel.com) identity platform (Cloud or self-host
 2. Grant it an administrator role matching what the CLI should be able to do — e.g. **IAM_OWNER** (whole instance) via *Default settings → Administrators*, or **ORG_OWNER** / **ORG_USER_MANAGER** on an organization. The CLI can only do what this role allows; `zitadel doctor` lists the roles it sees.
 3. On the service user: **Keys → New → JSON**, and download the key file. It contains a private key — keep it out of any repository.
 
-### 2. (Optional) Native app, for `auth login --user`
+### 2. (Optional) Native app, for the human identity (`--user`)
 
-Only needed if a human wants to use the CLI as themselves:
+Only needed if a human wants to use the CLI as themselves (commands run with `--user`):
 
 1. **Projects → Create** (or pick an existing project) → **New Application → Native**.
 2. Authentication method: **PKCE**. Redirect URI: `http://localhost:8080/callback` (enable *Development Mode*, required for an `http` redirect).
@@ -33,7 +33,24 @@ Only needed if a human wants to use the CLI as themselves:
 zitadel init --instance-url https://<instance>.zitadel.cloud --key-file ~/path/to/key.json
 ```
 
-The key file's content is copied into `app.json` (mode `0600`); the original file is no longer needed by the CLI afterwards. See [`zitadel init`](#zitadel-init) below.
+The key file's content is copied into `app.json` (mode `0600`); the original file is no longer needed by the CLI afterwards. For the human identity, add the Native app and log in through the browser:
+
+```sh
+zitadel init --user --client-id <CLIENT_ID>
+```
+
+See [`zitadel init`](#zitadel-init) below.
+
+### Two identities, side by side
+
+The CLI holds both identities at once, and every command picks one per call: without `--user` it acts as the **service user**, with `--user` as the **human**. Each has its own credentials file — `credentials-service.json` (written by `zitadel auth login`) and `credentials-user.json` (written by `zitadel auth login --user`) — so logging in as one never logs the other out, and switching needs no new login while the tokens can be renewed:
+
+```sh
+zitadel user search --select result.userId          # as the service user
+zitadel user search --select result.userId --user   # as the human
+```
+
+A leftover `credentials.json` from before issue #164 is ignored and reported by `zitadel doctor` so it can be deleted.
 
 ## How the OAuth flow works
 
@@ -51,60 +68,61 @@ For a person who is not at the CLI's machine (the CLI runs on a server, the pers
 
 1. `auth login --user --remote --redirect-uri <url>` stores a pending login (`state`, PKCE verifier, redirect URI; `pending-login.json`, mode `0600`) and prints `{"authorize_url", "state", "expires_at"}`. The redirect URI must be registered on the Native app (it accepts several).
 2. The person opens `authorize_url` and logs in; ZITADEL redirects them to `<url>?code=...&state=...`.
-3. `auth login --user --code <code> --state <state>` checks the state and the expiry, exchanges the code with the stored verifier and redirect URI, saves `credentials.json`, and prints what `auth whoami` prints.
+3. `auth login --user --code <code> --state <state>` checks the state and the expiry, exchanges the code with the stored verifier and redirect URI, saves `credentials-user.json`, and prints what `auth whoami --user` prints.
 
-A pending login is valid for 10 minutes and its state is single-use (consumed even if ZITADEL then refuses the code). A new step 1 replaces the previous pending login. Everything lives in the config folder the CLI resolves, so pointing `XDG_CONFIG_HOME` at one folder per person keeps people's logins apart. `doctor` shows a pending login under `pending_login`.
+`--remote`, `--code` and `--state` always need `--user` (before or after `auth login`). A pending login is valid for 10 minutes and its state is single-use (consumed even if ZITADEL then refuses the code). A new step 1 replaces the previous pending login. Everything lives in the config folder the CLI resolves, so pointing `XDG_CONFIG_HOME` at one folder per person keeps people's logins apart. `doctor` shows a pending login under `pending_login`.
 
 ### Automatic renewal
 
-Both logins write `credentials.json`; the last one decides the identity. Before each command, a token expiring within 60 seconds is renewed — via the refresh token for `--user`, by re-signing the JWT for the service user.
+Each login writes its own identity's file. Before each command, the selected identity's token is renewed if it expires within 60 seconds — via the refresh token for `--user`, by re-signing the JWT for the service user.
 
-Config lives in `$XDG_CONFIG_HOME/zitadel-cli/` (fallback `~/.config/zitadel-cli/`): `app.json` (instance URL, service user key, optional client id) and `credentials.json` (managed by the CLI).
+Config lives in `$XDG_CONFIG_HOME/zitadel-cli/` (fallback `~/.config/zitadel-cli/`): `app.json` (instance URL, service user key, optional client id), `credentials-service.json` and `credentials-user.json` (managed by the CLI).
 
 ## Usage
 
-Every command prints JSON on stdout and a single plain-text error on stderr (non-zero exit) on failure.
+Every command prints JSON on stdout and a single plain-text error on stderr (non-zero exit) on failure. Every command accepts the global `--user` flag: without it the command acts as the service user, with it as the human.
 
 ### `zitadel init`
 
-Writes `app.json`, logs in as the service user (if a key is configured) and prints the [`doctor`](#zitadel-doctor) report. Flag-driven, no prompts. Re-running merges with the existing `app.json`: omitted flags keep their value.
+Writes `app.json`, logs in and prints the [`doctor`](#zitadel-doctor) report for that identity: without `--user` as the service user (if a key is configured), with `--user` as yourself through the browser (needs the Native app client id). Flag-driven, no prompts. Re-running merges with the existing `app.json`: omitted flags keep their value. Changing the instance URL removes both identities' stored credentials.
 
 | Flag | Description |
 |---|---|
 | `--instance-url <URL>` | Instance base URL (Cloud or self-hosted). Required on the first run. Trailing `/` is stripped. |
 | `--key-file <PATH>` | Service user JSON key from the console. Validated (JSON, `"type": "serviceaccount"`, RSA PEM) before anything is written. |
-| `--client-id <ID>` | Native app client id, only needed for `auth login --user`. |
+| `--client-id <ID>` | Native app client id, only needed for the human identity (`--user`). |
 
 ```sh
 zitadel init --instance-url https://acme.zitadel.cloud --key-file ~/Downloads/123456789.json
-zitadel init --client-id 123456789@zitadel-cli    # later: add the Native app, keep everything else
+zitadel init --user --client-id 123456789@zitadel-cli    # later: add the Native app and log in as yourself
 ```
 
 Progress lines go to stderr; stdout carries only the doctor report. Exits non-zero if any doctor check fails.
 
 ### `zitadel doctor`
 
-Four cascading checks, each with `"status": "ok" | "error" | "skipped"`:
+Four cascading checks for the selected identity (the service user, or the human with `--user`), each with `"status": "ok" | "error" | "skipped"`:
 
 - `app_config` — `app.json` valid; `instance_url`, `service_user_configured`, `native_app_configured`.
-- `credentials` — stored token usable (renewed if expiring); `identity` is `service_user` or `user`, plus `expires_at`.
+- `credentials` — that identity's stored token usable (renewed if expiring); `identity` is `service_user` or `user`, plus `expires_at`.
 - `api` — `GET /auth/v1/users/me`: `user_id`, `user_name`, `type` (`machine`/`human`), `organization_id`.
 - `memberships` — the identity's administrator roles, one entry per `{level, id, display_name, roles}` with `level` in `instance` / `organization` / `project` / `project_grant`. ZITADEL authorizes by these roles, so they decide which commands succeed; no membership at all is an error.
 
-Always prints the full report (an explicit `--select` is honored). Exits non-zero unless every check is `ok`.
+Two informational keys never affect the exit code: `pending_login` and `identities` (which identity was checked, whether each identity has a credentials file, and whether a pre-#164 `credentials.json` is still there). Always prints the full report (an explicit `--select` is honored). Exits non-zero unless every check is `ok`.
 
 ```sh
 zitadel doctor
+zitadel doctor --user
 zitadel doctor --select memberships
 ```
 
 ### `zitadel auth login [--user]`
 
-Saves `credentials.json` for one of two identities; the last login decides which one the CLI acts as. Normally only needed once: tokens are renewed automatically.
+Logs in one of the two identities and saves its credentials file, leaving the other's untouched. Normally only needed once per identity: tokens are renewed automatically.
 
-- default — the service user from `app.json` (private key JWT, see [above](#service-user-login-default-private-key-jwt)). No browser: the mode for agents.
-- `--user` — yourself, through the browser (see [above](#human-login-authorization-code--pkce--auth-login---user)). Needs the Native app's client id in `app.json` (`zitadel init --client-id <id>`).
-- `--user --remote --redirect-uri <url>`, then `--user --code <code> --state <state>` — someone who is not at this machine, in two steps (see [above](#remote-login-in-two-steps--auth-login---user---remote)). Step 1 prints `{authorize_url, state, expires_at}`; step 2 prints the `auth whoami` output.
+- default — the service user from `app.json` (private key JWT, see [above](#service-user-login-default-private-key-jwt)), into `credentials-service.json`. No browser: the mode for agents.
+- `--user` — yourself, through the browser (see [above](#human-login-authorization-code--pkce--auth-login---user)), into `credentials-user.json`. Needs the Native app's client id in `app.json` (`zitadel init --user --client-id <id>`).
+- `--user --remote --redirect-uri <url>`, then `--user --code <code> --state <state>` — someone who is not at this machine, in two steps (see [above](#remote-login-in-two-steps--auth-login---user---remote)). Step 1 prints `{authorize_url, state, expires_at}`; step 2 prints the `auth whoami --user` output.
 
 ```sh
 zitadel auth login          # service user
@@ -115,10 +133,11 @@ zitadel auth login --user --code <CODE> --state <STATE>                         
 
 ### `zitadel auth whoami`
 
-The identity behind the stored credentials (`GET /auth/v1/users/me`): `id`, `userName`, `loginNames`, `details.resourceOwner` (its organization), and a `machine` (service user) or `human` object. Always printed in full (an explicit `--select` is honored).
+The account the CLI acts as (`GET /auth/v1/users/me`) — the service user, or the human with `--user`: `id`, `userName`, `loginNames`, `details.resourceOwner` (its organization), and a `machine` (service user) or `human` object. Always printed in full (an explicit `--select` is honored).
 
 ```sh
 zitadel auth whoami
+zitadel auth whoami --user
 zitadel auth whoami --select user.id,user.userName,user.details.resourceOwner
 ```
 

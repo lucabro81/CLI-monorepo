@@ -12,12 +12,16 @@
 //!
 //! Other layers:
 //!
-//! - **App identity** (`OAuthConfig`) — the static Atlassian OAuth app credentials
-//!   loaded from a crate's `app.json`. Includes helpers for loading and validating
-//!   the file.
+//! - **Identities** (`Identity`) — every crate stores two identities side by
+//!   side (issue #164): the service identity (`client_credentials`, the
+//!   default) and the human (`--user`). Each has its own `app.json` section and
+//!   its own credentials file.
+//! - **App identity** (`AppConfig`, one `OAuthConfig` per section) — the static
+//!   Atlassian OAuth app credentials loaded from a crate's `app.json`, with
+//!   helpers for loading, validating and rewriting the file.
 //! - **Session credentials** (`Credentials`) — the dynamic token set (access token,
-//!   optional refresh token, expiry, cloud ID, optional site URL) persisted to a
-//!   crate's `credentials.json`.
+//!   optional refresh token, expiry, cloud ID, optional site URL) persisted to
+//!   the identity's `credentials-service.json` / `credentials-user.json`.
 //!
 //! `refresh` exchanges a refresh token for a new token pair. Atlassian refresh
 //! tokens **rotate on every use** — the new pair must always be persisted immediately
@@ -27,7 +31,7 @@
 //! OAuth scopes are requested per product (Jira and Confluence grant different
 //! scope strings) — every function that needs them takes `scopes: &str` rather
 //! than hardcoding a product's scope list. Similarly, `app_config_path`/
-//! `credentials_path` take a `cli_dir` (e.g. `"jira-cli"`, `"confluence-cli"`)
+//! `Identity::credentials_path` take a `cli_dir` (e.g. `"jira-cli"`, `"confluence-cli"`)
 //! so each crate's config lives under its own directory.
 
 use serde::{Deserialize, Serialize};
@@ -35,8 +39,10 @@ use std::path::{Path, PathBuf};
 
 use crate::endpoints;
 
-/// Static OAuth 2.0 app identity loaded from `app.json`.
-/// Written once by hand (or by a crate's `init` command); never modified by the CLI at runtime.
+pub use oauth_user_login::Identity;
+
+/// One OAuth 2.0 app: a section of `app.json` (see [`AppConfig`]).
+/// Written by a crate's `init` command (or by hand); never modified by the CLI at runtime.
 #[derive(Debug, PartialEq, Eq)]
 pub struct OAuthConfig {
     pub client_id: String,
@@ -46,31 +52,89 @@ pub struct OAuthConfig {
 
 impl OAuthConfig {
     pub const REDIRECT_URI: &'static str = "http://localhost:8080/callback";
+}
 
-    /// Parses app credentials (`client_id`, `client_secret`) from the contents of `app.json`.
+#[derive(Debug, Deserialize, Serialize)]
+struct AppCredentials {
+    client_id: String,
+    client_secret: String,
+}
+
+/// A crate's `app.json`: one optional OAuth app per identity.
+///
+/// ```json
+/// { "service": { "client_id": "...", "client_secret": "..." },
+///   "user":    { "client_id": "...", "client_secret": "..." } }
+/// ```
+///
+/// For Atlassian the two are different apps: `service` is a Service Account
+/// credential, `user` a 3LO app. The pre-#164 flat shape (`client_id` at top
+/// level) is rejected with [`OAuthConfigError::LegacyFormat`].
+#[derive(Debug, PartialEq, Eq)]
+pub struct AppConfig {
+    pub service: Option<OAuthConfig>,
+    pub user: Option<OAuthConfig>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct AppConfigFile {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    service: Option<AppCredentials>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    user: Option<AppCredentials>,
+    /// Only read to recognise the legacy flat shape.
+    #[serde(default, skip_serializing)]
+    client_id: Option<serde_json::Value>,
+}
+
+impl AppConfig {
+    /// Parses the contents of `app.json`.
     pub fn from_json(json: &str) -> Result<Self, OAuthConfigError> {
-        let app: AppCredentials =
+        let file: AppConfigFile =
             serde_json::from_str(json).map_err(|e| OAuthConfigError::InvalidJson(e.to_string()))?;
-
-        Ok(OAuthConfig {
+        if file.client_id.is_some() {
+            return Err(OAuthConfigError::LegacyFormat);
+        }
+        let to_config = |app: AppCredentials| OAuthConfig {
             client_id: app.client_id,
             client_secret: app.client_secret,
-            redirect_uri: Self::REDIRECT_URI.to_string(),
+            redirect_uri: OAuthConfig::REDIRECT_URI.to_string(),
+        };
+        Ok(AppConfig {
+            service: file.service.map(to_config),
+            user: file.user.map(to_config),
         })
     }
 
-    /// Loads app credentials from `app.json` at `path`.
+    /// Loads `app.json` at `path`.
     pub fn load(path: &Path) -> Result<Self, OAuthConfigError> {
         let raw = std::fs::read_to_string(path)
             .map_err(|_| OAuthConfigError::NotFound(path.to_path_buf()))?;
         Self::from_json(&raw)
     }
-}
 
-#[derive(Debug, Deserialize)]
-struct AppCredentials {
-    client_id: String,
-    client_secret: String,
+    /// Serialises back to the `app.json` shape (absent sections omitted,
+    /// `redirect_uri` never stored).
+    pub fn to_json(&self) -> Result<String, OAuthConfigError> {
+        let to_file = |config: &OAuthConfig| AppCredentials {
+            client_id: config.client_id.clone(),
+            client_secret: config.client_secret.clone(),
+        };
+        let file = AppConfigFile {
+            service: self.service.as_ref().map(to_file),
+            user: self.user.as_ref().map(to_file),
+            client_id: None,
+        };
+        serde_json::to_string_pretty(&file).map_err(|e| OAuthConfigError::InvalidJson(e.to_string()))
+    }
+
+    /// The OAuth app configured for `identity`, if its section is present.
+    pub fn section(&self, identity: Identity) -> Option<&OAuthConfig> {
+        match identity {
+            Identity::Service => self.service.as_ref(),
+            Identity::User => self.user.as_ref(),
+        }
+    }
 }
 
 /// Path to a crate's app credentials file: `<config_dir>/<cli_dir>/app.json`.
@@ -78,8 +142,10 @@ pub fn app_config_path(config_dir: &Path, cli_dir: &str) -> PathBuf {
     config_dir.join(cli_dir).join("app.json")
 }
 
-/// Path to a crate's local credentials file: `<config_dir>/<cli_dir>/credentials.json`.
-pub fn credentials_path(config_dir: &Path, cli_dir: &str) -> PathBuf {
+/// The single credentials file used before issue #164:
+/// `<config_dir>/<cli_dir>/credentials.json`. No longer read; crates only
+/// report it (`doctor`) so it can be deleted. See [`Identity::credentials_path`].
+pub fn legacy_credentials_path(config_dir: &Path, cli_dir: &str) -> PathBuf {
     config_dir.join(cli_dir).join("credentials.json")
 }
 
@@ -93,6 +159,9 @@ pub fn pending_login_path(config_dir: &Path, cli_dir: &str) -> PathBuf {
 pub enum OAuthConfigError {
     NotFound(PathBuf),
     InvalidJson(String),
+    /// `app.json` still has the pre-#164 flat `client_id`/`client_secret`
+    /// shape instead of `service`/`user` sections.
+    LegacyFormat,
 }
 
 impl std::fmt::Display for OAuthConfigError {
@@ -104,6 +173,11 @@ impl std::fmt::Display for OAuthConfigError {
             OAuthConfigError::InvalidJson(msg) => {
                 write!(f, "invalid app credentials file: {msg}")
             }
+            OAuthConfigError::LegacyFormat => write!(
+                f,
+                "app credentials file uses the old single-identity format (client_id at top level) \
+                 instead of \"service\"/\"user\" sections"
+            ),
         }
     }
 }
@@ -120,6 +194,9 @@ pub enum LoginError {
     PendingLogin(oauth_user_login::PendingLoginError),
     #[error("token exchange failed: {0}")]
     TokenExchange(String),
+    /// The credentials file doesn't hold the identity it is named after.
+    #[error("{0}")]
+    WrongIdentity(&'static str),
     #[error("no accessible Atlassian resources found for this account")]
     NoAccessibleResources,
     /// The accessible-resources call itself failed (network, status, JSON),
@@ -448,11 +525,28 @@ pub fn renew(config: &OAuthConfig, credentials: &Credentials) -> Result<Credenti
     }
 }
 
-/// Loads credentials from disk, renewing them first if the access token has expired.
-pub fn load_credentials(config: &OAuthConfig, path: &Path) -> Result<Credentials, LoginError> {
+/// Refuses credentials that don't belong to `identity`. Renewal picks its
+/// grant from the stored token (`refresh_token` or `client_credentials`), so
+/// without this check a human slot with no refresh token would be renewed as
+/// the app, and a service slot holding a human login as that human.
+pub fn check_identity(credentials: &Credentials, identity: Identity) -> Result<(), LoginError> {
+    match (identity, credentials.refresh_token.is_some()) {
+        (Identity::User, false) => Err(LoginError::WrongIdentity(
+            "the human credentials file holds no refresh token, so it is not a human login",
+        )),
+        (Identity::Service, true) => Err(LoginError::WrongIdentity(
+            "the service credentials file holds a refresh token, so it is a human login",
+        )),
+        _ => Ok(()),
+    }
+}
+
+/// Loads `identity`'s credentials from disk, renewing them first if the access token has expired.
+pub fn load_credentials(config: &OAuthConfig, path: &Path, identity: Identity) -> Result<Credentials, LoginError> {
     let raw = std::fs::read_to_string(path).map_err(LoginError::Io)?;
     let credentials: Credentials =
         serde_json::from_str(&raw).map_err(|e| LoginError::TokenExchange(e.to_string()))?;
+    check_identity(&credentials, identity)?;
 
     if now_unix() + 60 >= credentials.expires_at {
         let renewed = renew(config, &credentials)?;
@@ -474,7 +568,8 @@ pub fn save_credentials(path: &Path, credentials: &Credentials) -> Result<(), Lo
     std::fs::write(path, json).map_err(LoginError::Io)
 }
 
-/// Dynamic session credentials persisted to `credentials.json`.
+/// Dynamic session credentials persisted to the identity's credentials file
+/// (`credentials-service.json` / `credentials-user.json`).
 /// Fully managed by the CLI — never edit by hand. Refreshed transparently before expiry.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Credentials {

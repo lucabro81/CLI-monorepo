@@ -7,10 +7,11 @@ use clap::Parser;
 fn parses_auth_login() {
     let cli = Cli::try_parse_from(["bitbucket", "auth", "login"]).expect("should parse");
 
+    assert!(!cli.user);
     assert!(matches!(
         cli.command,
         Command::Auth {
-            command: AuthCommand::Login { user: false, remote: false, code: None, state: None }
+            command: AuthCommand::Login { remote: false, code: None, state: None }
         }
     ));
 }
@@ -19,10 +20,11 @@ fn parses_auth_login() {
 fn parses_auth_login_with_user() {
     let cli = Cli::try_parse_from(["bitbucket", "auth", "login", "--user"]).expect("should parse");
 
+    assert!(cli.user);
     assert!(matches!(
         cli.command,
         Command::Auth {
-            command: AuthCommand::Login { user: true, remote: false, code: None, state: None }
+            command: AuthCommand::Login { remote: false, code: None, state: None }
         }
     ));
 }
@@ -31,10 +33,11 @@ fn parses_auth_login_with_user() {
 fn parses_auth_login_remote_start_without_redirect_uri() {
     let cli = Cli::try_parse_from(["bitbucket", "auth", "login", "--user", "--remote"]).expect("should parse");
 
+    assert!(cli.user);
     assert!(matches!(
         cli.command,
         Command::Auth {
-            command: AuthCommand::Login { user: true, remote: true, code: None, state: None }
+            command: AuthCommand::Login { remote: true, code: None, state: None }
         }
     ));
 }
@@ -45,8 +48,8 @@ fn parses_auth_login_remote_complete() {
         .expect("should parse");
 
     match cli.command {
-        Command::Auth { command: AuthCommand::Login { user, remote, code, state } } => {
-            assert!(user && !remote);
+        Command::Auth { command: AuthCommand::Login { remote, code, state } } => {
+            assert!(cli.user && !remote);
             assert_eq!((code.as_deref(), state.as_deref()), (Some("c1"), Some("s1")));
         }
         other => panic!("unexpected command: {other:?}"),
@@ -59,13 +62,44 @@ fn auth_login_remote_flag_combinations_are_enforced() {
     let kind = |args: &[&str]| {
         Cli::try_parse_from(["bitbucket", "auth", "login"].iter().chain(args)).unwrap_err().kind()
     };
-    assert_eq!(kind(&["--remote"]), MissingRequiredArgument);
-    assert_eq!(kind(&["--code", "c", "--state", "s"]), MissingRequiredArgument);
+    // "--remote/--code need --user" is checked by LoginMode::from_flags, not clap:
+    // clap cannot see a global --user written before the subcommand.
     assert_eq!(kind(&["--user", "--code", "c"]), MissingRequiredArgument);
     assert_eq!(kind(&["--user", "--state", "s"]), MissingRequiredArgument);
     assert_eq!(kind(&["--user", "--remote", "--code", "c", "--state", "s"]), ArgumentConflict);
     // Bitbucket has no redirect_uri parameter: the consumer's callback URL decides.
     assert_eq!(kind(&["--user", "--remote", "--redirect-uri", "https://m/cb"]), UnknownArgument);
+}
+
+// --- global --user (issue #164) ---
+
+#[test]
+fn user_flag_defaults_to_the_app_identity() {
+    let cli = Cli::try_parse_from(["bitbucket", "repo", "get", "acme/my-repo"]).expect("should parse");
+
+    assert!(!cli.user);
+}
+
+#[test]
+fn user_flag_is_accepted_after_any_subcommand() {
+    for args in [
+        &["bitbucket", "repo", "get", "acme/my-repo", "--user"][..],
+        &["bitbucket", "pr", "list", "acme/my-repo", "--user"],
+        &["bitbucket", "branch", "list", "acme/my-repo", "--user"],
+        &["bitbucket", "auth", "whoami", "--user"],
+        &["bitbucket", "doctor", "--user"],
+        &["bitbucket", "init", "--user"],
+    ] {
+        let cli = Cli::try_parse_from(args).unwrap_or_else(|e| panic!("{args:?}: {e}"));
+        assert!(cli.user, "{args:?} should select the human identity");
+    }
+}
+
+#[test]
+fn user_flag_is_accepted_before_the_subcommand() {
+    let cli = Cli::try_parse_from(["bitbucket", "--user", "auth", "login", "--remote"]).expect("should parse");
+
+    assert!(cli.user);
 }
 
 #[test]

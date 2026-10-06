@@ -5,17 +5,18 @@
 
 use serde_json::{Value, json};
 
+use crate::auth::Identity;
 use crate::cli::OrganizationCommand;
 use crate::context::{
     CONTAINS_IGNORE_CASE, authenticated_client, client_error_to_cli, print_json, search_query,
 };
 use crate::error::CliError;
 
-pub fn run(command: OrganizationCommand, select: cli_fields::Select<'_>) -> Result<(), CliError> {
+pub fn run(command: OrganizationCommand, select: cli_fields::Select<'_>, identity: Identity) -> Result<(), CliError> {
     match command {
         OrganizationCommand::List { name, limit, offset } => {
             let body = build_list_body(name.as_deref(), limit, offset);
-            let result = authenticated_client()?
+            let result = authenticated_client(identity)?
                 .list_organizations(&body)
                 .map_err(client_error_to_cli)?;
             print_json(&result, select)

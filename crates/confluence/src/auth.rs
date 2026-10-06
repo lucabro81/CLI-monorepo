@@ -8,7 +8,7 @@
 
 use std::path::{Path, PathBuf};
 
-pub use atlassian_auth::{Credentials, LoginError, OAuthConfig, OAuthConfigError};
+pub use atlassian_auth::{AppConfig, Credentials, Identity, LoginError, OAuthConfig, OAuthConfigError};
 
 const CLI_DIR: &str = "confluence-cli";
 
@@ -30,9 +30,16 @@ pub fn app_config_path(config_dir: &Path) -> PathBuf {
     atlassian_auth::app_config_path(config_dir, CLI_DIR)
 }
 
-/// Path to the local credentials file: `<config_dir>/confluence-cli/credentials.json`.
-pub fn credentials_path(config_dir: &Path) -> PathBuf {
-    atlassian_auth::credentials_path(config_dir, CLI_DIR)
+/// Path to `identity`'s credentials file:
+/// `<config_dir>/confluence-cli/credentials-service.json` or `credentials-user.json`.
+pub fn credentials_path(config_dir: &Path, identity: Identity) -> PathBuf {
+    identity.credentials_path(config_dir, CLI_DIR)
+}
+
+/// The single credentials file used before issue #164
+/// (`<config_dir>/confluence-cli/credentials.json`); no longer read, only reported by `doctor`.
+pub fn legacy_credentials_path(config_dir: &Path) -> PathBuf {
+    atlassian_auth::legacy_credentials_path(config_dir, CLI_DIR)
 }
 
 /// Path to the pending remote login: `<config_dir>/confluence-cli/pending-login.json`.
@@ -72,8 +79,8 @@ pub fn renew(config: &OAuthConfig, credentials: &Credentials) -> Result<Credenti
     atlassian_auth::renew(config, credentials)
 }
 
-pub fn load_credentials(config: &OAuthConfig, path: &Path) -> Result<Credentials, LoginError> {
-    atlassian_auth::load_credentials(config, path)
+pub fn load_credentials(config: &OAuthConfig, path: &Path, identity: Identity) -> Result<Credentials, LoginError> {
+    atlassian_auth::load_credentials(config, path, identity)
 }
 
 pub fn save_credentials(path: &Path, credentials: &Credentials) -> Result<(), LoginError> {

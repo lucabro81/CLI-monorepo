@@ -28,29 +28,48 @@ pub struct Cli {
     #[arg(long, global = true, conflicts_with = "select")]
     pub select_all: bool,
 
+    /// Act as the human who logged in with `bitbucket auth login --user` instead of
+    /// the OAuth app. Without it every command acts as the OAuth app (`bitbucket auth
+    /// login`). Both identities are stored side by side and renewed automatically,
+    /// so switching between them needs no new login. On `init`, `auth login`,
+    /// `auth whoami` and `doctor` it selects which identity to set up, log in or
+    /// check.
+    #[arg(long, global = true)]
+    pub user: bool,
+
     #[command(subcommand)]
     pub command: Command,
 }
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
-    /// Guided onboarding: create app.json and run the first login
-    #[command(after_help = "Example:\n  bitbucket init\n  bitbucket init --client-id ABC123 --client-secret xyz")]
+    /// Onboarding: save an identity's OAuth consumer to app.json, log in, verify with doctor
+    ///
+    /// Without --user: writes app.json's "service" section and runs the
+    /// `client_credentials` login (acting as the OAuth app, no browser). With
+    /// --user: writes the "user" section and runs the browser login (acting as
+    /// the human). The same consumer may be used for both. The other section of
+    /// app.json is left untouched. Then prints a doctor JSON report for that
+    /// identity. Pass --client-id and --client-secret to skip interactive prompts.
+    #[command(after_help = "Examples:\n  bitbucket init --client-id <KEY> --client-secret <SECRET>          # the OAuth app\n  bitbucket init --user --client-id <KEY> --client-secret <SECRET>   # the human, browser consent\n  bitbucket init                                                     # interactive prompts")]
     Init {
-        /// Bitbucket OAuth consumer Key (skips interactive prompt if provided)
+        /// Bitbucket OAuth consumer Key of the identity being set up (skips interactive prompt if provided)
         #[arg(long)]
         client_id: Option<String>,
-        /// Bitbucket OAuth consumer Secret (skips interactive prompt if provided)
+        /// Bitbucket OAuth consumer Secret of the identity being set up (skips interactive prompt if provided)
         #[arg(long)]
         client_secret: Option<String>,
     },
     /// Check that the CLI is correctly configured and can reach the Bitbucket API
     ///
-    /// Also reports `pending_login` (a two-step `auth login --user --remote`
-    /// waiting for its code): informational, never counted in the exit code.
+    /// Checks the OAuth app, or the human with --user. Also reports
+    /// `pending_login` (a two-step `auth login --user --remote` waiting for its
+    /// code) and `identities` (which of the two identities are logged in, and a
+    /// leftover pre-#164 credentials.json): informational, never counted in the
+    /// exit code.
     /// Always prints its full result regardless of --select — the report is
     /// generated internally and is always small and fixed-shape.
-    #[command(after_help = "Example:\n  bitbucket doctor")]
+    #[command(after_help = "Examples:\n  bitbucket doctor\n  bitbucket doctor --user")]
     Doctor,
     /// Manage authentication with Bitbucket
     Auth {
@@ -84,11 +103,12 @@ pub enum AuthCommand {
     /// Run the OAuth 2.0 login flow and store credentials locally
     ///
     /// By default runs the `client_credentials` flow: exchanges the OAuth consumer's
-    /// `client_id`/`client_secret` (from app.json) for an access token. No browser,
+    /// `client_id`/`client_secret` (app.json's "service" section) for an access token. No browser,
     /// no user interaction. Every action is attributed to the OAuth app (bot
     /// identity) — the expected mode for agent-driven usage.
     ///
-    /// Pass --user for the interactive `authorization_code` flow: opens the browser
+    /// Pass --user for the interactive `authorization_code` flow, with app.json's
+    /// "user" section: opens the browser
     /// on Bitbucket's consent page, receives the callback on localhost:8080, and
     /// stores a `refresh_token` for automatic renewal. Every action is attributed
     /// to the human Bitbucket account that approved the consent page. Requires the
@@ -99,36 +119,35 @@ pub enum AuthCommand {
     /// prints JSON `{authorize_url, state, expires_at}` for the caller to hand to
     /// the person. Bitbucket has no redirect URI parameter: it always redirects
     /// to the OAuth consumer's callback URL, so remote logins need a consumer
-    /// whose callback URL is the caller's own endpoint (a different consumer, and
-    /// config folder, from the localhost one). Step 2 (--code --state) exchanges
-    /// the code, saves the credentials, then prints what `auth whoami` prints.
+    /// whose callback URL is the caller's own endpoint, in the "user" section (a
+    /// browser login on this machine instead needs the localhost callback). Step 2 (--code --state) exchanges
+    /// the code, saves the credentials, then prints what `auth whoami --user` prints.
     /// The pending login expires after 10 minutes, its state is single-use, and
     /// it lives in this config folder (`XDG_CONFIG_HOME`).
     ///
-    /// All modes write the same credentials file: the last login decides which
-    /// identity every later command uses. Run this once per machine (or per
-    /// identity switch); tokens are renewed automatically after that.
-    #[command(after_help = "Examples:\n  bitbucket auth login           # act as the OAuth app (bot)\n  bitbucket auth login --user    # act as yourself, via browser consent\n  bitbucket auth login --user --remote                           # step 1: prints the consent URL\n  bitbucket auth login --user --code <CODE> --state <STATE>      # step 2\n\nRequires app.json to exist at ~/.config/bitbucket-cli/app.json with the OAuth\nconsumer's Key/Secret: {\"client_id\": \"...\", \"client_secret\": \"...\"}")]
+    /// Each login replaces only its own identity's credentials
+    /// (credentials-service.json / credentials-user.json): afterwards every command
+    /// acts as the OAuth app, or as the human when it is given --user. Run this once
+    /// per identity; tokens are renewed automatically after that.
+    #[command(after_help = "Examples:\n  bitbucket auth login           # act as the OAuth app (bot)\n  bitbucket auth login --user    # act as yourself, via browser consent\n  bitbucket auth login --user --remote                           # step 1: prints the consent URL\n  bitbucket auth login --user --code <CODE> --state <STATE>      # step 2\n\nRequires app.json at ~/.config/bitbucket-cli/app.json with the identity's section.\nRun `bitbucket init` (or `bitbucket init --user`) first if it is missing.")]
     Login {
-        /// Log in as a human Bitbucket account via browser consent (`authorization_code`)
-        /// instead of as the OAuth app (`client_credentials`)
-        #[arg(long)]
-        user: bool,
         /// Step 1 of a two-step login for someone not at this machine: print the consent URL instead of opening a browser
-        #[arg(long, requires = "user", conflicts_with_all = ["code", "state"])]
+        // "needs --user" is checked in LoginMode::from_flags: clap's `requires`
+        // cannot see a global --user written before the subcommand.
+        #[arg(long, conflicts_with_all = ["code", "state"])]
         remote: bool,
         /// Step 2: the `code` query parameter Bitbucket appended to the consumer's callback URL
-        #[arg(long, requires_all = ["user", "state"])]
+        #[arg(long, requires = "state")]
         code: Option<String>,
         /// Step 2: the `state` query parameter Bitbucket appended to the consumer's callback URL
         #[arg(long, requires = "code")]
         state: Option<String>,
     },
-    /// Print the currently authenticated account as JSON
+    /// Print the account the CLI acts as, as JSON: the OAuth app, or the human with --user
     ///
     /// Always prints its full result regardless of --select — an identity check,
     /// small and fixed-shape.
-    #[command(after_help = "Examples:\n  bitbucket auth whoami\n  bitbucket auth whoami --select uuid,display_name")]
+    #[command(after_help = "Examples:\n  bitbucket auth whoami\n  bitbucket auth whoami --user\n  bitbucket auth whoami --select uuid,display_name")]
     Whoami,
 }
 
@@ -138,15 +157,15 @@ pub enum RepoCommand {
     ///
     /// Always prints its full result regardless of --select — a single repository
     /// object, fixed-shape.
-    #[command(after_help = "Examples:\n  bitbucket repo get lucabrognaracode/my-repo\n  bitbucket repo get lucabrognaracode/my-repo --select description,language")]
+    #[command(after_help = "Examples:\n  bitbucket repo get <workspace>/my-repo\n  bitbucket repo get <workspace>/my-repo --select description,language")]
     Get {
         /// Full repository identifier in the form `workspace/repo_slug`
         repository: String,
     },
     /// List repositories in a workspace, as JSON
-    #[command(after_help = "Examples:\n  bitbucket repo list lucabrognaracode\n  bitbucket repo list lucabrognaracode --page 2\n  bitbucket repo list lucabrognaracode --select values.full_name")]
+    #[command(after_help = "Examples:\n  bitbucket repo list <workspace> --select values.full_name\n  bitbucket repo list <workspace> --page 2 --select values.full_name\n  bitbucket repo list <workspace> --select-all")]
     List {
-        /// Workspace slug, e.g. `lucabrognaracode`
+        /// Workspace slug
         workspace: String,
         /// Page number to fetch (Bitbucket pagination starts at 1)
         #[arg(long)]
@@ -156,7 +175,7 @@ pub enum RepoCommand {
     ///
     /// Always prints its full result regardless of --select — a single repository
     /// object, fixed-shape.
-    #[command(after_help = "Examples:\n  bitbucket repo create lucabrognaracode/my-new-repo\n  bitbucket repo create lucabrognaracode/my-new-repo --description \"My new repo\" --private\n  bitbucket repo create lucabrognaracode/my-new-repo --project PROJ")]
+    #[command(after_help = "Examples:\n  bitbucket repo create <workspace>/my-new-repo\n  bitbucket repo create <workspace>/my-new-repo --description \"My new repo\" --private\n  bitbucket repo create <workspace>/my-new-repo --project PROJ")]
     Create {
         /// Full repository identifier in the form `workspace/repo_slug`
         repository: String,
@@ -175,7 +194,7 @@ pub enum RepoCommand {
     /// This permanently deletes the repository and cannot be undone. Always prints
     /// its full result regardless of --select — a small, synthesized confirmation
     /// object.
-    #[command(after_help = "Example:\n  bitbucket repo delete lucabrognaracode/my-repo --confirm")]
+    #[command(after_help = "Example:\n  bitbucket repo delete <workspace>/my-repo --confirm")]
     Delete {
         /// Full repository identifier in the form `workspace/repo_slug`
         repository: String,
@@ -191,7 +210,7 @@ pub enum PrCommand {
     ///
     /// Always prints its full result regardless of --select — a single pull
     /// request object, fixed-shape.
-    #[command(after_help = "Examples:\n  bitbucket pr get lucabrognaracode/my-repo 42\n  bitbucket pr get lucabrognaracode/my-repo 42 --select title,state,source.branch.name")]
+    #[command(after_help = "Examples:\n  bitbucket pr get <workspace>/my-repo 42\n  bitbucket pr get <workspace>/my-repo 42 --select title,state,source.branch.name")]
     Get {
         /// Full repository identifier in the form `workspace/repo_slug`
         repository: String,
@@ -202,7 +221,7 @@ pub enum PrCommand {
     ///
     /// Always prints its full result regardless of --select — a single pull
     /// request object, fixed-shape.
-    #[command(after_help = "Examples:\n  bitbucket pr create lucabrognaracode/my-repo --title \"My PR\" --source feature-branch\n  bitbucket pr create lucabrognaracode/my-repo --title \"My PR\" --source feature-branch --destination main --description \"does things\"\n  bitbucket pr create lucabrognaracode/my-repo --title \"My PR\" --source feature-branch --close-source-branch\n  bitbucket pr create lucabrognaracode/my-repo --title \"My PR\" --source feature-branch --reviewers \"{504c3b62-8120-4f0c-a7bc-87800b9d6f70}\"\n  bitbucket pr create lucabrognaracode/my-repo --title \"WIP: My PR\" --source feature-branch --draft")]
+    #[command(after_help = "Examples:\n  bitbucket pr create <workspace>/my-repo --title \"My PR\" --source feature-branch\n  bitbucket pr create <workspace>/my-repo --title \"My PR\" --source feature-branch --destination main --description \"does things\"\n  bitbucket pr create <workspace>/my-repo --title \"My PR\" --source feature-branch --close-source-branch\n  bitbucket pr create <workspace>/my-repo --title \"My PR\" --source feature-branch --reviewers \"{xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}\"\n  bitbucket pr create <workspace>/my-repo --title \"WIP: My PR\" --source feature-branch --draft")]
     Create {
         /// Full repository identifier in the form `workspace/repo_slug`
         repository: String,
@@ -222,7 +241,7 @@ pub enum PrCommand {
         #[arg(long)]
         close_source_branch: bool,
         /// Comma-separated list of reviewer UUIDs, each formatted with curly braces
-        /// (e.g. "{504c3b62-8120-4f0c-a7bc-87800b9d6f70}"). Find UUIDs with
+        /// (e.g. "{xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}"). Find UUIDs with
         /// `bitbucket workspace members <workspace>`.
         #[arg(long)]
         reviewers: Option<String>,
@@ -239,7 +258,7 @@ pub enum PrCommand {
     /// adding to it — to add a reviewer to an existing list, pass all current
     /// reviewer UUIDs plus the new one. Always prints its full result regardless
     /// of --select — a single pull request object, fixed shape.
-    #[command(after_help = "Examples:\n  bitbucket pr update lucabrognaracode/my-repo 42 --title \"New title\"\n  bitbucket pr update lucabrognaracode/my-repo 42 --description \"Updated description\"\n  bitbucket pr update lucabrognaracode/my-repo 42 --destination develop\n  bitbucket pr update lucabrognaracode/my-repo 42 --reviewers \"{504c3b62-8120-4f0c-a7bc-87800b9d6f70}\"\n  bitbucket pr update lucabrognaracode/my-repo 42 --draft\n  bitbucket pr update lucabrognaracode/my-repo 42 --ready-for-review")]
+    #[command(after_help = "Examples:\n  bitbucket pr update <workspace>/my-repo 42 --title \"New title\"\n  bitbucket pr update <workspace>/my-repo 42 --description \"Updated description\"\n  bitbucket pr update <workspace>/my-repo 42 --destination develop\n  bitbucket pr update <workspace>/my-repo 42 --reviewers \"{xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}\"\n  bitbucket pr update <workspace>/my-repo 42 --draft\n  bitbucket pr update <workspace>/my-repo 42 --ready-for-review")]
     Update {
         /// Full repository identifier in the form `workspace/repo_slug`
         repository: String,
@@ -255,7 +274,7 @@ pub enum PrCommand {
         #[arg(long)]
         destination: Option<String>,
         /// Comma-separated list of reviewer UUIDs, each formatted with curly braces
-        /// (e.g. "{504c3b62-8120-4f0c-a7bc-87800b9d6f70}"). Find UUIDs with
+        /// (e.g. "{xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}"). Find UUIDs with
         /// `bitbucket workspace members <workspace>`. Replaces the entire reviewer
         /// list rather than adding to it.
         #[arg(long)]
@@ -272,7 +291,7 @@ pub enum PrCommand {
     ///
     /// Always prints its full result regardless of --select — a small approval
     /// object.
-    #[command(after_help = "Example:\n  bitbucket pr approve lucabrognaracode/my-repo 42")]
+    #[command(after_help = "Example:\n  bitbucket pr approve <workspace>/my-repo 42")]
     Approve {
         /// Full repository identifier in the form `workspace/repo_slug`
         repository: String,
@@ -283,7 +302,7 @@ pub enum PrCommand {
     ///
     /// Always prints its full result regardless of --select — a small, synthesized
     /// confirmation object.
-    #[command(after_help = "Example:\n  bitbucket pr unapprove lucabrognaracode/my-repo 42")]
+    #[command(after_help = "Example:\n  bitbucket pr unapprove <workspace>/my-repo 42")]
     Unapprove {
         /// Full repository identifier in the form `workspace/repo_slug`
         repository: String,
@@ -295,7 +314,7 @@ pub enum PrCommand {
     /// This changes the pull request's state and cannot be undone by this CLI.
     /// Always prints its full result regardless of --select — a single pull
     /// request object, fixed-shape.
-    #[command(after_help = "Example:\n  bitbucket pr decline lucabrognaracode/my-repo 42 --confirm")]
+    #[command(after_help = "Example:\n  bitbucket pr decline <workspace>/my-repo 42 --confirm")]
     Decline {
         /// Full repository identifier in the form `workspace/repo_slug`
         repository: String,
@@ -309,7 +328,7 @@ pub enum PrCommand {
     ///
     /// This is permanent and cannot be undone. Always prints its full result
     /// regardless of --select — a single pull request object, fixed-shape.
-    #[command(after_help = "Examples:\n  bitbucket pr merge lucabrognaracode/my-repo 42 --confirm\n  bitbucket pr merge lucabrognaracode/my-repo 42 --merge-strategy squash --close-source-branch --confirm")]
+    #[command(after_help = "Examples:\n  bitbucket pr merge <workspace>/my-repo 42 --confirm\n  bitbucket pr merge <workspace>/my-repo 42 --merge-strategy squash --close-source-branch --confirm")]
     Merge {
         /// Full repository identifier in the form `workspace/repo_slug`
         repository: String,
@@ -332,7 +351,7 @@ pub enum PrCommand {
     ///
     /// Always prints its full result regardless of --select — a single comment
     /// object, fixed-shape.
-    #[command(after_help = "Examples:\n  bitbucket pr comment lucabrognaracode/my-repo 42 --content \"Looks good to me\"\n  bitbucket pr comment lucabrognaracode/my-repo 42 --content \"Fix this\" --path src/main.rs --line 10\n  bitbucket pr comment lucabrognaracode/my-repo 42 --content \"Done, fixed\" --parent 123456")]
+    #[command(after_help = "Examples:\n  bitbucket pr comment <workspace>/my-repo 42 --content \"Looks good to me\"\n  bitbucket pr comment <workspace>/my-repo 42 --content \"Fix this\" --path src/main.rs --line 10\n  bitbucket pr comment <workspace>/my-repo 42 --content \"Done, fixed\" --parent 123456")]
     Comment {
         /// Full repository identifier in the form `workspace/repo_slug`
         repository: String,
@@ -358,7 +377,7 @@ pub enum PrCommand {
     /// Returns general comments, inline comments, and replies, oldest first.
     /// Deleted comments are included too, marked with `deleted: true`. Replies
     /// carry `parent.id`; inline comments carry `inline.path` and `inline.to`.
-    #[command(after_help = "Examples:\n  bitbucket pr list-comments lucabrognaracode/my-repo 42 --select values.id,values.content.raw,values.user.display_name,values.deleted,values.inline.path\n  bitbucket pr list-comments lucabrognaracode/my-repo 42 --page 2 --select values.id,values.content.raw")]
+    #[command(after_help = "Examples:\n  bitbucket pr list-comments <workspace>/my-repo 42 --select values.id,values.content.raw,values.user.display_name,values.deleted,values.inline.path\n  bitbucket pr list-comments <workspace>/my-repo 42 --page 2 --select values.id,values.content.raw")]
     ListComments {
         /// Full repository identifier in the form `workspace/repo_slug`
         repository: String,
@@ -374,7 +393,7 @@ pub enum PrCommand {
     /// Bitbucket normally lets only the comment's author edit it. Find comment
     /// IDs with `bitbucket pr list-comments`. Always prints its full result
     /// regardless of --select — a single comment object, fixed shape.
-    #[command(after_help = "Example:\n  bitbucket pr update-comment lucabrognaracode/my-repo 42 123456 --content \"Updated: looks good to me\"")]
+    #[command(after_help = "Example:\n  bitbucket pr update-comment <workspace>/my-repo 42 123456 --content \"Updated: looks good to me\"")]
     UpdateComment {
         /// Full repository identifier in the form `workspace/repo_slug`
         repository: String,
@@ -387,7 +406,7 @@ pub enum PrCommand {
         content: String,
     },
     /// List pull requests in a repository, as JSON
-    #[command(after_help = "Examples:\n  bitbucket pr list lucabrognaracode/my-repo\n  bitbucket pr list lucabrognaracode/my-repo --state MERGED\n  bitbucket pr list lucabrognaracode/my-repo --page 2\n  bitbucket pr list lucabrognaracode/my-repo --select values.title,values.state")]
+    #[command(after_help = "Examples:\n  bitbucket pr list <workspace>/my-repo --select values.id,values.title,values.state\n  bitbucket pr list <workspace>/my-repo --state MERGED --select values.id,values.title\n  bitbucket pr list <workspace>/my-repo --page 2 --select values.id,values.title\n  bitbucket pr list <workspace>/my-repo --select-all")]
     List {
         /// Full repository identifier in the form `workspace/repo_slug`
         repository: String,
@@ -403,7 +422,7 @@ pub enum PrCommand {
     ///
     /// Prints the diff as plain text (unified diff format), not JSON — `--select`
     /// has no effect on this command.
-    #[command(after_help = "Examples:\n  bitbucket pr diff lucabrognaracode/my-repo 42\n  bitbucket pr diff lucabrognaracode/my-repo 42 --context 5\n  bitbucket pr diff lucabrognaracode/my-repo 42 --path src/main.rs")]
+    #[command(after_help = "Examples:\n  bitbucket pr diff <workspace>/my-repo 42\n  bitbucket pr diff <workspace>/my-repo 42 --context 5\n  bitbucket pr diff <workspace>/my-repo 42 --path src/main.rs")]
     Diff {
         /// Full repository identifier in the form `workspace/repo_slug`
         repository: String,
@@ -422,7 +441,7 @@ pub enum PrCommand {
 #[derive(Debug, Subcommand)]
 pub enum BranchCommand {
     /// List branches in a repository, as JSON
-    #[command(after_help = "Examples:\n  bitbucket branch list lucabrognaracode/my-repo\n  bitbucket branch list lucabrognaracode/my-repo --page 2\n  bitbucket branch list lucabrognaracode/my-repo --select values.name")]
+    #[command(after_help = "Examples:\n  bitbucket branch list <workspace>/my-repo --select values.name\n  bitbucket branch list <workspace>/my-repo --page 2 --select values.name\n  bitbucket branch list <workspace>/my-repo --select-all")]
     List {
         /// Full repository identifier in the form `workspace/repo_slug`
         repository: String,
@@ -434,7 +453,7 @@ pub enum BranchCommand {
     ///
     /// Always prints its full result regardless of --select — a single
     /// branch object, fixed-shape.
-    #[command(after_help = "Examples:\n  bitbucket branch create lucabrognaracode/my-repo feature/my-branch --target main\n  bitbucket branch create lucabrognaracode/my-repo feature/SBF-19-my-fix --target develop")]
+    #[command(after_help = "Examples:\n  bitbucket branch create <workspace>/my-repo feature/my-branch --target main\n  bitbucket branch create <workspace>/my-repo feature/SBF-19-my-fix --target develop")]
     Create {
         /// Full repository identifier in the form `workspace/repo_slug`
         repository: String,
@@ -453,7 +472,7 @@ pub enum BranchCommand {
     /// authentication. Else, falls back to a local heuristic (Bug -> bugfix,
     /// anything else -> feature), no network call, no auth. Always prints its
     /// full result regardless of --select — a small fixed-shape object.
-    #[command(after_help = "Examples:\n  bitbucket branch suggest-name --issue-key SBF-19 --issue-type Task --issue-summary \"Costruire griglia Smartlocker v2\"\n  bitbucket branch suggest-name --issue-key SBF-19 --issue-type Task --issue-summary \"...\" --repository lucabrognaracode/my-repo\n  bitbucket branch suggest-name --issue-key SBF-19 --issue-type Task --issue-summary \"...\" --prefix hotfix")]
+    #[command(after_help = "Examples:\n  bitbucket branch suggest-name --issue-key SBF-19 --issue-type Task --issue-summary \"Costruire griglia Smartlocker v2\"\n  bitbucket branch suggest-name --issue-key SBF-19 --issue-type Task --issue-summary \"...\" --repository <workspace>/my-repo\n  bitbucket branch suggest-name --issue-key SBF-19 --issue-type Task --issue-summary \"...\" --prefix hotfix")]
     SuggestName {
         /// Jira issue key, e.g. SBF-19
         #[arg(long)]
@@ -477,7 +496,7 @@ pub enum BranchCommand {
 #[derive(Debug, Subcommand)]
 pub enum WorkspaceCommand {
     /// List members of a workspace, as JSON
-    #[command(after_help = "Examples:\n  bitbucket workspace members lucabrognaracode\n  bitbucket workspace members lucabrognaracode --page 2\n  bitbucket workspace members lucabrognaracode --select values.user.uuid,values.user.display_name")]
+    #[command(after_help = "Examples:\n  bitbucket workspace members <workspace> --select values.user.uuid,values.user.display_name\n  bitbucket workspace members <workspace> --page 2 --select values.user.uuid,values.user.display_name\n  bitbucket workspace members <workspace> --select-all")]
     Members {
         /// Workspace slug
         workspace: String,

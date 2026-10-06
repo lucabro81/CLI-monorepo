@@ -27,86 +27,99 @@ CLI for Confluence Cloud, designed to be driven by an LLM agent (output is JSON,
 
 ## Setup
 
-This crate authenticates against the exact same Atlassian OAuth platform as `jira` (see root `CLAUDE.md`'s "Shared library: crates/atlassian-auth") — if you've already set up `jira`, the process here is identical, just with a separate `app.json`/`credentials.json` under `confluence-cli/` instead of `jira-cli/`, and Confluence-specific scopes.
+This crate authenticates against the exact same Atlassian OAuth platform as `jira` (see root `CLAUDE.md`'s "Shared library: crates/atlassian-auth") — if you've already set up `jira`, the process here is identical, just under `confluence-cli/` instead of `jira-cli/`, with Confluence-specific scopes. See `jira`'s README "Setup" for the full walkthrough.
 
-Whatever the source, the CLI ends up needing `client_id`/`client_secret` written to `app.json`, used by `confluence auth login` to get tokens (`credentials.json`). There are two ways to obtain that pair — see `jira`'s README "Setup" section for the full walkthrough of both (identical steps, just substitute "Confluence" for "Jira" in scope names and `confluence-cli` for `jira-cli` in paths):
+The CLI holds two identities side by side, and every command picks one per call: without `--user` it acts as the **Service Account**, with `--user` as the **human** who logged in with `confluence auth login --user`. Both live in `$XDG_CONFIG_HOME/confluence-cli/` (typically `~/.config/confluence-cli/`):
 
-- **Option A — Service Account (recommended for agent-driven usage)**: generated in Atlassian's admin console (admin.atlassian.com → Directory → Service accounts → Create credentials → OAuth 2.0), with site access assigned by an org admin at generation time. No human consent step ever needed. Select scopes matching `confluence auth login`'s `SCOPES` constant (`crates/confluence/src/auth.rs`) — see this crate's `CLAUDE.md` "OAuth / auth design" for the exact list and why it mixes classic and granular scopes. **Do not run `confluence init`** for this option — see the warning below.
-- **Option B — 3LO app (human login)**: register an OAuth 2.0 app at developer.atlassian.com/console/myapps, **Resource-level** access, callback URL `http://localhost:8080/callback`, same scopes as above. Requires one human browser consent before first use — this is what `confluence init` (or `confluence auth login --user`) is for.
+| File | Written by | Holds |
+|---|---|---|
+| `app.json` | `confluence init` / `confluence init --user` | `"service"` section (Service Account Client ID/Secret) and `"user"` section (3LO app Client ID/Secret) — either may be missing |
+| `credentials-service.json` | `confluence auth login` | the Service Account's token |
+| `credentials-user.json` | `confluence auth login --user` | the human's token and refresh token |
 
-> **If you already have a Service Account (Option A), skip `confluence init` entirely.** `init` always ends by launching the interactive 3LO browser-consent flow, which a Service Account doesn't have and doesn't need — running it will just sit there waiting for a browser step that isn't part of this flow. Write `app.json` by hand instead (below) and go straight to `confluence auth login`.
+Each `init`/`auth login` touches only its own section and file. An `app.json` in the old flat format (`client_id` at top level, before issue #164) is rejected with the commands to recreate it; a leftover `credentials.json` is ignored and reported by `confluence doctor`.
 
-Write `$XDG_CONFIG_HOME/confluence-cli/app.json` (typically `~/.config/confluence-cli/app.json`) yourself — this file holds a secret, so the CLI (and any agent driving it) should never be asked to read or type it in for you:
+- **Service Account (the default identity)**: generated in Atlassian's admin console (admin.atlassian.com → Directory → Service accounts → Create credentials → OAuth 2.0), with site access assigned by an org admin at generation time. No human consent step ever needed. Select the scopes `init` prints ("Scopes to add", the `SCOPES` constant in `crates/confluence/src/auth.rs`) — see this crate's `CLAUDE.md` "OAuth / auth design" for the exact list and why it mixes classic and granular scopes. The same Service Account credential can serve `jira` too, scoped to both products.
 
-```json
-{
-  "client_id": "your-client-id",
-  "client_secret": "your-client-secret"
-}
-```
+  ```sh
+  cargo run -p confluence -- init --client-id <ID> --client-secret <SECRET>
+  ```
 
-Then, day-to-day (either option, once `app.json` is in place):
+- **Human (`--user`)**: register an OAuth 2.0 app at developer.atlassian.com/console/myapps, **Resource-level** access, callback URL `http://localhost:8080/callback`, Confluence API scopes `read:confluence-user` and `search:confluence` under Classic scopes and `read:page:confluence`, `write:page:confluence`, `read:space:confluence` under Granular scopes (`offline_access` is requested by the CLI and needs no setting). Then, with one browser consent:
+
+  ```sh
+  cargo run -p confluence -- init --user --client-id <ID> --client-secret <SECRET>
+  ```
+
+`app.json` holds secrets, so the CLI (and any agent driving it) should never be asked to read it or type the secrets in for you — pass them to `init` yourself.
+
+Day-to-day, neither identity needs a new login: tokens are renewed automatically. An agent picks the identity on every call:
 
 ```sh
-cargo run -p confluence -- auth login
-cargo run -p confluence -- doctor
+cargo run -p confluence -- space list --select results.key          # as the Service Account
+cargo run -p confluence -- space list --select results.key --user   # as the human
 ```
 
 ## How the OAuth flow works
 
-Identical mechanics to `jira` — same `auth.atlassian.com`/`api.atlassian.com` endpoints, same `client_credentials` (default, agent-driven) and 3LO+PKCE (`--user`, human) grants, same `cloud_id` resolution via the accessible-resources endpoint, same automatic token renewal before every API call. See `jira`'s README "How the OAuth flow works" section for the full step-by-step — this crate's `auth.rs` is a thin wrapper over the same `atlassian_auth` crate `jira` uses (see this crate's `CLAUDE.md`).
+Identical mechanics to `jira` — same `auth.atlassian.com`/`api.atlassian.com` endpoints, same `client_credentials` (default, agent-driven, `"service"` section, `credentials-service.json`) and 3LO+PKCE (`--user`, human, `"user"` section, `credentials-user.json`) grants, same `cloud_id` resolution via the accessible-resources endpoint, same automatic token renewal before every API call. See `jira`'s README "How the OAuth flow works" section for the full step-by-step — this crate's `auth.rs` is a thin wrapper over the same `atlassian_auth` crate `jira` uses (see this crate's `CLAUDE.md`).
 
 The one difference worth calling out: this crate's OAuth scopes are **not yet live-verified** against a real Confluence site (unlike `jira`'s, which were confirmed end-to-end). See this crate's `CLAUDE.md` "OAuth / auth design" for the scope table and what to check if a command 403s despite `doctor` reporting `oauth_scopes: ok`.
 
 ## Usage
 
+Every command accepts the global `--user` flag: without it the command acts as the Service Account, with it as the human (see [Setup](#setup)).
+
 ### `confluence init`
 
-Interactive onboarding — **only for Option B (3LO app) from Setup.** It always ends by running the interactive browser consent flow, because that flow is what "installs" a 3LO app's access to a Confluence site — there is no way to skip it. **If you're setting up a Service Account (Option A), don't run this command**: write `app.json` by hand (Setup, above) and run `confluence auth login` directly instead.
+Onboarding for one identity. Prints setup instructions and the scopes to add, prompts for Client ID/Secret (or accepts `--client-id`/`--client-secret` flags), writes that identity's section of `app.json` (leaving the other section alone), logs in, and prints a `confluence doctor` JSON report for that identity.
 
-Prints setup instructions, prompts for Client ID/Secret (or accepts `--client-id`/`--client-secret` flags), writes `app.json`, runs the OAuth login flow, and prints a `confluence doctor` JSON report as confirmation.
+- `confluence init` — the Service Account: writes `"service"`, runs the non-interactive `client_credentials` login.
+- `confluence init --user` — the human: writes `"user"`, runs the browser consent flow.
 
 ```sh
-cargo run -p confluence -- init
-cargo run -p confluence -- init --client-id <ID> --client-secret <SECRET>
+cargo run -p confluence -- init --client-id <ID> --client-secret <SECRET>          # Service Account
+cargo run -p confluence -- init --user --client-id <ID> --client-secret <SECRET>   # 3LO app, browser login
 ```
 
 ### `confluence doctor`
 
-Runs four checks and prints a structured JSON report: `app_config`, `credentials`, `api` (live call to `/wiki/rest/api/user/current`), `oauth_scopes` (granted OAuth scopes via the accessible-resources endpoint). Exits non-zero if any check fails.
+Runs four checks for the selected identity (the Service Account, or the human with `--user`) and prints a structured JSON report: `app_config` (app.json has the identity's section), `credentials` (that identity's tokens), `api` (live call to `/wiki/rest/api/user/current`), `oauth_scopes` (granted OAuth scopes via the accessible-resources endpoint). Exits non-zero if any check fails. Two informational keys never affect the exit code: `pending_login` and `identities` (which identity was checked, whether each identity has a credentials file, and whether a pre-#164 `credentials.json` is still there).
 
 ```sh
 cargo run -p confluence -- doctor
-cargo run -p confluence -- doctor --select app_config.status,credentials.status,api.status
+cargo run -p confluence -- doctor --user
+cargo run -p confluence -- doctor --select app_config.status,credentials.status,api.status,identities
 ```
 
 Unlike `jira doctor`, there is no per-space permission-scheme check yet — see this crate's `CLAUDE.md` "Known gaps".
 
 ### `confluence auth login`
 
-Stores credentials locally. By default runs the non-interactive `client_credentials` flow (service account). Pass `--user` for the interactive OAuth 2.0 (3LO) + PKCE flow.
+Logs in one identity and stores its credentials, leaving the other identity's untouched. By default runs the non-interactive `client_credentials` flow for the Service Account (`credentials-service.json`). Pass `--user` for the interactive OAuth 2.0 (3LO) + PKCE flow (`credentials-user.json`).
 
 ```sh
-cargo run -p confluence -- auth login              # service account (client_credentials)
+cargo run -p confluence -- auth login              # Service Account (client_credentials)
 cargo run -p confluence -- auth login --user       # human account (OAuth 2.0 3LO + PKCE)
 cargo run -p confluence -- auth login --user --remote --redirect-uri https://app.example.com/oauth/callback   # step 1
 cargo run -p confluence -- auth login --user --code <CODE> --state <STATE>                                   # step 2
 ```
 
-`--user --remote` is the same 3LO grant in two steps, for a person who is not at the CLI's machine (the CLI on a server, the person in a chat or a web page); it needs a 3LO app (Option B), not a Service Account credential.
+`--user --remote` is the same 3LO grant in two steps, for a person who is not at the CLI's machine (the CLI on a server, the person in a chat or a web page); it uses the `"user"` section (a 3LO app), not a Service Account credential. `--remote`, `--code` and `--state` always need `--user` (before or after `auth login`).
 
 1. Step 1 (`--remote --redirect-uri <url>`) opens no browser and listens on no port: it stores a pending login (`state`, PKCE verifier, redirect URI; `pending-login.json`, mode `0600`) and prints `{"authorize_url", "state", "expires_at"}`. `<url>` must be one of the 3LO app's callback URLs.
 2. The person opens `authorize_url`, picks the site and accepts; Atlassian redirects them to `<url>?code=...&state=...`.
-3. Step 2 (`--code <code> --state <state>`) checks the state and the expiry, exchanges the code, saves `credentials.json`, and prints what `auth whoami` prints.
+3. Step 2 (`--code <code> --state <state>`) checks the state and the expiry, exchanges the code, saves `credentials-user.json`, and prints what `auth whoami --user` prints.
 
 A pending login is valid for 10 minutes and its state is single-use. Everything lives in the config folder the CLI resolves, so one `XDG_CONFIG_HOME` per person keeps people's logins apart. `confluence doctor` shows a pending login under `pending_login`.
 
 ### `confluence auth whoami`
 
-Prints the currently authenticated user as JSON (`GET /wiki/rest/api/user/current`).
+Prints the account the CLI acts as, as JSON (`GET /wiki/rest/api/user/current`): the Service Account, or the human with `--user`.
 
 ```sh
 cargo run -p confluence -- auth whoami
+cargo run -p confluence -- auth whoami --user
 ```
 
 ### `confluence page get <ID>`
@@ -240,7 +253,7 @@ None yet — this crate has not been exercised against a real Confluence site. S
 All errors are plain text, no colors or symbols — designed to be read by an LLM. Each message is self-contained: it states what went wrong and what to do next. Example:
 
 ```
-not authenticated. Run: confluence auth login
+not logged in as the service account. Run: confluence auth login. To act as the human logged in with confluence auth login --user, pass --user instead
 ```
 
 Errors are typed with `thiserror` (`CliError` in `error.rs`). Internal module errors (`LoginError`, `ClientError`) are mapped to `CliError` at the top-level `run()` function and never surface directly to the user.

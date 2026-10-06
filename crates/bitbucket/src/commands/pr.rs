@@ -3,17 +3,18 @@
 use serde_json::{json, Value};
 
 use crate::cli::PrCommand;
+use crate::auth::Identity;
 use crate::context::{authenticated_client, print_json, split_repository};
 use crate::error::CliError;
 
 /// Dispatches a `PrCommand` variant to the appropriate Bitbucket API call.
-pub fn run(command: PrCommand, select: cli_fields::Select<'_>) -> Result<(), CliError> {
+pub fn run(command: PrCommand, select: cli_fields::Select<'_>, identity: Identity) -> Result<(), CliError> {
     match command {
         PrCommand::Create { repository, title, source, destination, description, close_source_branch, reviewers, draft } => {
             let (workspace, repo_slug) = split_repository(&repository)?;
             let reviewer_uuids = split_reviewers(reviewers.as_deref());
             let body = build_create_body(&title, &source, destination, description, close_source_branch, reviewer_uuids, draft);
-            let value = authenticated_client()?
+            let value = authenticated_client(identity)?
                 .create_pull_request(workspace, repo_slug, &body)
                 .map_err(|e| CliError::ApiRequestFailed {
                     reason: e.to_string(),
@@ -23,11 +24,11 @@ pub fn run(command: PrCommand, select: cli_fields::Select<'_>) -> Result<(), Cli
         }
         PrCommand::Update { repository, id, title, description, destination, reviewers, draft, ready_for_review } => {
             let body = update_body_from_flags(title, description, destination, reviewers.as_deref(), draft, ready_for_review)?;
-            run_update(&repository, id, &body, select)
+            run_update(&repository, id, &body, select, identity)
         }
         PrCommand::Approve { repository, id } => {
             let (workspace, repo_slug) = split_repository(&repository)?;
-            let value = authenticated_client()?
+            let value = authenticated_client(identity)?
                 .approve_pull_request(workspace, repo_slug, id)
                 .map_err(|e| CliError::ApiRequestFailed {
                     reason: e.to_string(),
@@ -37,7 +38,7 @@ pub fn run(command: PrCommand, select: cli_fields::Select<'_>) -> Result<(), Cli
         }
         PrCommand::Unapprove { repository, id } => {
             let (workspace, repo_slug) = split_repository(&repository)?;
-            authenticated_client()?
+            authenticated_client(identity)?
                 .unapprove_pull_request(workspace, repo_slug, id)
                 .map_err(|e| CliError::ApiRequestFailed {
                     reason: e.to_string(),
@@ -50,7 +51,7 @@ pub fn run(command: PrCommand, select: cli_fields::Select<'_>) -> Result<(), Cli
                 return Err(CliError::DeclineNotConfirmed { repository, id });
             }
             let (workspace, repo_slug) = split_repository(&repository)?;
-            let value = authenticated_client()?
+            let value = authenticated_client(identity)?
                 .decline_pull_request(workspace, repo_slug, id)
                 .map_err(|e| CliError::ApiRequestFailed {
                     reason: e.to_string(),
@@ -64,7 +65,7 @@ pub fn run(command: PrCommand, select: cli_fields::Select<'_>) -> Result<(), Cli
             }
             let (workspace, repo_slug) = split_repository(&repository)?;
             let body = build_merge_body(message, merge_strategy, close_source_branch);
-            let value = authenticated_client()?
+            let value = authenticated_client(identity)?
                 .merge_pull_request(workspace, repo_slug, id, &body)
                 .map_err(|e| CliError::ApiRequestFailed {
                     reason: e.to_string(),
@@ -74,11 +75,11 @@ pub fn run(command: PrCommand, select: cli_fields::Select<'_>) -> Result<(), Cli
         }
         PrCommand::Comment { repository, id, content, path, line, parent } => {
             let inline = validate_inline_location(path, line)?;
-            run_create_comment(&repository, id, &content, inline, parent, select)
+            run_create_comment(&repository, id, &content, inline, parent, select, identity)
         }
         PrCommand::Get { repository, id } => {
             let (workspace, repo_slug) = split_repository(&repository)?;
-            let value = authenticated_client()?
+            let value = authenticated_client(identity)?
                 .get_pull_request(workspace, repo_slug, id)
                 .map_err(|e| CliError::ApiRequestFailed {
                     reason: e.to_string(),
@@ -88,7 +89,7 @@ pub fn run(command: PrCommand, select: cli_fields::Select<'_>) -> Result<(), Cli
         }
         PrCommand::Diff { repository, id, context, path } => {
             let (workspace, repo_slug) = split_repository(&repository)?;
-            let diff = authenticated_client()?
+            let diff = authenticated_client(identity)?
                 .get_pull_request_diff(workspace, repo_slug, id, context, path.as_deref())
                 .map_err(|e| CliError::ApiRequestFailed {
                     reason: e.to_string(),
@@ -96,13 +97,13 @@ pub fn run(command: PrCommand, select: cli_fields::Select<'_>) -> Result<(), Cli
             print!("{diff}");
             Ok(())
         }
-        PrCommand::ListComments { repository, id, page } => run_list_comments(&repository, id, page, select),
+        PrCommand::ListComments { repository, id, page } => run_list_comments(&repository, id, page, select, identity),
         PrCommand::UpdateComment { repository, id, comment_id, content } => {
-            run_update_comment(&repository, id, comment_id, &content, select)
+            run_update_comment(&repository, id, comment_id, &content, select, identity)
         }
         PrCommand::List { repository, state, page } => {
             let (workspace, repo_slug) = split_repository(&repository)?;
-            let value = authenticated_client()?
+            let value = authenticated_client(identity)?
                 .list_pull_requests(workspace, repo_slug, state.as_deref(), page)
                 .map_err(|e| CliError::ApiRequestFailed {
                     reason: e.to_string(),
@@ -119,10 +120,11 @@ fn run_create_comment(
     inline: Option<(String, u64)>,
     parent: Option<u64>,
     select: cli_fields::Select<'_>,
+    identity: Identity,
 ) -> Result<(), CliError> {
     let (workspace, repo_slug) = split_repository(repository)?;
     let body = build_comment_body(content, inline, parent);
-    let value = authenticated_client()?
+    let value = authenticated_client(identity)?
         .create_pull_request_comment(workspace, repo_slug, id, &body)
         .map_err(|e| CliError::ApiRequestFailed {
             reason: e.to_string(),
@@ -131,9 +133,9 @@ fn run_create_comment(
     print_json(&value, select.or_all())
 }
 
-fn run_list_comments(repository: &str, id: u64, page: Option<u32>, select: cli_fields::Select<'_>) -> Result<(), CliError> {
+fn run_list_comments(repository: &str, id: u64, page: Option<u32>, select: cli_fields::Select<'_>, identity: Identity) -> Result<(), CliError> {
     let (workspace, repo_slug) = split_repository(repository)?;
-    let value = authenticated_client()?
+    let value = authenticated_client(identity)?
         .list_pull_request_comments(workspace, repo_slug, id, page)
         .map_err(|e| CliError::ApiRequestFailed {
             reason: e.to_string(),
@@ -141,10 +143,10 @@ fn run_list_comments(repository: &str, id: u64, page: Option<u32>, select: cli_f
     print_json(&value, select)
 }
 
-fn run_update_comment(repository: &str, id: u64, comment_id: u64, content: &str, select: cli_fields::Select<'_>) -> Result<(), CliError> {
+fn run_update_comment(repository: &str, id: u64, comment_id: u64, content: &str, select: cli_fields::Select<'_>, identity: Identity) -> Result<(), CliError> {
     let (workspace, repo_slug) = split_repository(repository)?;
     let body = build_comment_body(content, None, None);
-    let value = authenticated_client()?
+    let value = authenticated_client(identity)?
         .update_pull_request_comment(workspace, repo_slug, id, comment_id, &body)
         .map_err(|e| CliError::ApiRequestFailed {
             reason: e.to_string(),
@@ -210,9 +212,9 @@ fn update_body_from_flags(
 
 /// Handles `PrCommand::Update` once the body is built and validated: calls
 /// `PUT .../pullrequests/{id}` and prints the updated pull request.
-fn run_update(repository: &str, id: u64, body: &Value, select: cli_fields::Select<'_>) -> Result<(), CliError> {
+fn run_update(repository: &str, id: u64, body: &Value, select: cli_fields::Select<'_>, identity: Identity) -> Result<(), CliError> {
     let (workspace, repo_slug) = split_repository(repository)?;
-    let value = authenticated_client()?
+    let value = authenticated_client(identity)?
         .update_pull_request(workspace, repo_slug, id, body)
         .map_err(|e| CliError::ApiRequestFailed {
             reason: e.to_string(),

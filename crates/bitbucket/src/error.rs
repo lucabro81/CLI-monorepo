@@ -14,18 +14,40 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 pub enum CliError {
     #[error(
-        "app credentials file not found at {path}. \
-        Create a Bitbucket OAuth consumer (workspace Settings -> OAuth consumers, \
-        no callback URL needed for client_credentials) and write its Key/Secret to \
-        this file as: {{\"client_id\": \"...\", \"client_secret\": \"...\"}}"
+        "app credentials file not found at {path}. Create a Bitbucket OAuth consumer \
+        (workspace Settings -> OAuth consumers) and run: \
+        bitbucket init --client-id <KEY> --client-secret <SECRET> (the app identity, the default) \
+        and/or bitbucket init --user --client-id <KEY> --client-secret <SECRET> (the human, used with --user)"
     )]
     AppConfigNotFound { path: String },
 
     #[error(
-        "app credentials file at {path} is not valid JSON: {reason}. \
-        Expected format: {{\"client_id\": \"...\", \"client_secret\": \"...\"}}"
+        "app credentials file at {path} is not valid: {reason}. Expected format: \
+        {{\"service\": {{\"client_id\": \"...\", \"client_secret\": \"...\"}}, \
+        \"user\": {{\"client_id\": \"...\", \"client_secret\": \"...\"}}}} (either section may be omitted). \
+        Fix or delete the file, then run bitbucket init"
     )]
     AppConfigInvalid { path: String, reason: String },
+
+    #[error(
+        "app.json at {path} uses the old single-identity format (client_id at top level). \
+        Recreate it: bitbucket init --client-id <KEY> --client-secret <SECRET> for the app identity, \
+        and bitbucket init --user --client-id <KEY> --client-secret <SECRET> for the human used with --user \
+        (the same consumer can serve both)"
+    )]
+    AppConfigLegacy { path: String },
+
+    #[error(
+        "app.json at {path} has no \"service\" section (the OAuth consumer used without --user, acting as \
+        the app). Run: bitbucket init --client-id <KEY> --client-secret <SECRET>"
+    )]
+    ServiceAppMissing { path: String },
+
+    #[error(
+        "app.json at {path} has no \"user\" section (the OAuth consumer used with --user to act as a human; \
+        it may be the same consumer). Run: bitbucket init --user --client-id <KEY> --client-secret <SECRET>"
+    )]
+    UserAppMissing { path: String },
 
     #[error(
         "no home directory found — cannot resolve config path. \
@@ -33,22 +55,41 @@ pub enum CliError {
     )]
     NoHomeDirectory,
 
-    #[error("not authenticated. Run: bitbucket auth login")]
-    NotAuthenticated,
+    #[error(
+        "not logged in as the OAuth app. Run: bitbucket auth login. \
+        To act as the human logged in with bitbucket auth login --user, pass --user instead"
+    )]
+    NotAuthenticatedService,
 
     #[error(
-        "failed to refresh authentication token: {reason}. \
-        If you logged in with `bitbucket auth login --user`, the refresh token may have expired \
-        (unused for 3 months): run `bitbucket auth login --user` again. Otherwise check that the \
-        OAuth consumer credentials in app.json are still valid."
+        "not logged in as a human. Run: bitbucket auth login --user (a person must approve the login in a browser)"
     )]
-    TokenRefreshFailed { reason: String },
+    NotAuthenticatedUser,
+
+    #[error(
+        "failed to renew the OAuth app's token: {reason}. Check that the consumer Key/Secret in \
+        app.json's \"service\" section are still valid, then run: bitbucket auth login"
+    )]
+    TokenRenewalFailedService { reason: String },
+
+    #[error(
+        "failed to refresh the human's token: {reason}. The refresh token may have expired \
+        (unused for 3 months) or been revoked. Run: bitbucket auth login --user"
+    )]
+    TokenRefreshFailedUser { reason: String },
 
     #[error("OAuth login failed: {reason}")]
     LoginFailed { reason: String },
 
     #[error("remote login failed: {reason}. Start a new remote login with: bitbucket auth login --user --remote")]
     RemoteLoginFailed { reason: String },
+
+    #[error(
+        "a remote login (--remote, --code, --state) logs in the human identity and needs --user. \
+        Retry with --user: bitbucket auth login --user --remote, \
+        then bitbucket auth login --user --code <CODE> --state <STATE>"
+    )]
+    RemoteLoginNeedsUser,
 
     #[error(
         "failed to save credentials to {path}: {reason}. \

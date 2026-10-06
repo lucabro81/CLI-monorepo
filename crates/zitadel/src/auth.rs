@@ -16,7 +16,8 @@
 //! - **App configuration** (`AppConfig`) — `app.json`: the instance URL, the
 //!   service user's key (the console key file, copied verbatim), and the Native
 //!   app `client_id` used by the human login.
-//! - **Session credentials** (`Credentials`) — `credentials.json`: access token,
+//! - **Session credentials** (`Credentials`) — the identity's credentials file
+//!   (`credentials-service.json` / `credentials-user.json`): access token,
 //!   optional refresh token, expiry. Fully managed by the CLI.
 
 use serde::{Deserialize, Serialize};
@@ -134,8 +135,17 @@ pub fn app_config_path(config_dir: &Path) -> PathBuf {
     config_dir.join("zitadel-cli").join("app.json")
 }
 
-/// `<config_dir>/zitadel-cli/credentials.json`
-pub fn credentials_path(config_dir: &Path) -> PathBuf {
+pub use oauth_user_login::Identity;
+
+/// `identity`'s credentials file:
+/// `<config_dir>/zitadel-cli/credentials-service.json` or `credentials-user.json`.
+pub fn credentials_path(config_dir: &Path, identity: Identity) -> PathBuf {
+    identity.credentials_path(config_dir, "zitadel-cli")
+}
+
+/// The single credentials file used before issue #164
+/// (`<config_dir>/zitadel-cli/credentials.json`); no longer read, only reported by `doctor`.
+pub fn legacy_credentials_path(config_dir: &Path) -> PathBuf {
     config_dir.join("zitadel-cli").join("credentials.json")
 }
 
@@ -180,9 +190,12 @@ pub enum LoginError {
         \"Refresh Token\" in the Native application's token settings, then run: zitadel auth login --user"
     )]
     NoRefreshToken,
-    #[error("credentials file is corrupted ({0}). Run: zitadel auth login")]
+    #[error("credentials file is corrupted ({0})")]
     InvalidCredentialsFile(String),
-    /// Writing `credentials.json` failed (e.g. after a successful renewal) —
+    /// The credentials file doesn't hold the identity it is named after.
+    #[error("{0}")]
+    WrongIdentity(&'static str),
+    /// Writing the credentials file failed (e.g. after a successful renewal) —
     /// distinct from `Io`, which only covers reading it.
     #[error("could not write credentials file: {0}")]
     SaveCredentials(String),
@@ -201,7 +214,8 @@ struct TokenResponse {
     expires_in: u64,
 }
 
-/// Dynamic session credentials persisted to `credentials.json`.
+/// Dynamic session credentials persisted to the identity's credentials file
+/// (`credentials-service.json` / `credentials-user.json`).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Credentials {
     pub access_token: String,
@@ -433,11 +447,29 @@ pub(crate) fn is_expiring(expires_at: u64, now: u64) -> bool {
     now + 60 >= expires_at
 }
 
+/// Refuses credentials that don't belong to `identity`. Renewal picks its
+/// grant from the stored token (refresh token, or a re-signed service user
+/// JWT), so without this check a human slot with no refresh token would be
+/// renewed as the service user, and a service slot holding a human login as
+/// that human.
+pub fn check_identity(credentials: &Credentials, identity: Identity) -> Result<(), LoginError> {
+    match (identity, credentials.refresh_token.is_some()) {
+        (Identity::User, false) => Err(LoginError::WrongIdentity(
+            "the human credentials file holds no refresh token, so it is not a human login",
+        )),
+        (Identity::Service, true) => Err(LoginError::WrongIdentity(
+            "the service user credentials file holds a refresh token, so it is a human login",
+        )),
+        _ => Ok(()),
+    }
+}
+
 /// Loads credentials from disk, renewing and re-saving them first if expiring.
-pub fn load_credentials(config: &AppConfig, path: &Path) -> Result<Credentials, LoginError> {
+pub fn load_credentials(config: &AppConfig, path: &Path, identity: Identity) -> Result<Credentials, LoginError> {
     let raw = std::fs::read_to_string(path)?;
     let credentials: Credentials = serde_json::from_str(&raw)
         .map_err(|e| LoginError::InvalidCredentialsFile(e.to_string()))?;
+    check_identity(&credentials, identity)?;
 
     if is_expiring(credentials.expires_at, now_unix()) {
         let renewed = renew(config, &credentials)?;

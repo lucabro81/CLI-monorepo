@@ -37,10 +37,12 @@ src/
                     get_transitions, list_transitions_json, apply_transition,
                     create_issue, delete_issue, assign_issue, search_issues,
                     search_users, get_user, search_projects
-  cli.rs          — clap structs: Cli (--select global), Command, AuthCommand,
+  cli.rs          — clap structs: Cli (--select, --select-all, --user global), Command, AuthCommand,
                     IssueCommand, CommentCommand, UserCommand, ProjectCommand. No logic.
-  context.rs      — config_dir(), load_oauth_config(), authenticated_client(),
-                    print_json(value, select), client_error_to_cli(e) (shared
+  context.rs      — config_dir(), load_app_config(), load_oauth_config(identity),
+                    authenticated_client(identity), login_command(identity),
+                    login_error_to_cli(e, identity), oauth_section(),
+                    app_config_error(), print_json(value, select), client_error_to_cli(e) (shared
                     ClientError -> CliError mapping used by every command handler
                     that calls JiraClient). Shared by all command handlers.
   endpoints.rs    — URL/path constants for Jira REST API v3, used by client.rs.
@@ -52,7 +54,8 @@ src/
   tests/          — all *_tests.rs files, mirroring the src/ layout (see "Test file
                     convention" below). tests/e2e_tests.rs holds the ignored e2e tests.
   main.rs         — pure dispatch: resolve --select/--select-all into a
-                    cli_fields::Select once, match Command, call commands::*.
+                    cli_fields::Select and --user into an Identity once, match
+                    Command, call commands::*.
 ```
 
 `--select` dot-notation projection itself (`filter_fields`, `describe_top_level_shape`, the `Select` enum, `render_json`) lives in the shared `crates/cli-fields` workspace crate, not in this crate — see root `CLAUDE.md`'s "Shared library: crates/cli-fields".
@@ -101,41 +104,43 @@ command that's a thin passthrough, covered entirely by `cli_tests.rs`.
 
 **Implementation lives in `atlassian-auth`** (workspace-local crate, `crates/atlassian-auth`), not in this crate — `auth.rs` here is a thin wrapper fixing the `jira-cli` config dir name and this crate's `SCOPES` constant. `confluence` uses the exact same underlying flows (same `auth.atlassian.com`/`api.atlassian.com` endpoints, same `cloud_id` resolution), just with its own scopes — extracted because this crate's OAuth logic was about to be duplicated a third time, byte-for-byte, when `confluence` was added. See `atlassian-auth`'s own module docs for what it deliberately does *not* cover (`bitbucket`'s native OAuth consumer, `atlassian-admin`'s static API key — both genuinely different auth models, not more instances of this duplication).
 
-Two grant types, both using `client_id`/`client_secret` from `app.json`:
+**Two identities, stored side by side (issue #164)** — see root `CLAUDE.md`'s "Two identities per CLI". The global `--user` flag (resolved once in `main.rs` into an `Identity`) selects, per call, whether a command acts as the Service Account (default) or as the human. Each identity has its own `app.json` section (`AppConfig::service` / `AppConfig::user`) and its own credentials file (`credentials-service.json` / `credentials-user.json`); `context::authenticated_client(identity)` loads, renews and uses only that one. `LoginMode::identity()` decides which file a login writes, so a login never touches the other identity. `--remote`/`--code` without `--user` are rejected by `LoginMode::from_flags` (`CliError::RemoteLoginNeedsUser`), not by clap, because clap's `requires` cannot see a global `--user` written before the subcommand.
 
-- **`client_credentials`** (default, `auth login`) — `login_client_credentials()` POSTs `grant_type=client_credentials` + `audience=api.atlassian.com`, no browser. Returns `Credentials` with `refresh_token: None`. Expected mode for agent-driven usage; resulting account has `accountType: "app"`.
-- **3LO + PKCE** (`auth login --user`, also used by `init`) — `login()` builds the authorization URL, binds `127.0.0.1:8080`, opens the browser, waits for the callback (stray requests get a 404; listener from `crates/oauth-user-login`), exchanges the code for tokens, resolves `cloud_id` via the accessible-resources endpoint. Returns `Credentials` with `refresh_token: Some(...)`.
-- **3LO + PKCE in two steps** (`auth login --user --remote`, issue #146) — for a person not at this machine. Step 1 (`atlassian_auth::start_remote_login`) saves an `oauth_user_login::PendingLogin` to `pending-login.json` (0600, 10 minutes) and prints `{authorize_url, state, expires_at}`; step 2 (`--code --state`, `complete_remote_login`) takes it (state single-use, consumed before the exchange), exchanges the code with the stored verifier and redirect URI, resolves `cloud_id`, saves credentials and prints `auth whoami`. The redirect URI must be one of the 3LO app's callback URLs. `doctor` reports it as `pending_login` (outside `all_ok`). Verified live end to end (including a reused and a wrong state).
+Two grant types, one per identity:
+
+- **`client_credentials`** (default, `auth login`, `app.json`'s `service` section) — `login_client_credentials()` POSTs `grant_type=client_credentials` + `audience=api.atlassian.com`, no browser. Returns `Credentials` with `refresh_token: None`. Expected mode for agent-driven usage; resulting account has `accountType: "app"`.
+- **3LO + PKCE** (`auth login --user`, also used by `init --user`; `app.json`'s `user` section) — `login()` builds the authorization URL, binds `127.0.0.1:8080`, opens the browser, waits for the callback (stray requests get a 404; listener from `crates/oauth-user-login`), exchanges the code for tokens, resolves `cloud_id` via the accessible-resources endpoint. Returns `Credentials` with `refresh_token: Some(...)`.
+- **3LO + PKCE in two steps** (`auth login --user --remote`, issue #146) — for a person not at this machine. Step 1 (`atlassian_auth::start_remote_login`) saves an `oauth_user_login::PendingLogin` to `pending-login.json` (0600, 10 minutes) and prints `{authorize_url, state, expires_at}`; step 2 (`--code --state`, `complete_remote_login`) takes it (state single-use, consumed before the exchange), exchanges the code with the stored verifier and redirect URI, resolves `cloud_id`, saves `credentials-user.json` and prints `auth whoami --user`. The redirect URI must be one of the 3LO app's callback URLs. `doctor` reports it as `pending_login` (outside `all_ok`). Verified live end to end (including a reused and a wrong state).
 
 ### App identity sourcing: 3LO app vs. Service Account
 
-`app.json`'s `client_id`/`client_secret` can come from either of two different Atlassian consoles, and this is what actually determines whether `client_credentials` needs a prior human step — not anything in this crate's code, which sends the identical request either way. Verified empirically against a real org: a Service Account's OAuth 2.0 credential works immediately with the existing `login_client_credentials()`/`fetch_primary_resource()` code, unmodified — `jira auth login` + `jira doctor` (all six checks) succeeded on the first try, no code change needed.
+The two `app.json` sections come from two different Atlassian consoles: `service` from a Service Account (recommended), `user` from a 3LO app. Which console a `client_credentials` credential comes from is what determines whether it needs a prior human step — not anything in this crate's code, which sends the identical request either way. Verified empirically against a real org: a Service Account's OAuth 2.0 credential works immediately with the existing `login_client_credentials()`/`fetch_primary_resource()` code, unmodified — `jira auth login` + `jira doctor` (all six checks) succeeded on the first try, no code change needed.
 
 | Source | Console | Site access provisioning | Can also do 3LO (`auth login --user`)? |
 |---|---|---|---|
-| 3LO app | developer.atlassian.com/console/myapps | Human completes the 3LO consent screen once (`jira init` / `auth login --user`); until then `client_credentials` fails with "no accessible resources" | Yes — that's what issues the credential in the first place |
+| 3LO app | developer.atlassian.com/console/myapps | Human completes the 3LO consent screen once (`jira init --user` / `auth login --user`); until then `client_credentials` fails with "no accessible resources" | Yes — that's what issues the credential in the first place |
 | Service Account | admin.atlassian.com → Directory → Service accounts → Create credentials → OAuth 2.0 | Assigned directly by an org admin at credential-creation time in the console; no consent screen exists or is needed | No — a Service Account's OAuth2 client only supports `client_credentials` |
 
-`jira init` always ends with the 3LO browser flow, so it only makes sense for the 3LO app path. Service Account setup skips `init` entirely: write `app.json` by hand, then run `jira auth login` directly (see README Setup, Option A).
+`jira init` writes the `service` section and runs `client_credentials` (no browser); `jira init --user` writes the `user` section and runs the 3LO browser flow. `write_app_config(config_dir, identity, ...)` rewrites only the identity's section, replaces a missing or legacy flat `app.json`, and refuses to overwrite a file that isn't valid JSON (`AppConfigInvalid`).
 
-Both grants resolve `cloud_id` via the accessible-resources endpoint after obtaining the access token. `fetch_primary_resource` takes the first entry returned — this crate only supports a single Jira site per `app.json`/`credentials.json`. For the 3LO app path this requires the Atlassian app to be registered as **Resource-level** access type (not Account-level) in the developer console, so the 3LO consent screen limits the grant to one site (see README Setup, Option B). Supporting multiple sites (Account-level access, site selection) is a separate feature, not a config tweak.
+Both grants resolve `cloud_id` via the accessible-resources endpoint after obtaining the access token. `fetch_primary_resource` takes the first entry returned — this crate only supports a single Jira site per identity. For the 3LO app path this requires the Atlassian app to be registered as **Resource-level** access type (not Account-level) in the developer console, so the 3LO consent screen limits the grant to one site (see README Setup, "Human identity: 3LO app (`--user`)"). Supporting multiple sites (Account-level access, site selection) is a separate feature, not a config tweak.
 
 The same accessible-resources entry also carries a `url` field (the site's browsable base URL, e.g. `https://mysite.atlassian.net`), captured as `Credentials::site_url` alongside `cloud_id`. `JiraClient::site_url()` exposes it; `commands::issue::build_browse_url` uses it to add a `browse_url` field to `issue get`/`issue create`'s JSON output. `None` for credentials stored before this field existed — re-run `auth login` to populate it, no lazy fallback.
 
-- **Refresh tokens rotate**: Atlassian invalidates the previous refresh token on every use. The new token pair must be written to `credentials.json` immediately after each refresh.
+- **Refresh tokens rotate**: Atlassian invalidates the previous refresh token on every use. The new token pair must be written to `credentials-user.json` immediately after each refresh.
 - **Transparent renewal**: `renew(config, credentials)` dispatches to `refresh()` (if `refresh_token` is `Some`) or re-runs `login_client_credentials()` (if `None`, service account). `refresh()` itself returns `LoginError::Internal` if called with `refresh_token: None`. Both `load_credentials()` and `doctor`'s `check_credentials` go through `renew()` (with a 60s expiry buffer) — never call `refresh()` directly on possibly-expired credentials.
 - **Scopes**: `read:jira-work read:jira-user write:jira-work offline_access` are what the 3LO authorization URL requests. `client_credentials` has no `scope` parameter in its own request body — it inherits whatever scopes were granted at credential-creation time: from the 3LO consent screen for a 3LO app, or from the scopes selected in admin.atlassian.com when the OAuth 2.0 credential was created for a Service Account.
-- The `client_credentials` grant only requires the `--user` flow to have been completed at least once **when `app.json` holds a 3LO app's credentials**. When `app.json` holds Service Account credentials, `client_credentials` works immediately — site access was already assigned by an org admin in the console, not via a consent step this crate could observe or trigger.
+- The `client_credentials` grant only requires a prior human consent **when the `service` section holds a 3LO app's credentials**. With Service Account credentials it works immediately — site access was already assigned by an org admin in the console, not via a consent step this crate could observe or trigger.
 
 ## Config layout (XDG-style)
 
-Both files live under `$XDG_CONFIG_HOME/jira-cli/` (falling back to `~/.config/jira-cli/`):
+All files live under `$XDG_CONFIG_HOME/jira-cli/` (falling back to `~/.config/jira-cli/`):
 
-- `app.json` — `{"client_id": "...", "client_secret": "..."}`. Static; written by `jira init` (3LO app path only) or by hand (either path). Never modified at runtime. The shape is identical whether the credentials came from a 3LO app (developer.atlassian.com) or a Service Account (admin.atlassian.com) — see "OAuth / auth design" above for how the two differ in site-access provisioning.
-- `credentials.json` — OAuth tokens. Fully managed by the CLI; never edit by hand.
+- `app.json` — `{"service": {"client_id": "...", "client_secret": "..."}, "user": {"client_id": "...", "client_secret": "..."}}`, either section optional (`atlassian_auth::AppConfig`). Static; written by `jira init` (`service`) / `jira init --user` (`user`) or by hand. Never modified at runtime. `service` holds a Service Account credential (admin.atlassian.com), `user` a 3LO app (developer.atlassian.com) — see "OAuth / auth design" above. The pre-#164 flat shape (`client_id` at top level) is rejected with `CliError::AppConfigLegacy`, which names both `init` commands; there is no automatic migration.
+- `credentials-service.json` / `credentials-user.json` — each identity's OAuth tokens. Fully managed by the CLI; never edit by hand. A leftover pre-#164 `credentials.json` is not read; `doctor`'s `identities.legacy_credentials_file` reports it.
 - `pending-login.json` — only between the two steps of `auth login --user --remote` (state, PKCE verifier, redirect URI, expiry). Removed by step 2.
 
-Kept separate so automatic token writes never clobber the app identity.
+Kept separate so automatic token writes never clobber the app identity, and so one identity's login never touches the other's tokens.
 
 ## API design notes
 
@@ -164,7 +169,7 @@ Kept separate so automatic token writes never clobber the app identity.
 
   `adf.rs` itself has no concept of Jira mentions — a `{{mention:ACCOUNT_ID}}` placeholder passed through `markdown_to_adf_content` comes out as literal text. `commands::issue::build_comment_content` composes the two concerns: it runs `--body` through `markdown_to_adf_content`, then `expand_mentions_in_content` (a separate recursive pass over the resulting block-node tree) rewrites any `{{mention:ACCOUNT_ID}}` found inside a leaf `text` node into a real ADF `mention` node, splitting that text node into a `text`/`mention`/`text` sequence and preserving its original `marks` on the surviving text pieces. Display-name resolution is injected via a closure (`&mut impl FnMut(&str) -> Result<String, ClientError>`) so the recursive walk itself stays pure and unit-testable without HTTP — tests pass a canned closure, production passes `mention_display_name` (below).
 - **Mentions in comments** (`issue comment add --mention <ACCOUNT_ID>` and/or `{{mention:ACCOUNT_ID}}` inside `--body`): both forms build an ADF `mention` node (`{"type": "mention", "attrs": {"id": ..., "text": "@..."}}`) — `--mention` as a leading paragraph prepended to the parsed Markdown content, `{{mention:...}}` in place via `expand_mentions_in_content` above. The `text` attrs value is resolved to the user's real current display name via `client::get_user` (`GET /rest/api/3/user?accountId=...`) before the comment is posted — one extra API call per mention — rather than a generic placeholder, since Jira's fallback `text` is what's shown in contexts where the ADF isn't fully re-rendered (some notification digests). A lookup failure (e.g. unknown account ID) surfaces as the same `ApiError`/`ApiRequestFailed` as any other Jira API call — no special-cased error handling. `jira user search` is the way to discover an account ID for a name/email.
-- **Destructive commands**: no interactive prompts (an LLM cannot respond). `issue delete` requires explicit `--confirm`; error message includes the exact command to retry. `commands/issue.rs::run` calls `authenticated_client()` **per match arm** rather than once up front, so the `--confirm` check (free, local) runs before the network round-trip a token refresh may require — otherwise a caller who forgot `--confirm` with expired credentials would see a confusing auth error instead of the actionable `DeleteNotConfirmed` one (spotted and fixed alongside `google-chat`'s `messages delete`, which had the same hoisted-auth structure).
+- **Destructive commands**: no interactive prompts (an LLM cannot respond). `issue delete` requires explicit `--confirm`; error message includes the exact command to retry. `commands/issue.rs::run` calls `authenticated_client(identity)` **per match arm** rather than once up front, so the `--confirm` check (free, local) runs before the network round-trip a token refresh may require — otherwise a caller who forgot `--confirm` with expired credentials would see a confusing auth error instead of the actionable `DeleteNotConfirmed` one (spotted and fixed alongside `google-chat`'s `messages delete`, which had the same hoisted-auth structure).
 - **Assignee endpoint**: `PUT /rest/api/3/issue/{key}/assignee` takes `{"accountId": "..."}` to assign, or `{"accountId": null}` to unassign — verified live against a real Jira Cloud site rather than trusted from docs, since Atlassian's own docs/community answers are ambiguous between this and the older Jira Server `{"name": null}` form. `issue assign`'s `--assignee`/`--unassign` flags are mutually exclusive (`clap`'s `conflicts_with`); `validate_assign_target` (`commands/issue.rs`) is the runtime check that at least one was passed, since `conflicts_with` alone doesn't enforce that.
 - **`issue create --parent`**: sets `fields.parent = {"key": "..."}` in the create request body — the same field Jira uses both for a subtask's parent (any project) and for "child of an Epic" on **team-managed** projects. On **company-managed** projects, Epic linkage instead uses a separate site-specific custom field ("Epic Link"), not `fields.parent` — not supported by this flag; tracked as a `design-note` issue. No dedicated `ClientError`/`CliError` variant for an invalid/inaccessible parent key — it surfaces via the existing generic `ApiError { status, body }` path, same as invalid `--project`/`--type`/`--assignee`/`--priority` already do. Subtask issue type names are project/site-specific (e.g. localized — verified live against `MER`, whose subtask type is named "Sottotask", not "Subtask"/"Sub-task"); discover the correct name per project via `GET /issue/createmeta` rather than assuming a fixed name.
 - **`project search`**: `GET /rest/api/3/project/search?query=` is a literal substring/prefix filter (case-insensitive) against project key and name — not a query language, and distinct from JQL's `project = <value>` clause, which resolves a project's *exact, full* name or key but does not fragment-match (verified live: `project = Mercury` resolves to that project's issues, `project = mercur` returns zero). `client::search_projects` is a separate method from `client::list_projects` (used only internally by `doctor`'s `projects` check) even though both hit the same endpoint — `list_projects` paginates and discards everything but `key`, which is wrong for this command's purpose (surfacing `name` is the whole point); same reasoning as `list_transitions_json`/`get_transitions` being two separate views over one endpoint.
@@ -184,6 +189,8 @@ conceptual background):
   site in that case, and this check unions all of them rather than only the
   first — a bug discovered live against exactly this crate's `doctor` output,
   fixed in the shared crate.
+These checks run for the identity selected by `--user` — despite their names, `service_user` and `projects` report the human's permissions under `--user`.
+
 - **`service_user`** — `GET /mypermissions` with no `projectKey`: lists which
   of `PERMISSION_KEYS` are granted *globally*. For project-scoped permission
   keys, Jira evaluates this as "true if true in at least one project" — it can
@@ -212,11 +219,11 @@ Issues") is needed by `jira issue assign`.
 
 | Command | Notes |
 |---------|-------|
-| `init [--client-id --client-secret]` | Human onboarding; only command with narrative output |
-| `doctor` | Cascading JSON health check (app_config, credentials, api, oauth_scopes, service_user, projects); exit non-zero on any failure |
-| `auth login [--user]` | Default: `client_credentials` (service account, no browser). `--user`: interactive 3LO + PKCE |
+| `init [--user] [--client-id --client-secret]` | Onboarding of one identity (`service` section + `client_credentials`, or `user` section + browser login with `--user`); only command with narrative output |
+| `doctor [--user]` | Cascading JSON health check for the selected identity (app_config, credentials, api, oauth_scopes, service_user, projects); exit non-zero on any failure. Informational `pending_login` and `identities` |
+| `auth login [--user]` | Default: `client_credentials` (Service Account, no browser) into `credentials-service.json`. `--user`: interactive 3LO + PKCE into `credentials-user.json` |
 | `auth login --user --remote` / `--code --state` | Two-step 3LO + PKCE for someone elsewhere: step 1 prints the authorize URL (exempt from `--select`), step 2 exchanges the code and prints `auth whoami` |
-| `auth whoami` | GET /myself |
+| `auth whoami [--user]` | GET /myself as the selected identity |
 | `issue get <KEY>` | Fetch single issue |
 | `issue create [--parent <KEY>]` | POST with ADF description/body; `--parent` sets `fields.parent` (subtask parent, or epic parent on team-managed projects — not company-managed Epic Link) |
 | `issue delete <KEY> --confirm` | Requires explicit confirmation flag |

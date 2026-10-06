@@ -4,16 +4,45 @@ use oauth_user_login::{PendingLogin, PendingLoginError};
 use serde_json::json;
 
 use super::{remote_login_error, remote_start_output, LoginMode};
-use crate::auth::LoginError;
+use crate::auth::{Identity, LoginError};
 
 #[test]
 fn login_mode_follows_the_flags() {
-    assert_eq!(LoginMode::from_flags(false, false, None, None), LoginMode::App);
-    assert_eq!(LoginMode::from_flags(true, false, None, None), LoginMode::UserBrowser);
-    assert_eq!(LoginMode::from_flags(true, true, None, None), LoginMode::RemoteStart);
+    assert_eq!(LoginMode::from_flags(Identity::Service, false, None, None).unwrap(), LoginMode::App);
+    assert_eq!(LoginMode::from_flags(Identity::User, false, None, None).unwrap(), LoginMode::UserBrowser);
+    assert_eq!(LoginMode::from_flags(Identity::User, true, None, None).unwrap(), LoginMode::RemoteStart);
     assert_eq!(
-        LoginMode::from_flags(true, false, Some("c".to_string()), Some("s".to_string())),
+        LoginMode::from_flags(Identity::User, false, Some("c".to_string()), Some("s".to_string())).unwrap(),
         LoginMode::RemoteComplete { code: "c".to_string(), state: "s".to_string() }
+    );
+}
+
+#[test]
+fn remote_login_without_user_is_rejected_with_the_corrected_command() {
+    // Regression guard for issue #164: --user became global, and clap cannot
+    // enforce `requires = "user"` when --user is written before the
+    // subcommand, so the check moved here.
+    let start = LoginMode::from_flags(Identity::Service, true, None, None).unwrap_err().to_string();
+    let complete = LoginMode::from_flags(Identity::Service, false, Some("c".to_string()), Some("s".to_string()))
+        .unwrap_err()
+        .to_string();
+
+    let expected = "a remote login (--remote, --code, --state) logs in the human identity and needs --user. \
+        Retry with --user: bitbucket auth login --user --remote, \
+        then bitbucket auth login --user --code <CODE> --state <STATE>";
+    assert_eq!(start, expected);
+    assert_eq!(complete, expected);
+}
+
+#[test]
+fn each_login_mode_saves_to_its_own_identity() {
+    // A login as the app must never overwrite the human's credentials, and vice versa.
+    assert_eq!(LoginMode::App.identity(), Identity::Service);
+    assert_eq!(LoginMode::UserBrowser.identity(), Identity::User);
+    assert_eq!(LoginMode::RemoteStart.identity(), Identity::User);
+    assert_eq!(
+        LoginMode::RemoteComplete { code: "c".to_string(), state: "s".to_string() }.identity(),
+        Identity::User
     );
 }
 

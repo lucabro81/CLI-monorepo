@@ -184,7 +184,7 @@ fn expired_user_session_is_renewed_with_its_refresh_token_not_the_service_user()
     let path = dir.path().join("credentials.json");
     save_credentials(&path, &user_credentials()).unwrap();
 
-    let creds = load_credentials(&native_config(&url), &path).unwrap();
+    let creds = load_credentials(&native_config(&url), &path, crate::auth::Identity::User).unwrap();
 
     assert_eq!(form(&server.join().unwrap())["grant_type"], "refresh_token");
     assert_eq!(creds.refresh_token.as_deref(), Some("rt-new"));

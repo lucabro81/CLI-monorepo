@@ -31,13 +31,14 @@ CLI for Bitbucket Cloud, designed to be driven by an LLM agent (output is JSON, 
   - [`bitbucket branch list <workspace>/<repo_slug>`](#bitbucket-branch-list-workspacerepo_slug)
   - [`bitbucket branch create <workspace>/<repo_slug> <name>`](#bitbucket-branch-create-workspacerepo_slug-name)
   - [`bitbucket branch suggest-name --issue-key <KEY> --issue-type <TYPE> --issue-summary <SUMMARY>`](#bitbucket-branch-suggest-name---issue-key-key---issue-type-type---issue-summary-summary)
-  - [`--select <PATHS>` (global flag)](#--select-paths-global-flag)
+  - [`bitbucket workspace members <workspace>`](#bitbucket-workspace-members-workspace)
+  - [`--select <PATHS>` / `--select-all` (global flags)](#--select-paths----select-all-global-flags)
 - [Testing](#testing)
 - [Error design](#error-design)
 
 ## Status
 
-`init`, `doctor`, `auth login`/`auth whoami`, `repo get`, `repo list`, `repo create`, `repo delete`, `pr get`, `pr list`, `pr create`, `pr update`, `pr comment`, `pr list-comments`, `pr update-comment`, `pr approve`, `pr unapprove`, `pr decline`, `pr merge`, `branch list` implemented. See [CLAUDE.md](CLAUDE.md) for architecture and the planned command list.
+`init`, `doctor`, `auth login`/`auth whoami`, `repo get`, `repo list`, `repo create`, `repo delete`, `pr get`, `pr list`, `pr create`, `pr update`, `pr comment`, `pr list-comments`, `pr update-comment`, `pr approve`, `pr unapprove`, `pr decline`, `pr merge`, `pr diff`, `branch list`, `branch create`, `branch suggest-name`, `workspace members` implemented. See [CLAUDE.md](CLAUDE.md) for architecture and the planned command list.
 
 ## Setup
 
@@ -51,77 +52,74 @@ In your Bitbucket workspace, go to **Settings → Apps and features → OAuth cl
 
 After saving, note down the consumer's **Key** (`client_id`) and **Secret** (`client_secret`).
 
-### 2. Write the app credentials file
+### 2. Save it, log in and verify
 
-Create `$XDG_CONFIG_HOME/bitbucket-cli/app.json` (typically `~/.config/bitbucket-cli/app.json`):
+The CLI holds two identities side by side, and every command picks one per call: without `--user` it acts as the **OAuth app** (bot identity, `client_credentials`), with `--user` as **you** (the human who approved the consent page). Both live in `$XDG_CONFIG_HOME/bitbucket-cli/` (typically `~/.config/bitbucket-cli/`):
 
-```json
-{
-  "client_id": "your-consumer-key",
-  "client_secret": "your-consumer-secret"
-}
-```
-
-This file is static and hand-written — the CLI never modifies it. It's kept separate from `credentials.json` (the dynamic token store, see below) precisely so that automatic token writes never overwrite your app identity.
-
-### 3. Log in
+| File | Written by | Holds |
+|---|---|---|
+| `app.json` | `bitbucket init` / `bitbucket init --user` | `"service"` section (the consumer used as the app) and `"user"` section (the consumer used for the human login) — either may be missing; both may hold the same consumer |
+| `credentials-service.json` | `bitbucket auth login` | the app's token |
+| `credentials-user.json` | `bitbucket auth login --user` | the human's token and refresh token |
 
 ```sh
-cargo run -p bitbucket -- auth login
+cargo run -p bitbucket -- init --client-id <KEY> --client-secret <SECRET>          # the OAuth app, no browser
+cargo run -p bitbucket -- init --user --client-id <KEY> --client-secret <SECRET>   # you, via browser consent
 ```
 
-This exchanges the consumer's Key/Secret for an access token via `client_credentials` — no browser, no human interaction, every action attributed to the OAuth app. To act as yourself instead, run `auth login --user` (see below). Run this once per machine; tokens are renewed automatically after that.
+`init` prints the consumer-creation instructions, prompts for the Key/Secret when the flags are omitted, writes that identity's section of `app.json` (leaving the other alone), logs in as that identity, and prints a `doctor` JSON report for it. `app.json` is static — the CLI never modifies it at runtime — and kept separate from the credentials files so automatic token writes never overwrite your app identity. Each login touches only its own credentials file. An `app.json` in the old flat format (`client_id` at top level, before issue #164) is rejected with the commands to recreate it; a leftover `credentials.json` is ignored and reported by `doctor`.
 
-### `bitbucket init` does all of the above
-
-`bitbucket init` walks through steps 1–3 interactively: it prints the consumer-creation instructions, prompts for the Key/Secret (or accepts `--client-id`/`--client-secret` flags for non-interactive use), writes `app.json`, runs `auth login`, and prints a `doctor` JSON report as final confirmation.
+Day-to-day, neither identity needs a new login: tokens are renewed automatically. An agent picks the identity on every call:
 
 ```sh
-cargo run -p bitbucket -- init
-cargo run -p bitbucket -- init --client-id <KEY> --client-secret <SECRET>
+cargo run -p bitbucket -- repo get <workspace>/<repo_slug>          # as the OAuth app
+cargo run -p bitbucket -- repo get <workspace>/<repo_slug> --user   # as you
 ```
 
 ## How the OAuth flow works
 
 Bitbucket Cloud's native OAuth `client_credentials` grant is used — not the unified `developer.atlassian.com` OAuth used by `jira` (that app has no Bitbucket API permission to grant), and not Repository/Workspace Access Tokens (Premium-only).
 
-1. **Token request** — the CLI POSTs `grant_type=client_credentials` to `https://bitbucket.org/site/oauth2/access_token`, authenticated with HTTP Basic auth using `client_id`/`client_secret` from `app.json`. Receives an `access_token`, an expiry, and a `scopes` field listing the OAuth scopes granted to the consumer.
-2. **Persisting credentials** — `access_token`, `expires_at`, and `scopes` are written to `credentials.json`.
+1. **Token request** — the CLI POSTs `grant_type=client_credentials` to `https://bitbucket.org/site/oauth2/access_token`, authenticated with HTTP Basic auth using `client_id`/`client_secret` from `app.json`'s `"service"` section. Receives an `access_token`, an expiry, and a `scopes` field listing the OAuth scopes granted to the consumer.
+2. **Persisting credentials** — `access_token`, `expires_at`, and `scopes` are written to `credentials-service.json`.
 3. **API calls** — `https://api.bitbucket.org/2.0/...`, with the workspace slug used directly in paths. No `cloud_id` resolution step like `jira`.
 
 ### Automatic renewal
 
-Before each API call, the CLI checks whether the access token is expired (or about to expire within 60s). After `auth login` there is no `refresh_token`: the token is re-requested via the same `client_credentials` exchange. After `auth login --user` the stored `refresh_token` is used (Bitbucket rotates it on every use; an unused one expires after 3 months, then run `auth login --user` again). Either way `credentials.json` is overwritten with the new values.
+Before each API call, the CLI checks whether the selected identity's access token is expired (or about to expire within 60s). The app's credentials (`credentials-service.json`) have no `refresh_token`: the token is re-requested via the same `client_credentials` exchange. The human's (`credentials-user.json`) use the stored `refresh_token` (Bitbucket rotates it on every use; an unused one expires after 3 months, then run `auth login --user` again). Either way only that identity's file is overwritten with the new values.
 
 ## Usage
 
+Every command accepts the global `--user` flag: without it the command acts as the OAuth app, with it as the human (see [Setup](#setup)).
+
 ### `bitbucket init`
 
-Interactive onboarding. See [Setup](#setup) above.
+Onboarding for one identity. See [Setup](#setup) above.
 
 ```sh
-cargo run -p bitbucket -- init
 cargo run -p bitbucket -- init --client-id <KEY> --client-secret <SECRET>
+cargo run -p bitbucket -- init --user --client-id <KEY> --client-secret <SECRET>
 ```
 
 ### `bitbucket doctor`
 
-Runs four checks and prints a structured JSON report: `app_config` (app.json exists and is valid), `credentials` (tokens exist and are not expired, renewed if needed), `api` (live call to `/2.0/user` succeeds), `permissions` (the OAuth scopes granted to the consumer). Exits non-zero if any check fails.
+Runs four checks for the selected identity (the OAuth app, or the human with `--user`) and prints a structured JSON report: `app_config` (app.json has the identity's section), `credentials` (that identity's tokens exist and are not expired, renewed if needed), `api` (live call to `/2.0/user` succeeds), `permissions` (the OAuth scopes granted to the consumer). Exits non-zero if any check fails. Two informational keys never affect the exit code: `pending_login` and `identities` (which identity was checked, whether each identity has a credentials file, and whether a pre-#164 `credentials.json` is still there).
 
 ```sh
 cargo run -p bitbucket -- doctor
-cargo run -p bitbucket -- doctor --select app_config.status,credentials.status,api.status,permissions
+cargo run -p bitbucket -- doctor --user
+cargo run -p bitbucket -- doctor --select app_config.status,credentials.status,api.status,permissions,identities
 ```
 
 The `permissions` check reports `granted_scopes` as-is from the token response — `status` is `"ok"` if the list is non-empty, `"error"` only if it's empty (nothing will work). It's purely informational beyond that: which scopes a given command needs is documented per-command below, not enforced by `doctor`.
 
 ### `bitbucket auth login`
 
-Stores credentials locally. Two modes, same credentials file (the last login decides the identity every later command uses):
+Logs in one identity and stores its credentials, leaving the other identity's untouched:
 
-- default — non-interactive `client_credentials` flow, no browser. Every action is attributed to the **OAuth app** (bot identity): the mode for agents.
-- `--user` — interactive `authorization_code` flow: opens the browser on Bitbucket's consent page, receives the callback on `localhost:8080`, stores a refresh token. Every action is attributed to **your own account**. Requires the consumer's callback URL to be `http://localhost:8080/callback`.
-- `--user --remote`, then `--user --code <code> --state <state>` — the same `authorization_code` flow in two steps, for a person who is not at the CLI's machine (the CLI on a server, the person in a chat or a web page). Step 1 opens no browser and listens on no port: it stores a pending login (`state` only; `pending-login.json`, mode `0600`) and prints `{"authorize_url", "state", "expires_at"}`. The person opens `authorize_url` and grants access; Bitbucket redirects them to the consumer's callback URL with `code` and `state`. Step 2 checks the state and the expiry, exchanges the code, saves `credentials.json`, and prints what `auth whoami` prints. A pending login is valid for 10 minutes and its state is single-use.
+- default — non-interactive `client_credentials` flow with the `"service"` consumer, no browser, saved to `credentials-service.json`. Commands run without `--user` are attributed to the **OAuth app** (bot identity): the mode for agents.
+- `--user` — interactive `authorization_code` flow with the `"user"` consumer, saved to `credentials-user.json`: opens the browser on Bitbucket's consent page, receives the callback on `localhost:8080`, stores a refresh token. Commands run with `--user` are attributed to **your own account**. Requires the consumer's callback URL to be `http://localhost:8080/callback`.
+- `--user --remote`, then `--user --code <code> --state <state>` — the same `authorization_code` flow in two steps, for a person who is not at the CLI's machine (the CLI on a server, the person in a chat or a web page). Step 1 opens no browser and listens on no port: it stores a pending login (`state` only; `pending-login.json`, mode `0600`) and prints `{"authorize_url", "state", "expires_at"}`. The person opens `authorize_url` and grants access; Bitbucket redirects them to the consumer's callback URL with `code` and `state`. Step 2 checks the state and the expiry, exchanges the code, saves `credentials-user.json`, and prints what `auth whoami --user` prints. A pending login is valid for 10 minutes and its state is single-use. `--remote`, `--code` and `--state` always need `--user` (before or after `auth login`).
 
 ```sh
 cargo run -p bitbucket -- auth login
@@ -130,16 +128,17 @@ cargo run -p bitbucket -- auth login --user --remote                          # 
 cargo run -p bitbucket -- auth login --user --code <CODE> --state <STATE>     # step 2
 ```
 
-**Bitbucket has no `redirect_uri` parameter**: the person is always sent back to the consumer's single callback URL. So for remote logins through a service (e.g. one that receives the redirect at `https://service.example.com/oauth/callback`), use a separate OAuth consumer whose callback URL is that endpoint, with its own config folder (`XDG_CONFIG_HOME`) — the `localhost:8080` consumer stays for local `--user` logins. `doctor` shows a pending login under `pending_login`.
+**Bitbucket has no `redirect_uri` parameter**: the person is always sent back to the consumer's single callback URL. So for remote logins through a service (e.g. one that receives the redirect at `https://service.example.com/oauth/callback`), the `"user"` section must hold a consumer whose callback URL is that endpoint; a config folder (`XDG_CONFIG_HOME`) whose `"user"` consumer calls back to `localhost:8080` is the one for local `--user` logins. `doctor` shows a pending login under `pending_login`.
 
-Run this once per machine, again if `credentials.json` is lost or revoked, or to switch identity. `doctor` reports the active one as `credentials.identity` (`app` or `user`).
+Run each once per machine, or again if that identity's credentials file is lost or revoked. `doctor` reports the checked credentials' kind as `credentials.identity` (`app` or `user`).
 
 ### `bitbucket auth whoami`
 
-Prints the currently authenticated identity as JSON. With `client_credentials`, this is the OAuth app's identity, not a personal user; after `auth login --user`, it's your own account.
+Prints the account the CLI acts as, as JSON: without `--user` the OAuth app's identity (not a personal user), with `--user` your own account.
 
 ```sh
 cargo run -p bitbucket -- auth whoami
+cargo run -p bitbucket -- auth whoami --user
 cargo run -p bitbucket -- auth whoami --select uuid,display_name
 ```
 
@@ -148,8 +147,8 @@ cargo run -p bitbucket -- auth whoami --select uuid,display_name
 Fetches a single repository and prints the full Bitbucket API response as pretty-printed JSON.
 
 ```sh
-cargo run -p bitbucket -- repo get lucabrognaracode/my-repo
-cargo run -p bitbucket -- repo get lucabrognaracode/my-repo --select description,language
+cargo run -p bitbucket -- repo get <workspace>/my-repo
+cargo run -p bitbucket -- repo get <workspace>/my-repo --select description,language
 ```
 
 Requires the `repository` (read) scope.
@@ -159,9 +158,9 @@ Requires the `repository` (read) scope.
 Lists repositories in a workspace, paginated.
 
 ```sh
-cargo run -p bitbucket -- repo list lucabrognaracode
-cargo run -p bitbucket -- repo list lucabrognaracode --page 2
-cargo run -p bitbucket -- repo list lucabrognaracode --select values.full_name
+cargo run -p bitbucket -- repo list <workspace> --select values.full_name
+cargo run -p bitbucket -- repo list <workspace> --page 2 --select values.full_name
+cargo run -p bitbucket -- repo list <workspace> --select-all
 ```
 
 **Flags:**
@@ -174,9 +173,9 @@ Requires the `repository` (read) scope.
 Creates a new repository. `scm` is always `git`. All flags are optional.
 
 ```sh
-cargo run -p bitbucket -- repo create lucabrognaracode/my-new-repo
-cargo run -p bitbucket -- repo create lucabrognaracode/my-new-repo --description "My new repo" --private
-cargo run -p bitbucket -- repo create lucabrognaracode/my-new-repo --project PROJ
+cargo run -p bitbucket -- repo create <workspace>/my-new-repo
+cargo run -p bitbucket -- repo create <workspace>/my-new-repo --description "My new repo" --private
+cargo run -p bitbucket -- repo create <workspace>/my-new-repo --project PROJ
 ```
 
 **Flags:**
@@ -191,7 +190,7 @@ Requires the `repository:write` scope. Note: some workspaces reject public repos
 Deletes a repository. **Destructive**: permanent and cannot be undone — requires `--confirm`.
 
 ```sh
-cargo run -p bitbucket -- repo delete lucabrognaracode/my-repo --confirm
+cargo run -p bitbucket -- repo delete <workspace>/my-repo --confirm
 ```
 
 Returns `{"deleted": true, "repository": "<workspace>/<repo_slug>"}`. Requires the `repository:admin` scope.
@@ -201,11 +200,11 @@ Returns `{"deleted": true, "repository": "<workspace>/<repo_slug>"}`. Requires t
 Creates a new pull request.
 
 ```sh
-cargo run -p bitbucket -- pr create lucabrognaracode/my-repo --title "My PR" --source feature-branch
-cargo run -p bitbucket -- pr create lucabrognaracode/my-repo --title "My PR" --source feature-branch --destination main --description "does things"
-cargo run -p bitbucket -- pr create lucabrognaracode/my-repo --title "My PR" --source feature-branch --close-source-branch
-cargo run -p bitbucket -- pr create lucabrognaracode/my-repo --title "My PR" --source feature-branch --reviewers "{504c3b62-8120-4f0c-a7bc-87800b9d6f70}"
-cargo run -p bitbucket -- pr create lucabrognaracode/my-repo --title "WIP: My PR" --source feature-branch --draft
+cargo run -p bitbucket -- pr create <workspace>/my-repo --title "My PR" --source feature-branch
+cargo run -p bitbucket -- pr create <workspace>/my-repo --title "My PR" --source feature-branch --destination main --description "does things"
+cargo run -p bitbucket -- pr create <workspace>/my-repo --title "My PR" --source feature-branch --close-source-branch
+cargo run -p bitbucket -- pr create <workspace>/my-repo --title "My PR" --source feature-branch --reviewers "{xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}"
+cargo run -p bitbucket -- pr create <workspace>/my-repo --title "WIP: My PR" --source feature-branch --draft
 ```
 
 **Flags:**
@@ -214,7 +213,7 @@ cargo run -p bitbucket -- pr create lucabrognaracode/my-repo --title "WIP: My PR
 - `--destination <BRANCH>` — destination branch name. If omitted, Bitbucket uses the repository's main branch.
 - `--description <TEXT>` — pull request description
 - `--close-source-branch` — close the source branch after the pull request is merged
-- `--reviewers <UUIDS>` — comma-separated reviewer UUIDs, each in curly braces (e.g. `{504c3b62-...}`); find them with `bitbucket workspace members <workspace>`
+- `--reviewers <UUIDS>` — comma-separated reviewer UUIDs, each in curly braces (e.g. `{xxxxxxxx-...}`); find them with `bitbucket workspace members <workspace>`
 - `--draft` — create the pull request as a draft; publish it later with `pr update --ready-for-review`
 
 Requires the `pullrequest:write` scope.
@@ -224,12 +223,12 @@ Requires the `pullrequest:write` scope.
 Updates an open pull request's title, description, destination branch, reviewers, or draft status. Only the fields you pass are changed, with one exception: `--reviewers` replaces the entire reviewer list rather than adding to it.
 
 ```sh
-cargo run -p bitbucket -- pr update lucabrognaracode/my-repo 42 --title "New title"
-cargo run -p bitbucket -- pr update lucabrognaracode/my-repo 42 --description "Updated description"
-cargo run -p bitbucket -- pr update lucabrognaracode/my-repo 42 --destination develop
-cargo run -p bitbucket -- pr update lucabrognaracode/my-repo 42 --reviewers "{504c3b62-8120-4f0c-a7bc-87800b9d6f70}"
-cargo run -p bitbucket -- pr update lucabrognaracode/my-repo 42 --draft
-cargo run -p bitbucket -- pr update lucabrognaracode/my-repo 42 --ready-for-review
+cargo run -p bitbucket -- pr update <workspace>/my-repo 42 --title "New title"
+cargo run -p bitbucket -- pr update <workspace>/my-repo 42 --description "Updated description"
+cargo run -p bitbucket -- pr update <workspace>/my-repo 42 --destination develop
+cargo run -p bitbucket -- pr update <workspace>/my-repo 42 --reviewers "{xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}"
+cargo run -p bitbucket -- pr update <workspace>/my-repo 42 --draft
+cargo run -p bitbucket -- pr update <workspace>/my-repo 42 --ready-for-review
 ```
 
 **Flags** (at least one required):
@@ -247,7 +246,7 @@ Requires the `pullrequest:write` scope.
 Approves a pull request as the authenticated account.
 
 ```sh
-cargo run -p bitbucket -- pr approve lucabrognaracode/my-repo 42
+cargo run -p bitbucket -- pr approve <workspace>/my-repo 42
 ```
 
 Requires the `pullrequest:write` scope.
@@ -257,7 +256,7 @@ Requires the `pullrequest:write` scope.
 Removes the authenticated account's approval from a pull request.
 
 ```sh
-cargo run -p bitbucket -- pr unapprove lucabrognaracode/my-repo 42
+cargo run -p bitbucket -- pr unapprove <workspace>/my-repo 42
 ```
 
 Requires the `pullrequest:write` scope.
@@ -267,7 +266,7 @@ Requires the `pullrequest:write` scope.
 Declines a pull request. **Destructive**: changes the pull request's state and cannot be undone by this CLI — requires `--confirm`.
 
 ```sh
-cargo run -p bitbucket -- pr decline lucabrognaracode/my-repo 42 --confirm
+cargo run -p bitbucket -- pr decline <workspace>/my-repo 42 --confirm
 ```
 
 Requires the `pullrequest:write` scope.
@@ -277,8 +276,8 @@ Requires the `pullrequest:write` scope.
 Merges a pull request. **Destructive**: permanent and cannot be undone — requires `--confirm`.
 
 ```sh
-cargo run -p bitbucket -- pr merge lucabrognaracode/my-repo 42 --confirm
-cargo run -p bitbucket -- pr merge lucabrognaracode/my-repo 42 --merge-strategy squash --close-source-branch --confirm
+cargo run -p bitbucket -- pr merge <workspace>/my-repo 42 --confirm
+cargo run -p bitbucket -- pr merge <workspace>/my-repo 42 --merge-strategy squash --close-source-branch --confirm
 ```
 
 **Flags:**
@@ -293,9 +292,9 @@ Requires the `pullrequest:write` scope.
 Prints the raw unified diff for a pull request as plain text (not JSON — `--select` has no effect).
 
 ```sh
-cargo run -p bitbucket -- pr diff lucabrognaracode/my-repo 42
-cargo run -p bitbucket -- pr diff lucabrognaracode/my-repo 42 --context 5
-cargo run -p bitbucket -- pr diff lucabrognaracode/my-repo 42 --path src/main.rs
+cargo run -p bitbucket -- pr diff <workspace>/my-repo 42
+cargo run -p bitbucket -- pr diff <workspace>/my-repo 42 --context 5
+cargo run -p bitbucket -- pr diff <workspace>/my-repo 42 --path src/main.rs
 ```
 
 **Flags:**
@@ -309,9 +308,9 @@ Requires the `pullrequest` (read) scope.
 Adds a comment to a pull request — general, inline (attached to a file/line), or a reply to an existing comment.
 
 ```sh
-cargo run -p bitbucket -- pr comment lucabrognaracode/my-repo 42 --content "Looks good to me"
-cargo run -p bitbucket -- pr comment lucabrognaracode/my-repo 42 --content "Fix this" --path src/main.rs --line 10
-cargo run -p bitbucket -- pr comment lucabrognaracode/my-repo 42 --content "Done, fixed" --parent 123456
+cargo run -p bitbucket -- pr comment <workspace>/my-repo 42 --content "Looks good to me"
+cargo run -p bitbucket -- pr comment <workspace>/my-repo 42 --content "Fix this" --path src/main.rs --line 10
+cargo run -p bitbucket -- pr comment <workspace>/my-repo 42 --content "Done, fixed" --parent 123456
 ```
 
 **Flags:**
@@ -326,8 +325,8 @@ Requires the `pullrequest:write` scope.
 Lists every comment on a pull request, oldest first: general comments, inline comments and replies. Deleted comments are included too, marked with `deleted: true`, so no filtering happens on the client side. Replies carry `parent.id`, and inline comments carry `inline.path` and `inline.to`. `--select` is required because the list is paginated and unbounded.
 
 ```sh
-cargo run -p bitbucket -- pr list-comments lucabrognaracode/my-repo 42 --select values.id,values.content.raw,values.user.display_name,values.deleted,values.inline.path
-cargo run -p bitbucket -- pr list-comments lucabrognaracode/my-repo 42 --page 2 --select values.id,values.content.raw
+cargo run -p bitbucket -- pr list-comments <workspace>/my-repo 42 --select values.id,values.content.raw,values.user.display_name,values.deleted,values.inline.path
+cargo run -p bitbucket -- pr list-comments <workspace>/my-repo 42 --page 2 --select values.id,values.content.raw
 ```
 
 **Flags:**
@@ -340,7 +339,7 @@ Requires the `pullrequest` (read) scope.
 Replaces the text of an existing pull request comment. Only the text changes: an inline comment keeps its file and line. Bitbucket normally lets only the comment's author edit it. Use `pr list-comments` to find comment IDs.
 
 ```sh
-cargo run -p bitbucket -- pr update-comment lucabrognaracode/my-repo 42 123456 --content "Updated: looks good to me"
+cargo run -p bitbucket -- pr update-comment <workspace>/my-repo 42 123456 --content "Updated: looks good to me"
 ```
 
 **Flags:**
@@ -353,8 +352,8 @@ Requires the `pullrequest:write` scope.
 Fetches a single pull request and prints the full Bitbucket API response as pretty-printed JSON.
 
 ```sh
-cargo run -p bitbucket -- pr get lucabrognaracode/my-repo 42
-cargo run -p bitbucket -- pr get lucabrognaracode/my-repo 42 --select title,state,source.branch.name
+cargo run -p bitbucket -- pr get <workspace>/my-repo 42
+cargo run -p bitbucket -- pr get <workspace>/my-repo 42 --select title,state,source.branch.name
 ```
 
 Requires the `pullrequest` (read) scope.
@@ -364,10 +363,10 @@ Requires the `pullrequest` (read) scope.
 Lists pull requests in a repository, paginated.
 
 ```sh
-cargo run -p bitbucket -- pr list lucabrognaracode/my-repo
-cargo run -p bitbucket -- pr list lucabrognaracode/my-repo --state MERGED
-cargo run -p bitbucket -- pr list lucabrognaracode/my-repo --page 2
-cargo run -p bitbucket -- pr list lucabrognaracode/my-repo --select values.title,values.state
+cargo run -p bitbucket -- pr list <workspace>/my-repo --select values.id,values.title,values.state
+cargo run -p bitbucket -- pr list <workspace>/my-repo --state MERGED --select values.id,values.title
+cargo run -p bitbucket -- pr list <workspace>/my-repo --page 2 --select values.id,values.title
+cargo run -p bitbucket -- pr list <workspace>/my-repo --select-all
 ```
 
 **Flags:**
@@ -381,9 +380,9 @@ Requires the `pullrequest` (read) scope.
 Lists branches in a repository, paginated.
 
 ```sh
-cargo run -p bitbucket -- branch list lucabrognaracode/my-repo
-cargo run -p bitbucket -- branch list lucabrognaracode/my-repo --page 2
-cargo run -p bitbucket -- branch list lucabrognaracode/my-repo --select values.name
+cargo run -p bitbucket -- branch list <workspace>/my-repo --select values.name
+cargo run -p bitbucket -- branch list <workspace>/my-repo --page 2 --select values.name
+cargo run -p bitbucket -- branch list <workspace>/my-repo --select-all
 ```
 
 **Flags:**
@@ -396,7 +395,7 @@ Requires the `repository` (read) scope.
 Creates a new branch in a repository.
 
 ```sh
-cargo run -p bitbucket -- branch create lucabrognaracode/my-repo feature/my-branch --target main
+cargo run -p bitbucket -- branch create <workspace>/my-repo feature/my-branch --target main
 ```
 
 **Flags:**
@@ -429,7 +428,7 @@ The response's `prefix_source` field (`"override"` / `"branching_model"` /
 cargo run -p bitbucket -- branch suggest-name --issue-key SBF-19 --issue-type Task --issue-summary "Costruire griglia Smartlocker v2"
 
 # real lookup against a repo's branching model
-cargo run -p bitbucket -- branch suggest-name --issue-key SBF-19 --issue-type Task --issue-summary "..." --repository lucabrognaracode/my-repo
+cargo run -p bitbucket -- branch suggest-name --issue-key SBF-19 --issue-type Task --issue-summary "..." --repository <workspace>/my-repo
 
 # explicit override
 cargo run -p bitbucket -- branch suggest-name --issue-key SBF-19 --issue-type Task --issue-summary "..." --prefix hotfix
@@ -441,16 +440,40 @@ cargo run -p bitbucket -- branch suggest-name --issue-key SBF-19 --issue-type Ta
 
 No auth/scope required unless `--repository` is used, in which case it requires the `repository` (read) scope (same as `branch list`).
 
-### `--select <PATHS>` (global flag)
+### `bitbucket workspace members <workspace>`
 
-All commands that return JSON support a `--select` flag for client-side field projection. Pass a comma-separated list of dot-notation paths; only those paths are included in the output. If omitted, the full response from Bitbucket is printed.
+Lists the members of a workspace, paginated (`GET /2.0/workspaces/{workspace}/members`). This is how to resolve a person to the `uuid` that `pr create --reviewers` and `pr update --reviewers` need: each entry's `user.uuid` (curly braces included) goes straight into `--reviewers`.
+
+`--select` is mandatory (the response is a paginated collection): pass `--select` with the paths you need, or `--select-all` to print the whole page.
+
+```sh
+cargo run -p bitbucket -- workspace members <workspace> --select values.user.uuid,values.user.display_name
+cargo run -p bitbucket -- workspace members <workspace> --page 2 --select values.user.uuid,values.user.display_name
+cargo run -p bitbucket -- workspace members <workspace> --select-all
+```
+
+**Flags:**
+- `--page <N>` — page number to fetch (Bitbucket pagination starts at 1)
+
+Requires the `account` scope.
+
+### `--select <PATHS>` / `--select-all` (global flags)
+
+All commands that return JSON support a `--select` flag for client-side field projection. Pass a comma-separated list of dot-notation paths; only those paths are included in the output.
+
+**`--select` is mandatory on list commands** (`repo list`, `pr list`, `pr list-comments`, `branch list`, `workspace members`): their responses are paginated collections that can be large. Omitting both `--select` and `--select-all` fails with an error giving the response's byte size and top-level field names, instead of printing it. `--select-all` is the explicit opt-out that prints the whole response, but a response over 30000 bytes (pretty-printed) is still refused, so narrow it with `--select` instead.
+
+Every other JSON command (`doctor`, `auth whoami`, `repo get`/`create`/`delete`, `pr get`/`create`/`update`/`comment`/`update-comment`/`approve`/`unapprove`/`decline`/`merge`, `branch create`, `branch suggest-name`) returns a single object that stays small. It prints in full when `--select` is omitted, and `--select` still narrows it. The same 30000-byte cap applies. `pr diff` prints raw diff text, not JSON, so `--select` has no effect on it.
 
 ```sh
 # only the fields you care about from a repo
-cargo run -p bitbucket -- repo get lucabrognaracode/my-repo --select description,language,is_private
+cargo run -p bitbucket -- repo get <workspace>/my-repo --select description,language,is_private
 
-# just the full names from a repo list
-cargo run -p bitbucket -- repo list lucabrognaracode --select values.full_name
+# just the full names from a repo list (mandatory: list command)
+cargo run -p bitbucket -- repo list <workspace> --select values.full_name
+
+# a whole page of a list, explicitly
+cargo run -p bitbucket -- repo list <workspace> --select-all
 
 # just your account details
 cargo run -p bitbucket -- auth whoami --select uuid,display_name
@@ -490,7 +513,7 @@ cargo run -p bitbucket -- <command> ...        # against a real workspace
 All errors are plain text, no colors or symbols — designed to be read by an LLM. Each message is self-contained: it states what went wrong and what to do next. Example:
 
 ```
-not authenticated. Run: bitbucket auth login
+not logged in as the OAuth app. Run: bitbucket auth login. To act as the human logged in with bitbucket auth login --user, pass --user instead
 ```
 
 Errors are typed with `thiserror` (`CliError` in `error.rs`). Internal module errors (`ClientError`, `OAuthConfigError`) are mapped to `CliError` at the top-level `run()` function and never surface directly to the user.

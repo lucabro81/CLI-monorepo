@@ -4,8 +4,8 @@ use std::path::Path;
 
 use serde_json::{Value, json};
 
-use super::{check_pending_login, run_doctor_in, summarize_memberships};
-use crate::auth::{Credentials, save_credentials};
+use super::{check_identities, check_pending_login, run_doctor_in, summarize_memberships};
+use crate::auth::{Credentials, Identity, save_credentials};
 use crate::test_support::mock_server;
 
 const ME_MACHINE: &str = r#"{"user":{"id":"u-1","userName":"service-user","details":{"resourceOwner":"org-1"},"machine":{"name":"service-user"}}}"#;
@@ -23,9 +23,11 @@ fn write_app_json(config_dir: &Path, instance_url: &str) {
     .unwrap();
 }
 
+/// Saved to the identity the credentials belong to: a refresh token means the human.
 fn write_valid_credentials(config_dir: &Path, refresh_token: Option<&str>) {
+    let file = if refresh_token.is_some() { "credentials-user.json" } else { "credentials-service.json" };
     save_credentials(
-        &config_dir.join("zitadel-cli").join("credentials.json"),
+        &config_dir.join("zitadel-cli").join(file),
         &Credentials {
             access_token: "at".to_string(),
             refresh_token: refresh_token.map(str::to_string),
@@ -43,7 +45,7 @@ fn statuses(report: &Value) -> [&str; 4] {
 fn missing_app_config_skips_everything_else() {
     let dir = tempfile::tempdir().unwrap();
 
-    let (report, all_ok) = run_doctor_in(dir.path());
+    let (report, all_ok) = run_doctor_in(dir.path(), Identity::Service);
 
     assert!(!all_ok);
     assert_eq!(statuses(&report), ["error", "skipped", "skipped", "skipped"]);
@@ -61,7 +63,7 @@ fn missing_credentials_skips_api_and_memberships() {
     let dir = tempfile::tempdir().unwrap();
     write_app_json(dir.path(), "https://acme.zitadel.cloud");
 
-    let (report, all_ok) = run_doctor_in(dir.path());
+    let (report, all_ok) = run_doctor_in(dir.path(), Identity::Service);
 
     assert!(!all_ok);
     assert_eq!(statuses(&report), ["ok", "error", "skipped", "skipped"]);
@@ -85,7 +87,7 @@ fn healthy_service_user_reports_identity_and_roles() {
     write_app_json(dir.path(), &url);
     write_valid_credentials(dir.path(), None);
 
-    let (report, all_ok) = run_doctor_in(dir.path());
+    let (report, all_ok) = run_doctor_in(dir.path(), Identity::Service);
     let requests = server.join().unwrap();
 
     assert!(all_ok, "report: {report:#}");
@@ -117,7 +119,7 @@ fn credentials_with_refresh_token_are_reported_as_human_user() {
     write_app_json(dir.path(), &url);
     write_valid_credentials(dir.path(), Some("rt"));
 
-    let (report, _) = run_doctor_in(dir.path());
+    let (report, _) = run_doctor_in(dir.path(), Identity::User);
     server.join().unwrap();
 
     assert_eq!(report["credentials"]["identity"], "user");
@@ -131,14 +133,14 @@ fn rejected_token_fails_api_and_skips_memberships() {
     write_app_json(dir.path(), &url);
     write_valid_credentials(dir.path(), None);
 
-    let (report, all_ok) = run_doctor_in(dir.path());
+    let (report, all_ok) = run_doctor_in(dir.path(), Identity::Service);
     server.join().unwrap();
 
     assert!(!all_ok);
     assert_eq!(statuses(&report), ["ok", "ok", "error", "skipped"]);
     assert_eq!(
         report["api"]["message"],
-        r#"ZITADEL rejected the access token (401): {"message":"invalid token"}. Run: zitadel auth login"#
+        r#"ZITADEL rejected the access token (401): {"message":"invalid token"}. Run: zitadel auth login (zitadel auth login --user if the command was run with --user)"#
     );
 }
 
@@ -152,7 +154,7 @@ fn identity_without_memberships_is_an_error_with_a_grant_hint() {
     write_app_json(dir.path(), &url);
     write_valid_credentials(dir.path(), None);
 
-    let (report, all_ok) = run_doctor_in(dir.path());
+    let (report, all_ok) = run_doctor_in(dir.path(), Identity::Service);
     server.join().unwrap();
 
     assert!(!all_ok);
@@ -195,9 +197,9 @@ fn summarize_memberships_tolerates_missing_result() {
 fn corrupted_credentials_fail_the_credentials_check() {
     let dir = tempfile::tempdir().unwrap();
     write_app_json(dir.path(), "https://acme.zitadel.cloud");
-    std::fs::write(dir.path().join("zitadel-cli/credentials.json"), "{not json").unwrap();
+    std::fs::write(dir.path().join("zitadel-cli/credentials-service.json"), "{not json").unwrap();
 
-    let (report, all_ok) = run_doctor_in(dir.path());
+    let (report, all_ok) = run_doctor_in(dir.path(), Identity::Service);
 
     assert!(!all_ok);
     assert_eq!(statuses(&report), ["ok", "error", "skipped", "skipped"]);
@@ -216,7 +218,7 @@ fn failing_memberships_call_is_an_error_after_a_healthy_api_check() {
     write_app_json(dir.path(), &url);
     write_valid_credentials(dir.path(), None);
 
-    let (report, all_ok) = run_doctor_in(dir.path());
+    let (report, all_ok) = run_doctor_in(dir.path(), Identity::Service);
     server.join().unwrap();
 
     assert!(!all_ok);
@@ -240,7 +242,7 @@ fn user_without_machine_or_human_object_is_reported_as_unknown_type() {
     write_app_json(dir.path(), &url);
     write_valid_credentials(dir.path(), None);
 
-    let (report, _) = run_doctor_in(dir.path());
+    let (report, _) = run_doctor_in(dir.path(), Identity::Service);
     server.join().unwrap();
 
     assert_eq!(report["api"]["type"], "unknown");
@@ -307,10 +309,61 @@ fn a_pending_login_never_affects_the_overall_result() {
             std::fs::write(&path, "garbage").unwrap();
         }
 
-        let (report, all_ok) = run_doctor_in(dir.path());
+        let (report, all_ok) = run_doctor_in(dir.path(), Identity::Service);
         server.join().unwrap();
 
         assert!(all_ok, "{pending}: {report:#}");
         assert_ne!(report["pending_login"]["status"], "none", "{pending}: {report:#}");
     }
+}
+
+#[test]
+fn missing_user_credentials_point_to_the_human_login() {
+    let dir = tempfile::tempdir().unwrap();
+    write_app_json(dir.path(), "https://acme.zitadel.cloud");
+    write_valid_credentials(dir.path(), None);
+
+    let (report, all_ok) = run_doctor_in(dir.path(), Identity::User);
+
+    assert!(!all_ok);
+    assert_eq!(report["credentials"]["message"], "no stored credentials. Run: zitadel auth login --user");
+}
+
+fn touch(dir: &Path, file: &str) {
+    let path = dir.join("zitadel-cli").join(file);
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(path, "{}").unwrap();
+}
+
+#[test]
+fn identities_reports_the_selected_identity_and_which_credentials_exist() {
+    let dir = tempfile::tempdir().unwrap();
+    touch(dir.path(), "credentials-user.json");
+
+    assert_eq!(
+        check_identities(dir.path(), Identity::User),
+        json!({"selected": "user", "service": "missing", "user": "present", "legacy_credentials_file": false})
+    );
+}
+
+#[test]
+fn identities_flags_a_leftover_pre_164_credentials_file() {
+    // credentials.json is no longer read; doctor surfaces it so it can be deleted.
+    let dir = tempfile::tempdir().unwrap();
+    touch(dir.path(), "credentials.json");
+    touch(dir.path(), "credentials-service.json");
+
+    assert_eq!(
+        check_identities(dir.path(), Identity::Service),
+        json!({"selected": "service", "service": "present", "user": "missing", "legacy_credentials_file": true})
+    );
+}
+
+#[test]
+fn the_report_includes_identities() {
+    let dir = tempfile::tempdir().unwrap();
+
+    let (report, _) = run_doctor_in(dir.path(), Identity::Service);
+
+    assert_eq!(report["identities"]["selected"], "service");
 }

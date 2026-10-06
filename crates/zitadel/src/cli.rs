@@ -24,6 +24,14 @@ pub struct Cli {
     #[arg(long, global = true, conflicts_with = "select")]
     pub select_all: bool,
 
+    /// Act as the human who logged in with `zitadel auth login --user` instead of the
+    /// service user. Without it every command acts as the service user (`zitadel auth
+    /// login`). Both identities are stored side by side and renewed automatically, so
+    /// switching between them needs no new login. On `init`, `auth login`, `auth
+    /// whoami` and `doctor` it selects which identity to log in or check.
+    #[arg(long, global = true)]
+    pub user: bool,
+
     #[command(subcommand)]
     pub command: Command,
 }
@@ -34,11 +42,14 @@ pub enum Command {
     ///
     /// Writes app.json (instance URL, service user key, optional Native app client
     /// id; file mode 0600 because it holds the private key), logs in as the service
-    /// user if one is configured, then prints the doctor JSON report and exits
-    /// non-zero if any check fails. Re-running merges with the existing app.json:
+    /// user if one is configured (with --user: as the human, through the browser,
+    /// which needs the Native app client id), then prints the doctor JSON report
+    /// for that identity and exits non-zero if any check fails. Changing the
+    /// instance URL removes both identities' stored credentials. Re-running merges
+    /// with the existing app.json:
     /// flags you omit keep their current value, so e.g. a Native app client id can
     /// be added later with --client-id alone. No interactive prompts.
-    #[command(after_help = "Examples:\n  zitadel init --instance-url https://acme.zitadel.cloud --key-file ~/Downloads/123456789.json\n  zitadel init --client-id 123456789@zitadel-cli   # add the Native app for auth login --user later")]
+    #[command(after_help = "Examples:\n  zitadel init --instance-url https://acme.zitadel.cloud --key-file ~/Downloads/123456789.json\n  zitadel init --user --client-id 123456789@zitadel-cli   # add the Native app and log in as yourself")]
     Init {
         /// Instance base URL, e.g. `https://acme.zitadel.cloud` or your self-hosted domain.
         /// Required on the first run.
@@ -49,7 +60,7 @@ pub enum Command {
         /// copied into app.json; the file itself is no longer needed afterwards.
         #[arg(long, value_name = "PATH")]
         key_file: Option<std::path::PathBuf>,
-        /// Client id of a Native application (PKCE), needed only for auth login --user.
+        /// Client id of a Native application (PKCE), needed only for the human identity (--user).
         #[arg(long)]
         client_id: Option<String>,
     },
@@ -61,11 +72,13 @@ pub enum Command {
     /// api (GET /auth/v1/users/me) and memberships (the administrator roles of the
     /// identity per instance/organization/project — these decide which commands
     /// will succeed). Later checks are skipped when an earlier one fails. Exits
-    /// non-zero unless every check is ok. Also reports
-    /// `pending_login` (a two-step `auth login --user --remote` waiting for its
-    /// code): informational, never counted in the exit code. Always prints the full report regardless
+    /// non-zero unless every check is ok. Checks the service user, or the human
+    /// with --user. Also reports `pending_login` (a two-step `auth login --user
+    /// --remote` waiting for its code) and `identities` (which of the two
+    /// identities are logged in, and a leftover pre-#164 credentials.json):
+    /// informational, never counted in the exit code. Always prints the full report regardless
     /// of --select (an explicit --select is still honored).
-    #[command(after_help = "Examples:\n  zitadel doctor\n  zitadel doctor --select memberships")]
+    #[command(after_help = "Examples:\n  zitadel doctor\n  zitadel doctor --user\n  zitadel doctor --select memberships")]
     Doctor,
     /// Work with users (human and service users) of the instance
     User {
@@ -91,15 +104,17 @@ pub enum Command {
 
 #[derive(Debug, Subcommand)]
 pub enum AuthCommand {
-    /// Log in and save credentials to credentials.json
+    /// Log in and save credentials to credentials-service.json (or credentials-user.json with --user)
     ///
     /// Default: logs in as the service user configured in app.json (private key
     /// JWT) — no browser, no human interaction; this is the mode for agents.
     /// With --user: logs in as a human through the browser (authorization code +
     /// PKCE on the Native app configured with `init --client-id`; listens on
-    /// localhost:8080 for the redirect). Either way the token is renewed
-    /// automatically, so this is normally needed once; the last login decides
-    /// which identity the CLI acts as. What it may then do is decided by the
+    /// localhost:8080 for the redirect). Each login replaces only its own
+    /// identity's credentials (credentials-service.json / credentials-user.json)
+    /// and its token is renewed automatically, so this is normally needed once
+    /// per identity; afterwards every command acts as the service user, or as the
+    /// human when it is given --user. What each may do is decided by the
     /// ZITADEL administrator roles of that identity (e.g. `IAM_OWNER`, `ORG_OWNER`).
     ///
     /// With --user --remote: a two-step login for a person who is not at this
@@ -108,34 +123,33 @@ pub enum AuthCommand {
     /// to the person. The provider then redirects the person to --redirect-uri (it
     /// must be registered on the Native app) with `code` and `state`. Step 2
     /// (--code --state) exchanges the code and saves the credentials, then prints
-    /// what `auth whoami` prints. The pending login expires after 10 minutes, its
+    /// what `auth whoami --user` prints. The pending login expires after 10 minutes, its
     /// state is single-use, and it lives in this config folder (`XDG_CONFIG_HOME`).
     #[command(after_help = "Examples:\n  zitadel auth login          # service user (agents)\n  zitadel auth login --user   # yourself, via the browser\n  zitadel auth login --user --remote --redirect-uri https://app.example.com/oauth/callback   # step 1\n  zitadel auth login --user --code <CODE> --state <STATE>                                   # step 2")]
     Login {
-        /// Log in as a human via the browser instead of as the service user
-        #[arg(long)]
-        user: bool,
         /// Step 1 of a two-step login for someone not at this machine: print the authorize URL instead of opening a browser
-        #[arg(long, requires_all = ["user", "redirect_uri"], conflicts_with_all = ["code", "state"])]
+        // "needs --user" is checked in LoginMode::from_flags: clap's `requires`
+        // cannot see a global --user written before the subcommand.
+        #[arg(long, requires = "redirect_uri", conflicts_with_all = ["code", "state"])]
         remote: bool,
         /// With --remote: where the provider sends the person back; must be registered on the Native app
         #[arg(long, requires = "remote")]
         redirect_uri: Option<String>,
         /// Step 2: the `code` query parameter the provider appended to the redirect URI
-        #[arg(long, requires_all = ["user", "state"])]
+        #[arg(long, requires = "state")]
         code: Option<String>,
         /// Step 2: the `state` query parameter the provider appended to the redirect URI
         #[arg(long, requires = "code")]
         state: Option<String>,
     },
-    /// Show the identity the CLI is authenticated as
+    /// Show the identity the CLI acts as: the service user, or the human with --user
     ///
-    /// Prints the ZITADEL user behind the stored credentials (GET /auth/v1/users/me):
+    /// Prints the ZITADEL user behind the selected identity's stored credentials (GET /auth/v1/users/me):
     /// id, userName, loginNames, its organization (details.resourceOwner) and whether
     /// it is a service user ("machine") or a human ("human"). Always prints the full
     /// response regardless of --select — it is a single small object. An explicit
     /// --select is still honored.
-    #[command(after_help = "Examples:\n  zitadel auth whoami\n  zitadel auth whoami --select user.id,user.userName,user.details.resourceOwner")]
+    #[command(after_help = "Examples:\n  zitadel auth whoami\n  zitadel auth whoami --user\n  zitadel auth whoami --select user.id,user.userName,user.details.resourceOwner")]
     Whoami,
 }
 

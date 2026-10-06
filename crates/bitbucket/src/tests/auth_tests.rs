@@ -4,28 +4,82 @@ use std::path::Path;
 
 use super::*;
 
-#[test]
-fn parses_valid_app_credentials() {
-    let json = r#"{"client_id": "abc", "client_secret": "def"}"#;
-
-    let config = OAuthConfig::from_json(json).expect("should parse");
-
-    assert_eq!(config.client_id, "abc");
-    assert_eq!(config.client_secret, "def");
+fn section(client_id: &str, client_secret: &str) -> OAuthConfig {
+    OAuthConfig {
+        client_id: client_id.to_string(),
+        client_secret: client_secret.to_string(),
+    }
 }
 
 #[test]
-fn rejects_invalid_app_credentials_json() {
-    let result = OAuthConfig::from_json("not json");
+fn parses_app_config_with_both_sections() {
+    let json = r#"{
+        "service": {"client_id": "app-key", "client_secret": "app-secret"},
+        "user": {"client_id": "usr-key", "client_secret": "usr-secret"}
+    }"#;
 
-    assert!(matches!(result, Err(OAuthConfigError::InvalidJson(_))));
+    let config = AppConfig::from_json(json).expect("should parse");
+
+    assert_eq!(config.service.as_ref(), Some(&section("app-key", "app-secret")));
+    assert_eq!(config.user.as_ref(), Some(&section("usr-key", "usr-secret")));
+}
+
+#[test]
+fn parses_app_config_with_one_section() {
+    let config = AppConfig::from_json(r#"{"user": {"client_id": "k", "client_secret": "s"}}"#)
+        .expect("should parse");
+
+    assert_eq!(config.service.as_ref(), None);
+    assert_eq!(config.user.as_ref(), Some(&section("k", "s")));
+}
+
+#[test]
+fn parses_app_config_with_no_sections() {
+    assert_eq!(AppConfig::from_json("{}").expect("should parse"), AppConfig { service: None, user: None });
+}
+
+#[test]
+fn rejects_the_legacy_flat_app_config() {
+    // Before issue #164 app.json held one client_id/client_secret pair at top
+    // level; it must fail loudly instead of being read as "no sections".
+    let result = AppConfig::from_json(r#"{"client_id": "abc", "client_secret": "def"}"#);
+
+    assert!(matches!(result, Err(OAuthConfigError::LegacyFormat)));
+}
+
+#[test]
+fn rejects_an_app_config_section_missing_a_field() {
+    assert!(matches!(
+        AppConfig::from_json(r#"{"service": {"client_id": "k"}}"#),
+        Err(OAuthConfigError::InvalidJson(_))
+    ));
+    assert!(matches!(
+        AppConfig::from_json(r#"{"user": {"client_secret": "s"}}"#),
+        Err(OAuthConfigError::InvalidJson(_))
+    ));
+}
+
+#[test]
+fn rejects_invalid_app_config_json() {
+    assert!(matches!(AppConfig::from_json("not json"), Err(OAuthConfigError::InvalidJson(_))));
 }
 
 #[test]
 fn load_returns_not_found_for_missing_file() {
-    let result = OAuthConfig::load(Path::new("/nonexistent/app.json"));
+    let result = AppConfig::load(Path::new("/nonexistent/app.json"));
 
     assert!(matches!(result, Err(OAuthConfigError::NotFound(_))));
+}
+
+#[test]
+fn app_config_round_trips_through_json() {
+    // init rewrites app.json one section at a time.
+    let config = AppConfig { service: None, user: Some(section("k", "s")) };
+
+    let json = config.to_json().expect("should serialize");
+
+    assert_eq!(AppConfig::from_json(&json).expect("should parse"), config);
+    assert!(!json.contains("\"service\""), "an absent section is omitted: {json}");
 }
 
 #[test]
@@ -36,11 +90,23 @@ fn app_config_path_is_under_bitbucket_cli_dir() {
 }
 
 #[test]
-fn credentials_path_is_under_bitbucket_cli_dir() {
-    let path = credentials_path(Path::new("/home/user/.config"));
+fn each_identity_has_its_own_credentials_file_under_bitbucket_cli_dir() {
+    let config_dir = Path::new("/home/user/.config");
 
     assert_eq!(
-        path,
+        credentials_path(config_dir, Identity::Service),
+        Path::new("/home/user/.config/bitbucket-cli/credentials-service.json")
+    );
+    assert_eq!(
+        credentials_path(config_dir, Identity::User),
+        Path::new("/home/user/.config/bitbucket-cli/credentials-user.json")
+    );
+}
+
+#[test]
+fn legacy_credentials_path_is_the_pre_164_single_file() {
+    assert_eq!(
+        legacy_credentials_path(Path::new("/home/user/.config")),
         Path::new("/home/user/.config/bitbucket-cli/credentials.json")
     );
 }
@@ -142,7 +208,7 @@ fn save_and_load_credentials_roundtrip_without_expiry() {
         client_id: "ignored".to_string(),
         client_secret: "ignored".to_string(),
     };
-    let loaded = load_credentials(&config, &path).expect("should load without renewing");
+    let loaded = load_credentials(&config, &path, Identity::Service).expect("should load without renewing");
 
     assert_eq!(loaded, creds);
 }
@@ -470,4 +536,57 @@ fn remote_complete_with_a_refused_code_still_consumes_the_state() {
 
     assert!(matches!(err, LoginError::TokenExchange(_)), "got {err:?}");
     assert!(!path.exists());
+}
+
+fn unexpired(refresh_token: Option<&str>) -> Credentials {
+    Credentials {
+        access_token: "at".to_string(),
+        expires_at: u64::MAX,
+        scopes: vec![],
+        refresh_token: refresh_token.map(str::to_string),
+    }
+}
+
+fn ignored_config() -> OAuthConfig {
+    OAuthConfig { client_id: "ignored".to_string(), client_secret: "ignored".to_string() }
+}
+
+#[test]
+fn a_user_slot_without_a_refresh_token_is_refused_before_any_renewal() {
+    // Regression guard (issue #164 review): renewal picks client_credentials
+    // when there is no refresh token, which would act as the app.
+    let dir = tempfile::tempdir().unwrap();
+    let path = credentials_path(dir.path(), Identity::User);
+    save_credentials(&path, &unexpired(None)).unwrap();
+
+    let err = load_credentials(&ignored_config(), &path, Identity::User).unwrap_err();
+
+    assert!(matches!(err, LoginError::WrongIdentity(_)), "got {err:?}");
+}
+
+#[test]
+fn a_service_slot_holding_a_human_login_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = credentials_path(dir.path(), Identity::Service);
+    save_credentials(&path, &unexpired(Some("rt"))).unwrap();
+
+    let err = load_credentials(&ignored_config(), &path, Identity::Service).unwrap_err();
+
+    assert!(matches!(err, LoginError::WrongIdentity(_)), "got {err:?}");
+}
+
+#[test]
+fn saving_one_identity_leaves_the_other_identity_file_untouched() {
+    let dir = tempfile::tempdir().unwrap();
+    let service = credentials_path(dir.path(), Identity::Service);
+    save_credentials(&service, &unexpired(None)).unwrap();
+    let before = std::fs::read(&service).unwrap();
+
+    save_credentials(&credentials_path(dir.path(), Identity::User), &unexpired(Some("rt"))).unwrap();
+
+    assert_eq!(std::fs::read(&service).unwrap(), before);
+    assert_eq!(
+        load_credentials(&ignored_config(), &credentials_path(dir.path(), Identity::User), Identity::User).unwrap(),
+        unexpired(Some("rt"))
+    );
 }

@@ -34,30 +34,35 @@ pub struct Cli {
     #[arg(long, global = true, conflicts_with = "select")]
     pub select_all: bool,
 
+    /// Act as the human who logged in with `confluence auth login --user` instead of the
+    /// Service Account. Without it every command acts as the Service Account
+    /// (`confluence auth login`). Both identities are stored side by side and renewed
+    /// automatically, so switching between them needs no new login. On `init`,
+    /// `auth login`, `auth whoami` and `doctor` it selects which identity to set
+    /// up, log in or check.
+    #[arg(long, global = true)]
+    pub user: bool,
+
     #[command(subcommand)]
     pub command: Command,
 }
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
-    /// Interactive onboarding: create app.json, run auth login, verify with doctor
+    /// Onboarding: save an identity's OAuth app to app.json, log in, verify with doctor
     ///
-    /// Guides a human through setting up a 3LO OAuth 2.0 app, writes app.json,
-    /// runs the interactive browser login flow, then prints a doctor JSON report
-    /// as confirmation. Pass --client-id and --client-secret to skip interactive
-    /// prompts (the browser login step still happens either way).
-    ///
-    /// If you already have a Service Account instead of a 3LO app (no human
-    /// consent step, recommended for agent-driven usage), do NOT run this
-    /// command: write app.json by hand
-    /// (`{"client_id": "...", "client_secret": "..."}`) and run
-    /// `confluence auth login` directly. See README Setup, Option A.
-    #[command(after_help = "Example (interactive, 3LO app):\n  confluence init\n\nExample (non-interactive, 3LO app):\n  confluence init --client-id <ID> --client-secret <SECRET>\n\nService Account setup does not use this command — see README Setup, Option A.")]
+    /// Without --user: sets up the Service Account (admin.atlassian.com credential),
+    /// writes app.json's "service" section, runs the non-interactive login. With --user:
+    /// sets up the 3LO app (developer console) for the human identity, writes the "user"
+    /// section, runs the browser login. The other section of app.json is left untouched.
+    /// Then prints a doctor JSON report for that identity. Pass --client-id and
+    /// --client-secret to skip interactive prompts.
+    #[command(after_help = "Examples:\n  confluence init --client-id <ID> --client-secret <SECRET>          # Service Account\n  confluence init --user --client-id <ID> --client-secret <SECRET>   # 3LO app, human login in the browser\n  confluence init                                                    # interactive prompts")]
     Init {
-        /// Atlassian OAuth app client ID (skips interactive prompt if provided)
+        /// OAuth client ID of the identity being set up (skips interactive prompt if provided)
         #[arg(long)]
         client_id: Option<String>,
-        /// Atlassian OAuth app client secret (skips interactive prompt if provided)
+        /// OAuth client secret of the identity being set up (skips interactive prompt if provided)
         #[arg(long)]
         client_secret: Option<String>,
     },
@@ -68,9 +73,11 @@ pub enum Command {
     /// object with a status field per check. Exits non-zero if any check fails
     /// or is skipped. Also reports `pending_login` (a two-step `auth login
     /// --user --remote` waiting for its code): informational, never counted in
-    /// the exit code. Always prints its full result regardless of --select —
+    /// the exit code. Checks the Service Account, or the human with --user;
+    /// `identities` (informational) shows which of the two are logged in and
+    /// flags a leftover pre-#164 credentials.json. Always prints its full result regardless of --select —
     /// the report is generated internally and is always small and fixed-shape.
-    #[command(after_help = "Examples:\n  confluence doctor\n  confluence doctor --select app_config.status,credentials.status,api.status\n\nEach check has a status field: \"ok\", \"error\", or \"skipped\".\nLater checks are skipped if an earlier one fails.")]
+    #[command(after_help = "Examples:\n  confluence doctor\n  confluence doctor --user\n  confluence doctor --select app_config.status,credentials.status,api.status\n\nEach check has a status field: \"ok\", \"error\", or \"skipped\".\nLater checks are skipped if an earlier one fails.")]
     Doctor,
     /// Manage authentication with Confluence
     Auth {
@@ -98,15 +105,17 @@ pub enum Command {
 pub enum AuthCommand {
     /// Run the OAuth 2.0 login flow and store credentials locally
     ///
-    /// By default runs the `client_credentials` flow for a service account: no
+    /// By default runs the `client_credentials` flow for the Service Account: no
     /// browser, no user interaction — the access token is exchanged directly
-    /// from `client_id/client_secret` in app.json. This is the expected mode for
-    /// agent-driven usage.
+    /// from app.json's "service" section. Saved to credentials-service.json.
     ///
     /// Pass --user for the interactive OAuth 2.0 (3LO) + PKCE flow for a human
-    /// Atlassian account: opens the browser for consent, receives the callback
-    /// on localhost:8080, exchanges the code for tokens, and stores a
-    /// `refresh_token` for automatic renewal.
+    /// Atlassian account, with app.json's "user" section (a 3LO app): opens the
+    /// browser for consent, receives the callback on localhost:8080, exchanges the
+    /// code for tokens, and stores a `refresh_token` for automatic renewal in
+    /// credentials-user.json. Each login replaces only its own identity's
+    /// credentials: afterwards every command acts as the Service Account, or as
+    /// the human when it is given --user.
     ///
     /// With --user --remote: a two-step login for a person who is not at this
     /// machine. Step 1 (--remote --redirect-uri) opens no browser and listens on
@@ -114,35 +123,33 @@ pub enum AuthCommand {
     /// to hand to the person. Atlassian then redirects the person to
     /// --redirect-uri (it must be one of the 3LO app's callback URLs) with `code`
     /// and `state`. Step 2 (--code --state) exchanges the code, saves the
-    /// credentials, then prints what `auth whoami` prints. The pending login
+    /// credentials, then prints what `auth whoami --user` prints. The pending login
     /// expires after 10 minutes, its state is single-use, and it lives in this
-    /// config folder (`XDG_CONFIG_HOME`). Needs a 3LO app (developer console),
-    /// not a Service Account credential.
+    /// config folder (`XDG_CONFIG_HOME`). Uses the "user" section (a 3LO app).
     ///
     /// Run this once per machine; tokens are renewed automatically after that.
-    #[command(after_help = "Examples:\n  confluence auth login              # service account (client_credentials)\n  confluence auth login --user       # human account (OAuth 2.0 3LO + PKCE)\n  confluence auth login --user --remote --redirect-uri https://app.example.com/oauth/callback   # step 1\n  confluence auth login --user --code <CODE> --state <STATE>                                   # step 2\n\nRequires app.json to exist at ~/.config/confluence-cli/app.json.\nRun `confluence init` first if you have not set up the OAuth app yet.")]
+    #[command(after_help = "Examples:\n  confluence auth login              # service account (client_credentials)\n  confluence auth login --user       # human account (OAuth 2.0 3LO + PKCE)\n  confluence auth login --user --remote --redirect-uri https://app.example.com/oauth/callback   # step 1\n  confluence auth login --user --code <CODE> --state <STATE>                                   # step 2\n\nRequires app.json at ~/.config/confluence-cli/app.json with the identity's section.\nRun `confluence init` (or `confluence init --user`) first if it is missing.")]
     Login {
-        /// Use the interactive OAuth 2.0 (3LO) + PKCE flow for a human Atlassian account
-        #[arg(long)]
-        user: bool,
         /// Step 1 of a two-step login for someone not at this machine: print the authorize URL instead of opening a browser
-        #[arg(long, requires_all = ["user", "redirect_uri"], conflicts_with_all = ["code", "state"])]
+        // "needs --user" is checked in LoginMode::from_flags: clap's `requires`
+        // cannot see a global --user written before the subcommand.
+        #[arg(long, requires = "redirect_uri", conflicts_with_all = ["code", "state"])]
         remote: bool,
         /// With --remote: where Atlassian sends the person back; must be a callback URL of the 3LO app
         #[arg(long, requires = "remote")]
         redirect_uri: Option<String>,
         /// Step 2: the `code` query parameter Atlassian appended to the redirect URI
-        #[arg(long, requires_all = ["user", "state"])]
+        #[arg(long, requires = "state")]
         code: Option<String>,
         /// Step 2: the `state` query parameter Atlassian appended to the redirect URI
         #[arg(long, requires = "code")]
         state: Option<String>,
     },
-    /// Print the currently authenticated user as JSON
+    /// Print the account the CLI acts as, as JSON: the Service Account, or the human with --user
     ///
     /// Always prints its full result regardless of --select — an identity check,
     /// small and fixed-shape.
-    #[command(after_help = "Examples:\n  confluence auth whoami\n  confluence auth whoami --select displayName,email,accountId")]
+    #[command(after_help = "Examples:\n  confluence auth whoami\n  confluence auth whoami --user\n  confluence auth whoami --select displayName,email,accountId")]
     Whoami,
 }
 

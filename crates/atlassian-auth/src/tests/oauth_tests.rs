@@ -7,8 +7,9 @@ use oauth_user_login::{CallbackError, WaitError};
 use super::{
     app_config_path, authorization_code_body, authorization_url, complete_remote_login,
     complete_remote_login_at,
-    credentials_path, merge_scopes_for_cloud_id, pending_login_path, refresh, start_remote_login,
-    AccessibleResource, Credentials, LoginError, OAuthConfig, OAuthConfigError,
+    legacy_credentials_path, load_credentials, merge_scopes_for_cloud_id, pending_login_path, refresh,
+    save_credentials, start_remote_login,
+    AccessibleResource, AppConfig, Credentials, Identity, LoginError, OAuthConfig, OAuthConfigError,
 };
 
 const TEST_SCOPES: &str = "read:example write:example offline_access";
@@ -150,8 +151,8 @@ fn refresh_without_refresh_token_returns_internal_error() {
 }
 
 #[test]
-fn credentials_path_is_under_given_cli_dir() {
-    let path = credentials_path(Path::new("/home/user/.config"), "confluence-cli");
+fn legacy_credentials_path_is_under_given_cli_dir() {
+    let path = legacy_credentials_path(Path::new("/home/user/.config"), "confluence-cli");
 
     assert_eq!(
         path,
@@ -176,54 +177,6 @@ fn app_config_path_differs_per_cli_dir() {
     let confluence_path = app_config_path(Path::new("/home/user/.config"), "confluence-cli");
 
     assert_ne!(jira_path, confluence_path);
-}
-
-#[test]
-fn parses_oauth_config_from_app_json() {
-    let json = r#"{"client_id": "abc", "client_secret": "shh"}"#;
-
-    let config = OAuthConfig::from_json(json).expect("should parse");
-
-    assert_eq!(
-        config,
-        OAuthConfig {
-            client_id: "abc".to_string(),
-            client_secret: "shh".to_string(),
-            redirect_uri: OAuthConfig::REDIRECT_URI.to_string(),
-        }
-    );
-}
-
-#[test]
-fn rejects_malformed_app_json() {
-    let result = OAuthConfig::from_json("not json");
-
-    assert!(matches!(result, Err(OAuthConfigError::InvalidJson(_))));
-}
-
-#[test]
-fn rejects_app_json_missing_client_id() {
-    let result = OAuthConfig::from_json(r#"{"client_secret": "shh"}"#);
-
-    assert!(matches!(result, Err(OAuthConfigError::InvalidJson(_))));
-}
-
-#[test]
-fn rejects_app_json_missing_client_secret() {
-    let result = OAuthConfig::from_json(r#"{"client_id": "abc"}"#);
-
-    assert!(matches!(result, Err(OAuthConfigError::InvalidJson(_))));
-}
-
-#[test]
-fn accepts_app_json_with_extra_fields() {
-    // serde ignores unknown fields — extra keys in app.json must not break loading.
-    let json = r#"{"client_id": "abc", "client_secret": "shh", "extra": "ignored"}"#;
-
-    let config = OAuthConfig::from_json(json).expect("should parse");
-
-    assert_eq!(config.client_id, "abc");
-    assert_eq!(config.client_secret, "shh");
 }
 
 #[test]
@@ -554,4 +507,190 @@ fn a_failure_listing_sites_after_a_good_exchange_is_not_a_token_exchange_error()
         err.to_string().starts_with("could not list the Atlassian sites this account can access"),
         "got {err}"
     );
+}
+
+fn section(client_id: &str, client_secret: &str) -> OAuthConfig {
+    OAuthConfig {
+        client_id: client_id.to_string(),
+        client_secret: client_secret.to_string(),
+        redirect_uri: OAuthConfig::REDIRECT_URI.to_string(),
+    }
+}
+
+#[test]
+fn parses_app_config_with_both_sections() {
+    let json = r#"{
+        "service": {"client_id": "svc-id", "client_secret": "svc-secret"},
+        "user": {"client_id": "usr-id", "client_secret": "usr-secret"}
+    }"#;
+
+    let config = AppConfig::from_json(json).expect("should parse");
+
+    assert_eq!(
+        config,
+        AppConfig {
+            service: Some(section("svc-id", "svc-secret")),
+            user: Some(section("usr-id", "usr-secret")),
+        }
+    );
+    assert_eq!(config.section(Identity::Service), Some(&section("svc-id", "svc-secret")));
+    assert_eq!(config.section(Identity::User), Some(&section("usr-id", "usr-secret")));
+}
+
+#[test]
+fn parses_app_config_with_only_the_service_section() {
+    let json = r#"{"service": {"client_id": "svc-id", "client_secret": "svc-secret"}}"#;
+
+    let config = AppConfig::from_json(json).expect("should parse");
+
+    assert_eq!(config.section(Identity::Service), Some(&section("svc-id", "svc-secret")));
+    assert_eq!(config.section(Identity::User), None);
+}
+
+#[test]
+fn parses_app_config_with_only_the_user_section() {
+    let json = r#"{"user": {"client_id": "usr-id", "client_secret": "usr-secret"}}"#;
+
+    let config = AppConfig::from_json(json).expect("should parse");
+
+    assert_eq!(config.section(Identity::Service), None);
+    assert_eq!(config.section(Identity::User), Some(&section("usr-id", "usr-secret")));
+}
+
+#[test]
+fn parses_app_config_with_no_sections() {
+    let config = AppConfig::from_json("{}").expect("should parse");
+
+    assert_eq!(config, AppConfig { service: None, user: None });
+}
+
+#[test]
+fn rejects_the_legacy_flat_app_config() {
+    // Before issue #164 app.json held one client_id/client_secret pair at top
+    // level; it must fail loudly instead of being read as "no sections".
+    let result = AppConfig::from_json(r#"{"client_id": "abc", "client_secret": "shh"}"#);
+
+    assert!(matches!(result, Err(OAuthConfigError::LegacyFormat)));
+}
+
+#[test]
+fn rejects_an_app_config_section_missing_its_secret() {
+    let result = AppConfig::from_json(r#"{"user": {"client_id": "usr-id"}}"#);
+
+    assert!(matches!(result, Err(OAuthConfigError::InvalidJson(_))));
+}
+
+#[test]
+fn rejects_an_app_config_section_missing_its_client_id() {
+    let result = AppConfig::from_json(r#"{"service": {"client_secret": "svc-secret"}}"#);
+
+    assert!(matches!(result, Err(OAuthConfigError::InvalidJson(_))));
+}
+
+#[test]
+fn accepts_an_app_config_with_extra_fields() {
+    // serde ignores unknown fields — extra keys in app.json must not break loading.
+    let json = r#"{"note": "x", "service": {"client_id": "svc-id", "client_secret": "svc-secret", "extra": 1}}"#;
+
+    let config = AppConfig::from_json(json).expect("should parse");
+
+    assert_eq!(config.section(Identity::Service), Some(&section("svc-id", "svc-secret")));
+}
+
+#[test]
+fn rejects_a_malformed_app_config() {
+    assert!(matches!(AppConfig::from_json("not json"), Err(OAuthConfigError::InvalidJson(_))));
+}
+
+#[test]
+fn app_config_load_reports_a_missing_file_with_its_path() {
+    let path = std::env::temp_dir().join("atlassian-auth-no-such-dir").join("app.json");
+
+    let result = AppConfig::load(&path);
+
+    assert!(matches!(result, Err(OAuthConfigError::NotFound(p)) if p == path));
+}
+
+#[test]
+fn app_config_round_trips_through_json() {
+    // init rewrites app.json one section at a time, so serialising must
+    // produce exactly what from_json reads back.
+    let config = AppConfig {
+        service: Some(section("svc-id", "svc-secret")),
+        user: None,
+    };
+
+    let json = config.to_json().expect("should serialize");
+
+    assert_eq!(AppConfig::from_json(&json).expect("should parse"), config);
+    assert!(!json.contains("redirect_uri"), "redirect_uri is fixed, never stored: {json}");
+    assert!(!json.contains("\"user\""), "an absent section is omitted: {json}");
+}
+
+fn unexpired(refresh_token: Option<&str>) -> Credentials {
+    Credentials {
+        access_token: "at".to_string(),
+        refresh_token: refresh_token.map(str::to_string),
+        expires_at: u64::MAX,
+        cloud_id: "cid".to_string(),
+        site_url: None,
+    }
+}
+
+fn saved(dir: &Path, identity: Identity, credentials: &Credentials) -> PathBuf {
+    let path = identity.credentials_path(dir, "some-cli");
+    save_credentials(&path, credentials).unwrap();
+    path
+}
+
+#[test]
+fn a_user_slot_without_a_refresh_token_is_refused_before_any_renewal() {
+    // Guards against acting as the wrong identity: a user slot with no
+    // refresh token would otherwise be renewed with client_credentials,
+    // i.e. as the app, without saying so.
+    let dir = tempfile::tempdir().unwrap();
+    let path = saved(dir.path(), Identity::User, &unexpired(None));
+
+    let err = load_credentials(&local_config(), &path, Identity::User).unwrap_err();
+
+    assert!(matches!(err, LoginError::WrongIdentity(_)), "got {err:?}");
+    assert_eq!(
+        err.to_string(),
+        "the human credentials file holds no refresh token, so it is not a human login"
+    );
+}
+
+#[test]
+fn a_service_slot_holding_a_human_login_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = saved(dir.path(), Identity::Service, &unexpired(Some("rt")));
+
+    let err = load_credentials(&local_config(), &path, Identity::Service).unwrap_err();
+
+    assert_eq!(
+        err.to_string(),
+        "the service credentials file holds a refresh token, so it is a human login"
+    );
+}
+
+#[test]
+fn credentials_matching_their_identity_load_unchanged() {
+    let dir = tempfile::tempdir().unwrap();
+    let service = saved(dir.path(), Identity::Service, &unexpired(None));
+    let user = saved(dir.path(), Identity::User, &unexpired(Some("rt")));
+
+    assert_eq!(load_credentials(&local_config(), &service, Identity::Service).unwrap(), unexpired(None));
+    assert_eq!(load_credentials(&local_config(), &user, Identity::User).unwrap(), unexpired(Some("rt")));
+}
+
+#[test]
+fn saving_one_identity_leaves_the_other_identity_file_untouched() {
+    // Issue #164: a login as one identity must never overwrite the other's tokens.
+    let dir = tempfile::tempdir().unwrap();
+    let service = saved(dir.path(), Identity::Service, &unexpired(None));
+    let before = std::fs::read(&service).unwrap();
+
+    saved(dir.path(), Identity::User, &unexpired(Some("rt")));
+
+    assert_eq!(std::fs::read(&service).unwrap(), before);
 }

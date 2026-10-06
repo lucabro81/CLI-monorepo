@@ -2,9 +2,13 @@
 //!
 //! Runs four sequential checks and returns a structured JSON report:
 //!
+//! Checks 1-4 run for one identity: the Service Account, or the human with
+//! `--user`.
+//!
 //! 1. `app_config` — verifies that `app.json` exists at the expected path and
-//!    contains valid OAuth credentials.
-//! 2. `credentials` — verifies that `credentials.json` exists and holds a
+//!    has a valid section for the identity.
+//! 2. `credentials` — verifies that the identity's credentials file
+//!    (`credentials-service.json` / `credentials-user.json`) exists and holds a
 //!    non-expired token. If the token is expired, a renewal is attempted and
 //!    the result (success or failure) is reported transparently.
 //! 3. `api` — makes a live call to `/wiki/rest/api/user/current` to confirm
@@ -19,7 +23,9 @@
 //!
 //! A last, informational `pending_login` check (outside the cascade and
 //! `all_ok`) reports whether a two-step `auth login --user --remote` is waiting
-//! for its code.
+//! for its code. Another, `identities` (also informational, no network),
+//! reports the identity checked, which identities have a credentials file,
+//! and whether a pre-#164 `credentials.json` is still lying around.
 //!
 //! Checks cascade: if `app_config` fails, the remaining checks are marked
 //! `skipped` (no credentials to load). If `credentials` fails, `api` and
@@ -32,23 +38,23 @@
 
 use serde_json::{json, Value};
 
-use crate::auth::{self, OAuthConfig};
+use crate::auth::{self, AppConfig, Identity, OAuthConfig};
 use crate::client::ConfluenceClient;
-use crate::context::config_dir;
+use crate::context::{app_config_error, config_dir, login_command, oauth_section};
 use crate::error::CliError;
 
-/// Runs all doctor checks. Returns `(report, all_ok)`.
+/// Runs all doctor checks for `identity`. Returns `(report, all_ok)`.
 ///
 /// `report` is a JSON object with one key per check. `all_ok` is `true` only
 /// if every check has `status: "ok"`.
-pub fn run_doctor() -> Result<(Value, bool), CliError> {
+pub fn run_doctor(identity: Identity) -> Result<(Value, bool), CliError> {
     let config_dir = config_dir()?;
 
-    let (app_check, oauth_config) = check_app_config(&config_dir);
+    let (app_check, oauth_config) = check_app_config(&config_dir, identity);
     let app_passed = app_check["status"] == "ok";
 
     let (creds_check, credentials) = match oauth_config {
-        Some(ref config) if app_passed => check_credentials(config, &config_dir),
+        Some(ref config) if app_passed => check_credentials(config, &config_dir, identity),
         _ => (skipped("app_config check failed"), None),
     };
     let creds_passed = creds_check["status"] == "ok";
@@ -73,16 +79,20 @@ pub fn run_doctor() -> Result<(Value, bool), CliError> {
         "api": connectivity_check,
         "oauth_scopes": oauth_scopes_check,
         "pending_login": check_pending_login(&config_dir, atlassian_auth::now_unix()),
+        "identities": check_identities(&config_dir, identity),
     });
 
     Ok((report, all_ok))
 }
 
-fn check_app_config(config_dir: &std::path::Path) -> (Value, Option<OAuthConfig>) {
+fn check_app_config(config_dir: &std::path::Path, identity: Identity) -> (Value, Option<OAuthConfig>) {
     let path = auth::app_config_path(config_dir);
     let path_str = path.display().to_string();
 
-    match OAuthConfig::load(&path) {
+    let section = AppConfig::load(&path)
+        .map_err(|e| app_config_error(e, &path))
+        .and_then(|app| oauth_section(app, identity, &path));
+    match section {
         Ok(config) => (json!({"status": "ok", "path": path_str}), Some(config)),
         Err(e) => (
             json!({"status": "error", "path": path_str, "message": e.to_string()}),
@@ -94,16 +104,18 @@ fn check_app_config(config_dir: &std::path::Path) -> (Value, Option<OAuthConfig>
 fn check_credentials(
     oauth_config: &OAuthConfig,
     config_dir: &std::path::Path,
+    identity: Identity,
 ) -> (Value, Option<auth::Credentials>) {
-    let path = auth::credentials_path(config_dir);
+    let path = auth::credentials_path(config_dir, identity);
     let path_str = path.display().to_string();
+    let login = login_command(identity);
 
     let Ok(raw) = std::fs::read_to_string(&path) else {
         return (
             json!({
                 "status": "error",
                 "path": path_str,
-                "message": format!("credentials file not found at {path_str}. Run: confluence auth login")
+                "message": format!("credentials file not found at {path_str}. Run: {login}")
             }),
             None,
         );
@@ -114,11 +126,18 @@ fn check_credentials(
             json!({
                 "status": "error",
                 "path": path_str,
-                "message": "credentials file is malformed. Run: confluence auth login"
+                "message": format!("credentials file is malformed. Run: {login}")
             }),
             None,
         );
     };
+
+    if let Err(e) = atlassian_auth::check_identity(&credentials, identity) {
+        return (
+            json!({"status": "error", "path": path_str, "message": format!("{e}. Run: {login}")}),
+            None,
+        );
+    }
 
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -143,7 +162,7 @@ fn check_credentials(
                 json!({
                     "status": "error",
                     "path": path_str,
-                    "message": format!("token expired and renewal failed: {e}. Run: confluence auth login")
+                    "message": format!("token expired and renewal failed: {e}. Run: {login}")
                 }),
                 None,
             ),
@@ -199,6 +218,29 @@ pub(crate) fn check_pending_login(config_dir: &std::path::Path, now: u64) -> Val
             ),
         }),
     }
+}
+
+/// Informational, no network: which identity this report checks, which
+/// identities have a credentials file, and whether a pre-#164
+/// `credentials.json` (no longer read) is still there to be deleted.
+pub(crate) fn check_identities(config_dir: &std::path::Path, selected: Identity) -> Value {
+    let name = |identity: Identity| match identity {
+        Identity::Service => "service",
+        Identity::User => "user",
+    };
+    let presence = |identity: Identity| {
+        if auth::credentials_path(config_dir, identity).exists() {
+            "present"
+        } else {
+            "missing"
+        }
+    };
+    json!({
+        "selected": name(selected),
+        "service": presence(Identity::Service),
+        "user": presence(Identity::User),
+        "legacy_credentials_file": auth::legacy_credentials_path(config_dir).exists(),
+    })
 }
 
 fn skipped(reason: &str) -> Value {
