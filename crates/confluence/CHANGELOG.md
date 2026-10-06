@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.0.0](https://github.com/lucabro81/CLI-monorepo/compare/confluence-v0.4.0...confluence-v1.0.0) - 2026-10-06
 
 ### Added
+- *(confluence)* --user <id> selects a person, one credentials folder each, auth logout
+
+### Fixed
+- *(confluence)* name the identity in the nothing-to-log-out error
+- *(confluence)* report an unwritable credentials file instead of asking to log in again
+
+### Other
+- *(confluence)* document --user <id>, per-person folders and auth logout (#175)
+- *(confluence)* explain the .lock file next to the credentials (#175)
+- Merge pull request #176 from lucabro81/issue175 ([#176](https://github.com/lucabro81/CLI-monorepo/pull/176))
+## [1.0.0](https://github.com/lucabro81/CLI-monorepo/compare/confluence-v0.4.0...confluence-v1.0.0) - 2026-10-06
+
+### Added
 - *(atlassian-auth)* add Identity and sectioned AppConfig
 - *(confluence)* keep service and human credentials side by side, pick one per call with --user
 
