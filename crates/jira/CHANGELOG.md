@@ -19,6 +19,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - *(jira)* document --user <id>, per-person folders and auth logout (#175)
 - *(jira)* explain the .lock file next to the credentials (#175)
 - Merge pull request #176 from lucabro81/issue175 ([#176](https://github.com/lucabro81/CLI-monorepo/pull/176))
+- Release
+- Merge pull request #177 from lucabro81/release/jira ([#177](https://github.com/lucabro81/CLI-monorepo/pull/177))
+## [2.0.0](https://github.com/lucabro81/CLI-monorepo/compare/jira-v1.0.0...jira-v2.0.0) - 2026-10-06
+
+### Added
+- *(jira)* --user <id> selects a person, one credentials folder each, auth logout
+
+### Fixed
+- *(jira)* name the identity in the nothing-to-log-out error
+- *(jira)* report an unwritable credentials file instead of asking to log in again
+
+### Other
+- *(jira)* list auth logout among the --select-exempt commands
+- *(jira)* name the person's id in the remote login comments
+- *(jira)* document --user <id>, per-person folders and auth logout (#175)
+- *(jira)* explain the .lock file next to the credentials (#175)
+- Merge pull request #176 from lucabro81/issue175 ([#176](https://github.com/lucabro81/CLI-monorepo/pull/176))
 ## [1.0.0](https://github.com/lucabro81/CLI-monorepo/compare/jira-v0.9.0...jira-v1.0.0) - 2026-10-06
 
 ### Added
