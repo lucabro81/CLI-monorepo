@@ -18,7 +18,7 @@ deviates from or adds to the generic skill are covered. Steps not listed follow
   command's `--help` and README section. A 403 should map to an error naming
   that role and pointing to `zitadel doctor`.
 - No new OAuth scope is normally needed; if one is, add it to the scope constants
-  in `endpoints.rs` (`SERVICE_USER_SCOPES`, and the `--user` scopes) and re-run `auth login`.
+  in `endpoints.rs` (`SERVICE_USER_SCOPES`, and the `--user <USER_ID>` scopes) and re-run `auth login` (and `auth login --user <USER_ID>` for each person).
 
 ## Step 2 — API research
 

@@ -20,7 +20,7 @@ pub const SERVICE_USER_SCOPES: &str = "openid urn:zitadel:iam:org:project:id:zit
 /// Authorization endpoint for the human login (authorization code + PKCE).
 pub const AUTHORIZE_PATH: &str = "/oauth/v2/authorize";
 
-/// Scopes requested by `auth login --user`. `offline_access` makes ZITADEL issue
+/// Scopes requested by `auth login --user <id>`. `offline_access` makes ZITADEL issue
 /// a refresh token (the Native app must also have refresh tokens enabled).
 pub const USER_SCOPES: &str =
     "openid profile email offline_access urn:zitadel:iam:org:project:id:zitadel:aud";

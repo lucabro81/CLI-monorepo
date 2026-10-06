@@ -2,15 +2,15 @@
 //!
 //! Runs sequential checks and returns a structured JSON report:
 //!
-//! Checks 1-6 run for one identity: the Service Account, or the human with
-//! `--user`.
+//! Checks 1-6 run for one identity: the Service Account, or the person with
+//! `--user <id>`.
 //!
 //! 1. `app_config` — verifies that `app.json` exists at the expected path and
 //!    has a valid section for the identity.
 //! 2. `credentials` — verifies that the identity's credentials file
-//!    (`credentials-service.json` / `credentials-user.json`) exists and holds a
-//!    non-expired token. If the token is expired, a renewal is attempted and
-//!    the result (success or failure) is reported transparently.
+//!    (`credentials-service.json` / `users/<id>/credentials.json`) exists and holds a
+//!    non-expired token. If the token is expired, a renewal is attempted (under
+//!    the same lock as every command's) and the result is reported transparently.
 //! 3. `api` — makes a live call to `/rest/api/3/myself` to confirm the Jira
 //!    API is reachable with the current token.
 //! 4. `oauth_scopes` — lists the OAuth scopes granted to the token (the app
@@ -25,10 +25,12 @@
 //!    finding zero projects at all is also `status: "error"` (an account
 //!    that can't see any project can't do anything useful).
 //! 7. `pending_login` — informational, outside the cascade and `all_ok`:
-//!    whether a two-step `auth login --user --remote` is waiting for its code.
+//!    whether the selected person's two-step `auth login --user <id> --remote`
+//!    is waiting for its code (always `none` for the Service Account).
 //! 8. `identities` — informational, outside the cascade and `all_ok`, no
-//!    network: the identity checked, which identities have a credentials file,
-//!    and whether a pre-#164 `credentials.json` is still lying around.
+//!    network: the identity checked, whether the Service Account is logged in,
+//!    the ids of the people logged in, and credentials files of earlier layouts
+//!    still lying around.
 //!
 //! Checks cascade: if `app_config` fails, the remaining checks are marked
 //! `skipped` (no credentials to load). If `credentials` fails, `api`,
@@ -52,7 +54,7 @@ use crate::error::CliError;
 ///
 /// `report` is a JSON object with one key per check. `all_ok` is `true` only
 /// if every check has `status: "ok"`.
-pub fn run_doctor(identity: Identity) -> Result<(Value, bool), CliError> {
+pub fn run_doctor(identity: &Identity) -> Result<(Value, bool), CliError> {
     let config_dir = config_dir()?;
 
     let (app_check, oauth_config) = check_app_config(&config_dir, identity);
@@ -104,7 +106,7 @@ pub fn run_doctor(identity: Identity) -> Result<(Value, bool), CliError> {
         "oauth_scopes": oauth_scopes_check,
         "service_user": service_user_check,
         "projects": projects_check,
-        "pending_login": check_pending_login(&config_dir, atlassian_auth::now_unix()),
+        "pending_login": check_pending_login(&config_dir, identity, atlassian_auth::now_unix()),
         "identities": check_identities(&config_dir, identity),
     });
 
@@ -129,7 +131,7 @@ const PERMISSION_KEYS: &[&str] = &[
     "ASSIGN_ISSUES",
 ];
 
-fn check_app_config(config_dir: &std::path::Path, identity: Identity) -> (Value, Option<OAuthConfig>) {
+fn check_app_config(config_dir: &std::path::Path, identity: &Identity) -> (Value, Option<OAuthConfig>) {
     let path = auth::app_config_path(config_dir);
     let path_str = path.display().to_string();
 
@@ -148,7 +150,7 @@ fn check_app_config(config_dir: &std::path::Path, identity: Identity) -> (Value,
 fn check_credentials(
     oauth_config: &OAuthConfig,
     config_dir: &std::path::Path,
-    identity: Identity,
+    identity: &Identity,
 ) -> (Value, Option<auth::Credentials>) {
     let path = auth::credentials_path(config_dir, identity);
     let path_str = path.display().to_string();
@@ -189,19 +191,17 @@ fn check_credentials(
         .as_secs();
 
     if now >= credentials.expires_at {
-        return match auth::renew(oauth_config, &credentials) {
-            Ok(renewed) => {
-                let _ = auth::save_credentials(&path, &renewed);
-                (
-                    json!({
-                        "status": "ok",
-                        "path": path_str,
-                        "expires_at": renewed.expires_at,
-                        "note": "token was expired and has been renewed"
-                    }),
-                    Some(renewed),
-                )
-            }
+        // load_credentials renews under the per-file lock, like every command.
+        return match auth::load_credentials(oauth_config, &path, identity) {
+            Ok(renewed) => (
+                json!({
+                    "status": "ok",
+                    "path": path_str,
+                    "expires_at": renewed.expires_at,
+                    "note": "token was expired and has been renewed"
+                }),
+                Some(renewed),
+            ),
             Err(e) => (
                 json!({
                     "status": "error",
@@ -368,10 +368,14 @@ fn granted_permission_keys(response: &Value) -> Vec<String> {
         .collect()
 }
 
-/// Informational: a two-step (`--remote`) login waiting for its code. Never
-/// affects `all_ok` (an idle CLI has none, and that is fine).
-pub(crate) fn check_pending_login(config_dir: &std::path::Path, now: u64) -> Value {
-    match oauth_user_login::pending_login_status(&auth::pending_login_path(config_dir), now) {
+/// Informational: the selected person's two-step (`--remote`) login waiting
+/// for its code. Never affects `all_ok` (an idle CLI has none, and that is
+/// fine); the Service Account never has one.
+pub(crate) fn check_pending_login(config_dir: &std::path::Path, identity: &Identity, now: u64) -> Value {
+    let Identity::User(id) = identity else {
+        return json!({"status": "none"});
+    };
+    match oauth_user_login::pending_login_status(&auth::pending_login_path(config_dir, id), now) {
         Ok(None) => json!({"status": "none"}),
         Ok(Some(status)) => json!({
             "status": "pending",
@@ -381,32 +385,33 @@ pub(crate) fn check_pending_login(config_dir: &std::path::Path, now: u64) -> Val
         Err(e) => json!({
             "status": "error",
             "message": format!(
-                "{e}. Start a new remote login with: jira auth login --user --remote --redirect-uri <redirect-uri>"
+                "{e}. Start a new remote login with: jira auth login --user {id} --remote --redirect-uri <redirect-uri>"
             ),
         }),
     }
 }
 
-/// Informational, no network: which identity this report checks, which
-/// identities have a credentials file, and whether a pre-#164
-/// `credentials.json` (no longer read) is still there to be deleted.
-pub(crate) fn check_identities(config_dir: &std::path::Path, selected: Identity) -> Value {
-    let name = |identity: Identity| match identity {
-        Identity::Service => "service",
-        Identity::User => "user",
+/// Informational, no network: which identity this report checks, whether
+/// the Service Account is logged in, the ids of the people logged in, and
+/// credentials files of earlier layouts (no longer read) still there to be deleted.
+pub(crate) fn check_identities(config_dir: &std::path::Path, selected: &Identity) -> Value {
+    let service = if auth::credentials_path(config_dir, &Identity::Service).exists() {
+        "present"
+    } else {
+        "missing"
     };
-    let presence = |identity: Identity| {
-        if auth::credentials_path(config_dir, identity).exists() {
-            "present"
-        } else {
-            "missing"
-        }
-    };
+    // An unreadable users/ folder lists nobody; the selected identity's own
+    // checks above report any real problem.
+    let users: Vec<String> = auth::list_users(config_dir)
+        .unwrap_or_default()
+        .iter()
+        .map(ToString::to_string)
+        .collect();
     json!({
-        "selected": name(selected),
-        "service": presence(Identity::Service),
-        "user": presence(Identity::User),
-        "legacy_credentials_file": auth::legacy_credentials_path(config_dir).exists(),
+        "selected": selected.label(),
+        "service": service,
+        "users": users,
+        "legacy_credentials_files": auth::legacy_credentials_files(config_dir),
     })
 }
 

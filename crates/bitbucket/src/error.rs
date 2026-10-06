@@ -17,7 +17,7 @@ pub enum CliError {
         "app credentials file not found at {path}. Create a Bitbucket OAuth consumer \
         (workspace Settings -> OAuth consumers) and run: \
         bitbucket init --client-id <KEY> --client-secret <SECRET> (the app identity, the default) \
-        and/or bitbucket init --user --client-id <KEY> --client-secret <SECRET> (the human, used with --user)"
+        and/or bitbucket init --user <USER_ID> --client-id <KEY> --client-secret <SECRET> (a person, used with --user <USER_ID>)"
     )]
     AppConfigNotFound { path: String },
 
@@ -32,7 +32,7 @@ pub enum CliError {
     #[error(
         "app.json at {path} uses the old single-identity format (client_id at top level). \
         Recreate it: bitbucket init --client-id <KEY> --client-secret <SECRET> for the app identity, \
-        and bitbucket init --user --client-id <KEY> --client-secret <SECRET> for the human used with --user \
+        and bitbucket init --user <USER_ID> --client-id <KEY> --client-secret <SECRET> for the people used with --user \
         (the same consumer can serve both)"
     )]
     AppConfigLegacy { path: String },
@@ -44,10 +44,11 @@ pub enum CliError {
     ServiceAppMissing { path: String },
 
     #[error(
-        "app.json at {path} has no \"user\" section (the OAuth consumer used with --user to act as a human; \
-        it may be the same consumer). Run: bitbucket init --user --client-id <KEY> --client-secret <SECRET>"
+        "app.json at {path} has no \"user\" section (the OAuth consumer used with --user to act as a person, \
+        every person through it; it may be the same consumer). \
+        Run: bitbucket init --user {id} --client-id <KEY> --client-secret <SECRET>"
     )]
-    UserAppMissing { path: String },
+    UserAppMissing { path: String, id: String },
 
     #[error(
         "no home directory found — cannot resolve config path. \
@@ -57,14 +58,15 @@ pub enum CliError {
 
     #[error(
         "not logged in as the OAuth app. Run: bitbucket auth login. \
-        To act as the human logged in with bitbucket auth login --user, pass --user instead"
+        To act as a person logged in with bitbucket auth login --user <USER_ID>, pass --user <USER_ID> instead"
     )]
     NotAuthenticatedService,
 
     #[error(
-        "not logged in as a human. Run: bitbucket auth login --user (a person must approve the login in a browser)"
+        "user {id} is not logged in. Run: bitbucket auth login --user {id} \
+        (the person must approve the login in a browser)"
     )]
-    NotAuthenticatedUser,
+    NotAuthenticatedUser { id: String },
 
     #[error(
         "failed to renew the OAuth app's token: {reason}. Check that the consumer Key/Secret in \
@@ -73,21 +75,21 @@ pub enum CliError {
     TokenRenewalFailedService { reason: String },
 
     #[error(
-        "failed to refresh the human's token: {reason}. The refresh token may have expired \
-        (unused for 3 months) or been revoked. Run: bitbucket auth login --user"
+        "failed to refresh the token of user {id}: {reason}. The refresh token may have expired \
+        (unused for 3 months) or been revoked. Run: bitbucket auth login --user {id}"
     )]
-    TokenRefreshFailedUser { reason: String },
+    TokenRefreshFailedUser { reason: String, id: String },
 
     #[error("OAuth login failed: {reason}")]
     LoginFailed { reason: String },
 
-    #[error("remote login failed: {reason}. Start a new remote login with: bitbucket auth login --user --remote")]
-    RemoteLoginFailed { reason: String },
+    #[error("remote login failed: {reason}. Start a new remote login with: bitbucket auth login --user {id} --remote")]
+    RemoteLoginFailed { reason: String, id: String },
 
     #[error(
-        "a remote login (--remote, --code, --state) logs in the human identity and needs --user. \
-        Retry with --user: bitbucket auth login --user --remote, \
-        then bitbucket auth login --user --code <CODE> --state <STATE>"
+        "a remote login (--remote, --code, --state) logs in a person and needs --user <USER_ID>. \
+        Retry with: bitbucket auth login --user <USER_ID> --remote, \
+        then bitbucket auth login --user <USER_ID> --code <CODE> --state <STATE>"
     )]
     RemoteLoginNeedsUser,
 
@@ -117,6 +119,9 @@ pub enum CliError {
 
     #[error("I/O error: {reason}")]
     IoError { reason: String },
+
+    #[error("nothing to log out: identity \"{label}\" has no stored login on this machine. To log in: {login}")]
+    NothingToLogOut { label: String, login: String },
 
     #[error("invalid input: {reason}")]
     InvalidInput { reason: String },

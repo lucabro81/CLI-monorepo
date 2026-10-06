@@ -64,33 +64,9 @@ impl PendingLogin {
     /// Writes the pending login with owner-only permissions (it holds the PKCE
     /// verifier), replacing any earlier one and creating parent directories.
     pub fn save(&self, path: &Path) -> Result<(), PendingLoginError> {
-        use std::io::Write;
-
-        let io = |e: std::io::Error| PendingLoginError::Io(e.to_string());
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).map_err(io)?;
-        }
         // Serializing this plain struct cannot fail; mapped rather than unwrapped.
         let json = serde_json::to_string_pretty(self).map_err(|e| PendingLoginError::Io(e.to_string()))?;
-
-        // Written to a sibling file and renamed over the target, so a concurrent
-        // reader (doctor, step 2) never sees a half-written file.
-        let tmp = path.with_extension("json.tmp");
-        let mut options = std::fs::OpenOptions::new();
-        options.write(true).create(true).truncate(true);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::OpenOptionsExt;
-            options.mode(0o600);
-        }
-        options.open(&tmp).and_then(|mut file| file.write_all(json.as_bytes())).map_err(io)?;
-        #[cfg(unix)]
-        {
-            // A leftover temporary file from an earlier crash keeps its old mode.
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600)).map_err(io)?;
-        }
-        std::fs::rename(&tmp, path).map_err(io)
+        crate::write_secret_file(path, json.as_bytes()).map_err(|e| PendingLoginError::Io(e.to_string()))
     }
 }
 

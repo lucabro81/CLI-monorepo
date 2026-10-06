@@ -19,7 +19,7 @@ pub enum CliError {
     #[error(
         "app credentials file not found at {path}. Create it with: \
         confluence init --client-id <ID> --client-secret <SECRET> (Service Account, the default identity) \
-        and/or confluence init --user --client-id <ID> --client-secret <SECRET> (3LO app, used with --user)"
+        and/or confluence init --user <USER_ID> --client-id <ID> --client-secret <SECRET> (3LO app, used with --user <USER_ID>)"
     )]
     AppConfigNotFound { path: String },
 
@@ -34,7 +34,7 @@ pub enum CliError {
     #[error(
         "app.json at {path} uses the old single-identity format (client_id at top level). \
         Recreate it: confluence init --client-id <ID> --client-secret <SECRET> for the Service Account, \
-        and confluence init --user --client-id <ID> --client-secret <SECRET> for the 3LO app used with --user"
+        and confluence init --user <USER_ID> --client-id <ID> --client-secret <SECRET> for the 3LO app used with --user"
     )]
     AppConfigLegacy { path: String },
 
@@ -45,10 +45,10 @@ pub enum CliError {
     ServiceAppMissing { path: String },
 
     #[error(
-        "app.json at {path} has no \"user\" section (the 3LO app used with --user). \
-        Run: confluence init --user --client-id <ID> --client-secret <SECRET>"
+        "app.json at {path} has no \"user\" section (the 3LO app every person logs in with). \
+        Run: confluence init --user {id} --client-id <ID> --client-secret <SECRET>"
     )]
-    UserAppMissing { path: String },
+    UserAppMissing { path: String, id: String },
 
     #[error(
         "no home directory found — cannot resolve config path. \
@@ -58,34 +58,35 @@ pub enum CliError {
 
     #[error(
         "not logged in as the service account. Run: confluence auth login. \
-        To act as the human logged in with confluence auth login --user, pass --user instead"
+        To act as a person logged in with confluence auth login --user <USER_ID>, pass --user <USER_ID> instead"
     )]
     NotAuthenticatedService,
 
     #[error(
-        "not logged in as a human. Run: confluence auth login --user (a person must approve the login in a browser)"
+        "user {id} is not logged in. Run: confluence auth login --user {id} \
+        (the person must approve the login in a browser)"
     )]
-    NotAuthenticatedUser,
+    NotAuthenticatedUser { id: String },
 
     #[error(
         "failed to refresh authentication token: {reason}. \
         The session may have been revoked. Run: {login}"
     )]
-    TokenRefreshFailed { reason: String, login: &'static str },
+    TokenRefreshFailed { reason: String, login: String },
 
     #[error("OAuth login failed: {reason}")]
     LoginFailed { reason: String },
 
     #[error(
-        "remote login failed: {reason}. Start a new remote login with: confluence auth login --user \
+        "remote login failed: {reason}. Start a new remote login with: confluence auth login --user {id} \
         --remote --redirect-uri <redirect-uri>"
     )]
-    RemoteLoginFailed { reason: String },
+    RemoteLoginFailed { reason: String, id: String },
 
     #[error(
-        "a remote login (--remote, --code, --state) logs in the human identity and needs --user. \
-        Retry with --user: confluence auth login --user --remote --redirect-uri <redirect-uri>, \
-        then confluence auth login --user --code <CODE> --state <STATE>"
+        "a remote login (--remote, --code, --state) logs in a person and needs --user <USER_ID>. \
+        Retry with: confluence auth login --user <USER_ID> --remote --redirect-uri <redirect-uri>, \
+        then confluence auth login --user <USER_ID> --code <CODE> --state <STATE>"
     )]
     RemoteLoginNeedsUser,
 
@@ -112,6 +113,9 @@ pub enum CliError {
 
     #[error("I/O error: {reason}")]
     IoError { reason: String },
+
+    #[error("nothing to log out: identity \"{label}\" has no stored login on this machine. To log in: {login}")]
+    NothingToLogOut { label: String, login: String },
 
     #[error(
         "page create requires exactly one of --body, --body-file, or --template-id \

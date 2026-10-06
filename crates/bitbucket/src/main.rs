@@ -47,13 +47,13 @@ fn run() -> Result<(), CliError> {
         cli_fields::Select::Fields(&select_paths)
     };
 
-    // Global --user: act as the human instead of the OAuth app.
+    // Global --user <id>: act as that person instead of the OAuth app.
     let identity = Identity::from_user_flag(cli.user);
 
     match cli.command {
-        Command::Init { client_id, client_secret } => commands::init::run_init(identity, client_id, client_secret),
+        Command::Init { client_id, client_secret } => commands::init::run_init(&identity, client_id, client_secret),
         Command::Doctor => {
-            let (report, all_ok) = commands::doctor::run_doctor(identity)?;
+            let (report, all_ok) = commands::doctor::run_doctor(&identity)?;
             // Exempt from the mandatory --select requirement: the report is generated
             // internally (fixed, small shape, not an arbitrary external blob). An
             // explicit --select/--select-all is still honored if passed.
@@ -64,13 +64,14 @@ fn run() -> Result<(), CliError> {
             Ok(())
         }
         Command::Auth { command: AuthCommand::Login { remote, code, state } } => {
-            commands::auth::run_login(commands::auth::LoginMode::from_flags(identity, remote, code, state)?, select)
+            commands::auth::run_login(commands::auth::LoginMode::from_flags(&identity, remote, code, state)?, select)
         }
-        Command::Auth { command: AuthCommand::Whoami } => commands::auth::run_whoami(select, identity),
-        Command::Repo { command } => commands::repo::run(command, select, identity),
-        Command::Pr { command } => commands::pr::run(command, select, identity),
-        Command::Branch { command } => commands::branch::run(command, select, identity),
-        Command::Workspace { command } => commands::workspace::run(command, select, identity),
+        Command::Auth { command: AuthCommand::Whoami } => commands::auth::run_whoami(select, &identity),
+        Command::Auth { command: AuthCommand::Logout } => commands::auth::run_logout(select, &identity),
+        Command::Repo { command } => commands::repo::run(command, select, &identity),
+        Command::Pr { command } => commands::pr::run(command, select, &identity),
+        Command::Branch { command } => commands::branch::run(command, select, &identity),
+        Command::Workspace { command } => commands::workspace::run(command, select, &identity),
     }
 }
 

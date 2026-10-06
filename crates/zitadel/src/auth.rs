@@ -5,7 +5,7 @@
 //!   user's private key from `app.json` and exchanges it at the instance's token
 //!   endpoint. ZITADEL's recommended service-account method. Issues no
 //!   `refresh_token`: renewal signs a fresh assertion.
-//! - **Human, authorization code + PKCE** (`login_user`, `auth login --user`) —
+//! - **Human, authorization code + PKCE** (`login_user`, `auth login --user <id>`) —
 //!   opens the browser on the Native app's authorize URL, waits for the redirect
 //!   on a loopback listener (both from `crates/oauth-user-login`), exchanges the code. Issues a `refresh_token`;
 //!   renewal uses the refresh grant (`renew` dispatches on its presence, so a
@@ -17,8 +17,9 @@
 //!   service user's key (the console key file, copied verbatim), and the Native
 //!   app `client_id` used by the human login.
 //! - **Session credentials** (`Credentials`) — the identity's credentials file
-//!   (`credentials-service.json` / `credentials-user.json`): access token,
-//!   optional refresh token, expiry. Fully managed by the CLI.
+//!   (`credentials-service.json` / `users/<id>/credentials.json`): access token,
+//!   optional refresh token, expiry. Fully managed by the CLI, renewed under a
+//!   per-file lock.
 
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -34,7 +35,7 @@ pub struct AppConfig {
     pub instance_url: String,
     /// Needed by the default (service user) login.
     pub service_user: Option<ServiceUserKey>,
-    /// Native app client id, needed by the human (`--user`) login.
+    /// Native app client id, needed by the human (`--user <id>`) login, shared by every person.
     pub client_id: Option<String>,
 }
 
@@ -132,27 +133,39 @@ impl AppConfig {
 
 /// `<config_dir>/zitadel-cli/app.json`
 pub fn app_config_path(config_dir: &Path) -> PathBuf {
-    config_dir.join("zitadel-cli").join("app.json")
+    config_dir.join(CLI_DIR).join("app.json")
 }
 
-pub use oauth_user_login::Identity;
+pub use oauth_user_login::{Identity, UserId};
+
+const CLI_DIR: &str = "zitadel-cli";
 
 /// `identity`'s credentials file:
-/// `<config_dir>/zitadel-cli/credentials-service.json` or `credentials-user.json`.
-pub fn credentials_path(config_dir: &Path, identity: Identity) -> PathBuf {
-    identity.credentials_path(config_dir, "zitadel-cli")
+/// `<config_dir>/zitadel-cli/credentials-service.json` or `users/<id>/credentials.json`.
+pub fn credentials_path(config_dir: &Path, identity: &Identity) -> PathBuf {
+    identity.credentials_path(config_dir, CLI_DIR)
 }
 
-/// The single credentials file used before issue #164
-/// (`<config_dir>/zitadel-cli/credentials.json`); no longer read, only reported by `doctor`.
-pub fn legacy_credentials_path(config_dir: &Path) -> PathBuf {
-    config_dir.join("zitadel-cli").join("credentials.json")
+/// `<config_dir>/zitadel-cli/users/<id>/pending-login.json`, a person's state
+/// between the two steps of `auth login --user <id> --remote`.
+pub fn pending_login_path(config_dir: &Path, id: &UserId) -> PathBuf {
+    oauth_user_login::pending_login_path(config_dir, CLI_DIR, id)
 }
 
-/// `<config_dir>/zitadel-cli/pending-login.json`, the state between the two
-/// steps of `auth login --user --remote`.
-pub fn pending_login_path(config_dir: &Path) -> PathBuf {
-    config_dir.join("zitadel-cli").join("pending-login.json")
+/// The people logged in, for `doctor` and `init`.
+pub fn list_users(config_dir: &Path) -> std::io::Result<Vec<UserId>> {
+    oauth_user_login::list_users(config_dir, CLI_DIR)
+}
+
+/// Credentials files of earlier layouts still present (never read), for `doctor`.
+pub fn legacy_credentials_files(config_dir: &Path) -> Vec<&'static str> {
+    oauth_user_login::legacy_credentials_files(config_dir, CLI_DIR)
+}
+
+/// Removes `identity`'s stored login (`auth logout`, `init` on a new instance);
+/// `false` when there was none.
+pub fn remove_identity(config_dir: &Path, identity: &Identity) -> std::io::Result<bool> {
+    oauth_user_login::remove_identity(config_dir, CLI_DIR, identity)
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -187,7 +200,7 @@ pub enum LoginError {
     PendingLogin(oauth_user_login::PendingLoginError),
     #[error(
         "ZITADEL issued no refresh token, so the session could not be renewed. In the console enable \
-        \"Refresh Token\" in the Native application's token settings, then run: zitadel auth login --user"
+        \"Refresh Token\" in the Native application's token settings, then run: zitadel auth login --user <USER_ID>"
     )]
     NoRefreshToken,
     #[error("credentials file is corrupted ({0})")]
@@ -215,7 +228,7 @@ struct TokenResponse {
 }
 
 /// Dynamic session credentials persisted to the identity's credentials file
-/// (`credentials-service.json` / `credentials-user.json`).
+/// (`credentials-service.json` / `users/<id>/credentials.json`).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Credentials {
     pub access_token: String,
@@ -452,9 +465,9 @@ pub(crate) fn is_expiring(expires_at: u64, now: u64) -> bool {
 /// JWT), so without this check a human slot with no refresh token would be
 /// renewed as the service user, and a service slot holding a human login as
 /// that human.
-pub fn check_identity(credentials: &Credentials, identity: Identity) -> Result<(), LoginError> {
+pub fn check_identity(credentials: &Credentials, identity: &Identity) -> Result<(), LoginError> {
     match (identity, credentials.refresh_token.is_some()) {
-        (Identity::User, false) => Err(LoginError::WrongIdentity(
+        (Identity::User(_), false) => Err(LoginError::WrongIdentity(
             "the human credentials file holds no refresh token, so it is not a human login",
         )),
         (Identity::Service, true) => Err(LoginError::WrongIdentity(
@@ -465,53 +478,52 @@ pub fn check_identity(credentials: &Credentials, identity: Identity) -> Result<(
 }
 
 /// Loads credentials from disk, renewing and re-saving them first if expiring.
-pub fn load_credentials(config: &AppConfig, path: &Path, identity: Identity) -> Result<Credentials, LoginError> {
+pub fn load_credentials(config: &AppConfig, path: &Path, identity: &Identity) -> Result<Credentials, LoginError> {
+    load_credentials_with(path, identity, |credentials| renew(config, credentials))
+}
+
+/// [`load_credentials`] with the renewal injected, so tests can count and fake it.
+///
+/// Renewal runs under an exclusive lock on the file (issue #175): two calls
+/// for the same identity may both find the token expired, and must not both
+/// spend the same refresh token. After taking the lock the file is read again,
+/// and a token renewed meanwhile is returned as is.
+pub(crate) fn load_credentials_with(
+    path: &Path,
+    identity: &Identity,
+    renew: impl FnOnce(&Credentials) -> Result<Credentials, LoginError>,
+) -> Result<Credentials, LoginError> {
+    let credentials = read_credentials(path, identity)?;
+    if !is_expiring(credentials.expires_at, now_unix()) {
+        return Ok(credentials);
+    }
+
+    // Failing to create the lock file means the folder is not writable: the
+    // same problem as failing to save, not a missing login.
+    let _lock = oauth_user_login::lock_exclusive(path).map_err(|e| LoginError::SaveCredentials(e.to_string()))?;
+    let credentials = read_credentials(path, identity)?;
+    if !is_expiring(credentials.expires_at, now_unix()) {
+        return Ok(credentials);
+    }
+    let renewed = renew(&credentials)?;
+    save_credentials(path, &renewed)?;
+    Ok(renewed)
+}
+
+fn read_credentials(path: &Path, identity: &Identity) -> Result<Credentials, LoginError> {
     let raw = std::fs::read_to_string(path)?;
     let credentials: Credentials = serde_json::from_str(&raw)
         .map_err(|e| LoginError::InvalidCredentialsFile(e.to_string()))?;
     check_identity(&credentials, identity)?;
-
-    if is_expiring(credentials.expires_at, now_unix()) {
-        let renewed = renew(config, &credentials)?;
-        save_credentials(path, &renewed)?;
-        return Ok(renewed);
-    }
-
     Ok(credentials)
 }
 
-/// Writes credentials as pretty JSON with owner-only permissions (they hold
-/// bearer tokens), creating parent directories as needed.
+/// Writes credentials as pretty JSON, atomically and with owner-only
+/// permissions (they hold bearer tokens), creating parent directories as needed.
 pub fn save_credentials(path: &Path, credentials: &Credentials) -> Result<(), LoginError> {
-    use std::io::Write;
-
-    let write_failed = |e: std::io::Error| LoginError::SaveCredentials(e.to_string());
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(write_failed)?;
-    }
     let json = serde_json::to_string_pretty(credentials)
         .map_err(|e| LoginError::Internal(format!("failed to serialize credentials: {e}")))?;
-
-    let mut options = std::fs::OpenOptions::new();
-    options.write(true).create(true).truncate(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
-        // New files are created 0600. An existing file loses any group/other
-        // access first (owner bits are kept: a read-only file stays read-only).
-        options.mode(0o600);
-        if let Ok(metadata) = std::fs::metadata(path) {
-            let mode = metadata.permissions().mode();
-            if mode & 0o077 != 0 {
-                std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode & 0o700))
-                    .map_err(write_failed)?;
-            }
-        }
-    }
-    options
-        .open(path)
-        .and_then(|mut file| file.write_all(json.as_bytes()))
-        .map_err(write_failed)
+    oauth_user_login::write_secret_file(path, json.as_bytes()).map_err(|e| LoginError::SaveCredentials(e.to_string()))
 }
 
 pub(crate) fn now_unix() -> u64 {

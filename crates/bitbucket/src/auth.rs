@@ -12,22 +12,23 @@
 //!   and no `redirect_uri` parameter for this grant; `state` guards against CSRF.
 //!   `state` and the callback listener come from `crates/oauth-user-login`.
 //!
-//! Both identities are stored side by side (issue #164), selected per call by
-//! the global `--user` flag ([`Identity`]):
+//! The app identity and any number of humans are stored side by side (issues
+//! #164, #175), selected per call by the global `--user <id>` flag ([`Identity`]):
 //!
 //! - **App identity** (`AppConfig`, one `OAuthConfig` per section) — the static
 //!   OAuth consumer credentials loaded from `app.json`'s `service` and `user`
 //!   sections.
 //! - **Session credentials** (`Credentials`) — the access token, its expiry and,
-//!   for `--user` logins, the refresh token, persisted to
-//!   `credentials-service.json` / `credentials-user.json`.
+//!   for `--user <id>` logins, the refresh token, persisted to
+//!   `credentials-service.json` / `users/<id>/credentials.json` and renewed
+//!   under a per-file lock.
 
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
 use crate::endpoints;
 
-pub use oauth_user_login::Identity;
+pub use oauth_user_login::{Identity, UserId};
 
 /// One OAuth consumer: a section of `app.json` (see [`AppConfig`]).
 /// Written by `init` (or by hand); never modified by the CLI at runtime.
@@ -45,8 +46,8 @@ pub struct OAuthConfig {
 /// ```
 ///
 /// `service` is used with `client_credentials` (acting as the app), `user`
-/// with `authorization_code` (acting as a human); both may hold the same
-/// consumer. The pre-#164 flat shape is rejected with
+/// with `authorization_code` (acting as a person, every person through the
+/// same consumer); both may hold the same consumer. The pre-#164 flat shape is rejected with
 /// [`OAuthConfigError::LegacyFormat`].
 #[derive(Debug, PartialEq, Eq)]
 pub struct AppConfig {
@@ -113,24 +114,35 @@ impl AppConfig {
 
 /// Path to the app credentials file: `<config_dir>/bitbucket-cli/app.json`.
 pub fn app_config_path(config_dir: &Path) -> PathBuf {
-    config_dir.join("bitbucket-cli").join("app.json")
+    config_dir.join(CLI_DIR).join("app.json")
 }
+
+const CLI_DIR: &str = "bitbucket-cli";
 
 /// Path to `identity`'s credentials file:
-/// `<config_dir>/bitbucket-cli/credentials-service.json` or `credentials-user.json`.
-pub fn credentials_path(config_dir: &Path, identity: Identity) -> PathBuf {
-    identity.credentials_path(config_dir, "bitbucket-cli")
+/// `<config_dir>/bitbucket-cli/credentials-service.json` or `users/<id>/credentials.json`.
+pub fn credentials_path(config_dir: &Path, identity: &Identity) -> PathBuf {
+    identity.credentials_path(config_dir, CLI_DIR)
 }
 
-/// The single credentials file used before issue #164
-/// (`<config_dir>/bitbucket-cli/credentials.json`); no longer read, only reported by `doctor`.
-pub fn legacy_credentials_path(config_dir: &Path) -> PathBuf {
-    config_dir.join("bitbucket-cli").join("credentials.json")
+/// Path to a person's pending remote login: `<config_dir>/bitbucket-cli/users/<id>/pending-login.json`.
+pub fn pending_login_path(config_dir: &Path, id: &UserId) -> PathBuf {
+    oauth_user_login::pending_login_path(config_dir, CLI_DIR, id)
 }
 
-/// Path to the pending remote login: `<config_dir>/bitbucket-cli/pending-login.json`.
-pub fn pending_login_path(config_dir: &Path) -> PathBuf {
-    config_dir.join("bitbucket-cli").join("pending-login.json")
+/// The people logged in, for `doctor`.
+pub fn list_users(config_dir: &Path) -> std::io::Result<Vec<UserId>> {
+    oauth_user_login::list_users(config_dir, CLI_DIR)
+}
+
+/// Credentials files of earlier layouts still present (never read), for `doctor`.
+pub fn legacy_credentials_files(config_dir: &Path) -> Vec<&'static str> {
+    oauth_user_login::legacy_credentials_files(config_dir, CLI_DIR)
+}
+
+/// Removes `identity`'s stored login (`auth logout`); `false` when there was none.
+pub fn remove_identity(config_dir: &Path, identity: &Identity) -> std::io::Result<bool> {
+    oauth_user_login::remove_identity(config_dir, CLI_DIR, identity)
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -169,12 +181,16 @@ pub enum LoginError {
     /// The credentials file doesn't hold the identity it is named after.
     #[error("{0}")]
     WrongIdentity(&'static str),
-    #[error("{0}: bitbucket auth login --user")]
+    #[error("{0}: bitbucket auth login --user <USER_ID>")]
     CallbackListener(oauth_user_login::ListenerError),
-    #[error("{0}: bitbucket auth login --user")]
+    #[error("{0}: bitbucket auth login --user <USER_ID>")]
     Callback(oauth_user_login::WaitError),
     #[error("{0}")]
     PendingLogin(oauth_user_login::PendingLoginError),
+    /// Writing the credentials file (or taking its lock) failed, e.g. an
+    /// unwritable config folder — distinct from `Io`, which covers reading it.
+    #[error("could not write credentials file: {0}")]
+    SaveCredentials(String),
     /// A condition that should be unreachable given valid inputs.
     /// If this surfaces it indicates a bug in the CLI itself.
     #[error("internal error: {0}")]
@@ -200,7 +216,7 @@ struct TokenResponse {
 }
 
 /// Dynamic session credentials persisted to the identity's credentials file
-/// (`credentials-service.json` / `credentials-user.json`).
+/// (`credentials-service.json` / `users/<id>/credentials.json`).
 /// Fully managed by the CLI — never edit by hand. Renewed transparently before expiry.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Credentials {
@@ -411,9 +427,9 @@ pub fn renew(config: &OAuthConfig, credentials: &Credentials) -> Result<Credenti
 /// grant from the stored token (`refresh_token` or `client_credentials`), so
 /// without this check a human slot with no refresh token would be renewed as
 /// the app, and an app slot holding a human login as that human.
-pub fn check_identity(credentials: &Credentials, identity: Identity) -> Result<(), LoginError> {
+pub fn check_identity(credentials: &Credentials, identity: &Identity) -> Result<(), LoginError> {
     match (identity, credentials.refresh_token.is_some()) {
-        (Identity::User, false) => Err(LoginError::WrongIdentity(
+        (Identity::User(_), false) => Err(LoginError::WrongIdentity(
             "the human credentials file holds no refresh token, so it is not a human login",
         )),
         (Identity::Service, true) => Err(LoginError::WrongIdentity(
@@ -425,30 +441,54 @@ pub fn check_identity(credentials: &Credentials, identity: Identity) -> Result<(
 
 /// Loads credentials from disk, renewing them first if the access token has
 /// expired (or is about to, within 60s).
-pub fn load_credentials(config: &OAuthConfig, path: &Path, identity: Identity) -> Result<Credentials, LoginError> {
+pub fn load_credentials(config: &OAuthConfig, path: &Path, identity: &Identity) -> Result<Credentials, LoginError> {
+    load_credentials_with(path, identity, |credentials| renew(config, credentials))
+}
+
+/// [`load_credentials`] with the renewal injected, so tests can count and fake it.
+///
+/// Renewal runs under an exclusive lock on the file (issue #175): two calls
+/// for the same identity may both find the token expired, and Bitbucket
+/// refresh tokens rotate, so the second must not spend the refresh token the
+/// first already used. After taking the lock the file is read again, and a
+/// token renewed meanwhile is returned as is.
+pub(crate) fn load_credentials_with(
+    path: &Path,
+    identity: &Identity,
+    renew: impl FnOnce(&Credentials) -> Result<Credentials, LoginError>,
+) -> Result<Credentials, LoginError> {
+    let credentials = read_credentials(path, identity)?;
+    if !expiring(&credentials) {
+        return Ok(credentials);
+    }
+
+    let _lock = oauth_user_login::lock_exclusive(path).map_err(|e| LoginError::SaveCredentials(e.to_string()))?;
+    let credentials = read_credentials(path, identity)?;
+    if !expiring(&credentials) {
+        return Ok(credentials);
+    }
+    let renewed = renew(&credentials)?;
+    save_credentials(path, &renewed)?;
+    Ok(renewed)
+}
+
+fn read_credentials(path: &Path, identity: &Identity) -> Result<Credentials, LoginError> {
     let raw = std::fs::read_to_string(path)?;
     let credentials: Credentials =
         serde_json::from_str(&raw).map_err(|e| LoginError::TokenExchange(e.to_string()))?;
     check_identity(&credentials, identity)?;
-
-    if now_unix() + 60 >= credentials.expires_at {
-        let renewed = renew(config, &credentials)?;
-        save_credentials(path, &renewed)?;
-        return Ok(renewed);
-    }
-
     Ok(credentials)
 }
 
-/// Serialises credentials to JSON and writes them to `path`, creating parent directories as needed.
+fn expiring(credentials: &Credentials) -> bool {
+    now_unix() + 60 >= credentials.expires_at
+}
+
+/// Writes credentials as JSON to `path` (atomically, owner-only), creating parent directories as needed.
 pub fn save_credentials(path: &Path, credentials: &Credentials) -> Result<(), LoginError> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
     let json = serde_json::to_string_pretty(credentials)
         .map_err(|e| LoginError::Internal(format!("failed to serialize credentials: {e}")))?;
-    std::fs::write(path, json)?;
-    Ok(())
+    oauth_user_login::write_secret_file(path, json.as_bytes()).map_err(|e| LoginError::SaveCredentials(e.to_string()))
 }
 
 #[cfg(test)]

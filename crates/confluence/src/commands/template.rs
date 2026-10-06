@@ -22,7 +22,7 @@ use crate::auth::Identity;
 use crate::context::{authenticated_client, client_error_to_cli, print_json};
 use crate::error::CliError;
 
-pub fn run(command: TemplateCommand, select: cli_fields::Select<'_>, identity: Identity) -> Result<(), CliError> {
+pub fn run(command: TemplateCommand, select: cli_fields::Select<'_>, identity: &Identity) -> Result<(), CliError> {
     match command {
         TemplateCommand::Create {
             space_key,
@@ -73,7 +73,7 @@ fn run_create(
     body: Option<String>,
     body_file: Option<String>,
     select: cli_fields::Select<'_>,
-    identity: Identity,
+    identity: &Identity,
 ) -> Result<(), CliError> {
     let body_text = resolve_body(body, body_file)?;
 
@@ -126,7 +126,7 @@ fn run_update(
     body: Option<String>,
     body_file: Option<String>,
     select: cli_fields::Select<'_>,
-    identity: Identity,
+    identity: &Identity,
 ) -> Result<(), CliError> {
     let body_override = resolve_optional_body(body, body_file)?;
 
@@ -168,7 +168,7 @@ fn run_update(
 /// `authenticated_client()` — free and local, so a caller who forgot
 /// `--confirm` sees the actionable error immediately rather than after a
 /// network round-trip a token refresh might require.
-fn run_delete(id: &str, confirm: bool, select: cli_fields::Select<'_>, identity: Identity) -> Result<(), CliError> {
+fn run_delete(id: &str, confirm: bool, select: cli_fields::Select<'_>, identity: &Identity) -> Result<(), CliError> {
     if !confirm {
         return Err(CliError::TemplateDeleteNotConfirmed { id: id.to_string() });
     }

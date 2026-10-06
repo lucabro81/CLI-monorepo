@@ -8,7 +8,7 @@ use crate::context::{authenticated_client, print_json, split_repository};
 use crate::error::CliError;
 
 /// Dispatches a `PrCommand` variant to the appropriate Bitbucket API call.
-pub fn run(command: PrCommand, select: cli_fields::Select<'_>, identity: Identity) -> Result<(), CliError> {
+pub fn run(command: PrCommand, select: cli_fields::Select<'_>, identity: &Identity) -> Result<(), CliError> {
     match command {
         PrCommand::Create { repository, title, source, destination, description, close_source_branch, reviewers, draft } => {
             let (workspace, repo_slug) = split_repository(&repository)?;
@@ -120,7 +120,7 @@ fn run_create_comment(
     inline: Option<(String, u64)>,
     parent: Option<u64>,
     select: cli_fields::Select<'_>,
-    identity: Identity,
+    identity: &Identity,
 ) -> Result<(), CliError> {
     let (workspace, repo_slug) = split_repository(repository)?;
     let body = build_comment_body(content, inline, parent);
@@ -133,7 +133,7 @@ fn run_create_comment(
     print_json(&value, select.or_all())
 }
 
-fn run_list_comments(repository: &str, id: u64, page: Option<u32>, select: cli_fields::Select<'_>, identity: Identity) -> Result<(), CliError> {
+fn run_list_comments(repository: &str, id: u64, page: Option<u32>, select: cli_fields::Select<'_>, identity: &Identity) -> Result<(), CliError> {
     let (workspace, repo_slug) = split_repository(repository)?;
     let value = authenticated_client(identity)?
         .list_pull_request_comments(workspace, repo_slug, id, page)
@@ -143,7 +143,7 @@ fn run_list_comments(repository: &str, id: u64, page: Option<u32>, select: cli_f
     print_json(&value, select)
 }
 
-fn run_update_comment(repository: &str, id: u64, comment_id: u64, content: &str, select: cli_fields::Select<'_>, identity: Identity) -> Result<(), CliError> {
+fn run_update_comment(repository: &str, id: u64, comment_id: u64, content: &str, select: cli_fields::Select<'_>, identity: &Identity) -> Result<(), CliError> {
     let (workspace, repo_slug) = split_repository(repository)?;
     let body = build_comment_body(content, None, None);
     let value = authenticated_client(identity)?
@@ -212,7 +212,7 @@ fn update_body_from_flags(
 
 /// Handles `PrCommand::Update` once the body is built and validated: calls
 /// `PUT .../pullrequests/{id}` and prints the updated pull request.
-fn run_update(repository: &str, id: u64, body: &Value, select: cli_fields::Select<'_>, identity: Identity) -> Result<(), CliError> {
+fn run_update(repository: &str, id: u64, body: &Value, select: cli_fields::Select<'_>, identity: &Identity) -> Result<(), CliError> {
     let (workspace, repo_slug) = split_repository(repository)?;
     let value = authenticated_client(identity)?
         .update_pull_request(workspace, repo_slug, id, body)

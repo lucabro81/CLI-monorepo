@@ -6,7 +6,7 @@
 //!   the config dir (whole file / one identity's section), mapping
 //!   `OAuthConfigError` to `CliError`.
 //! - `authenticated_client` — the standard sequence for commands that call the
-//!   Confluence API as an identity (service account, or the human with `--user`):
+//!   Confluence API as an identity (service account, or a person with `--user <id>`):
 //!   load its config section → load its credentials → refresh if expired → build client.
 //!   Centralised here so each command handler calls one function instead of
 //!   repeating the load/refresh/build chain.
@@ -37,7 +37,7 @@ pub fn load_app_config() -> Result<AppConfig, CliError> {
 }
 
 /// Loads the OAuth app of `identity` from `app.json`.
-pub fn load_oauth_config(identity: Identity) -> Result<OAuthConfig, CliError> {
+pub fn load_oauth_config(identity: &Identity) -> Result<OAuthConfig, CliError> {
     let path = auth::app_config_path(&config_dir()?);
     oauth_section(load_app_config()?, identity, &path)
 }
@@ -52,26 +52,33 @@ pub(crate) fn app_config_error(error: OAuthConfigError, path: &Path) -> CliError
 }
 
 /// `app`'s section for `identity`, or an error naming the `init` command that adds it.
-pub(crate) fn oauth_section(app: AppConfig, identity: Identity, path: &Path) -> Result<OAuthConfig, CliError> {
+pub(crate) fn oauth_section(app: AppConfig, identity: &Identity, path: &Path) -> Result<OAuthConfig, CliError> {
     let path_str = || path.display().to_string();
     match identity {
         Identity::Service => app.service.ok_or_else(|| CliError::ServiceAppMissing { path: path_str() }),
-        Identity::User => app.user.ok_or_else(|| CliError::UserAppMissing { path: path_str() }),
+        Identity::User(id) => {
+            app.user.ok_or_else(|| CliError::UserAppMissing { path: path_str(), id: id.to_string() })
+        }
     }
 }
 
 /// The command that logs `identity` in again.
-pub(crate) fn login_command(identity: Identity) -> &'static str {
+pub(crate) fn login_command(identity: &Identity) -> String {
     match identity {
-        Identity::Service => "confluence auth login",
-        Identity::User => "confluence auth login --user",
+        Identity::Service => "confluence auth login".to_string(),
+        Identity::User(id) => format!("confluence auth login --user {id}"),
     }
 }
 
-/// Maps a failure to load or renew `identity`'s stored credentials.
-pub(crate) fn login_error_to_cli(error: LoginError, identity: Identity) -> CliError {
+/// Maps a failure to load or renew `identity`'s stored credentials, kept at `credentials_path`.
+pub(crate) fn login_error_to_cli(error: LoginError, credentials_path: &Path, identity: &Identity) -> CliError {
     let login = login_command(identity);
     match error {
+        // An unwritable file or folder: logging in again would not help.
+        LoginError::SaveCredentials(_) => CliError::SaveCredentialsFailed {
+            path: credentials_path.display().to_string(),
+            reason: error.to_string(),
+        },
         LoginError::TokenExchange(reason) | LoginError::AccessibleResources(reason) => {
             CliError::TokenRefreshFailed { reason, login }
         }
@@ -81,18 +88,18 @@ pub(crate) fn login_error_to_cli(error: LoginError, identity: Identity) -> CliEr
         },
         _ => match identity {
             Identity::Service => CliError::NotAuthenticatedService,
-            Identity::User => CliError::NotAuthenticatedUser,
+            Identity::User(id) => CliError::NotAuthenticatedUser { id: id.to_string() },
         },
     }
 }
 
 /// Loads and auto-refreshes `identity`'s OAuth credentials, then builds an authenticated Confluence client.
 /// Returns a clear error if that identity is not logged in or its session has expired.
-pub fn authenticated_client(identity: Identity) -> Result<ConfluenceClient, CliError> {
+pub fn authenticated_client(identity: &Identity) -> Result<ConfluenceClient, CliError> {
     let oauth_config = load_oauth_config(identity)?;
     let path = auth::credentials_path(&config_dir()?, identity);
     let credentials =
-        auth::load_credentials(&oauth_config, &path, identity).map_err(|e| login_error_to_cli(e, identity))?;
+        auth::load_credentials(&oauth_config, &path, identity).map_err(|e| login_error_to_cli(e, &path, identity))?;
     Ok(ConfluenceClient::new(&credentials))
 }
 

@@ -1,22 +1,27 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use atlassian_auth::{Identity, LoginError};
-use oauth_user_login::{PendingLogin, PendingLoginError};
+use oauth_user_login::{PendingLogin, PendingLoginError, UserId};
 use serde_json::json;
 
 use super::{LoginMode, remote_login_error, remote_start_output};
 
+fn alice() -> UserId {
+    UserId::parse("alice").unwrap()
+}
+
 #[test]
 fn login_mode_follows_the_flags() {
-    assert_eq!(LoginMode::from_flags(Identity::Service, None, None, None).unwrap(), LoginMode::ServiceAccount);
-    assert_eq!(LoginMode::from_flags(Identity::User, None, None, None).unwrap(), LoginMode::UserBrowser);
+    let user = Identity::User(alice());
+    assert_eq!(LoginMode::from_flags(&Identity::Service, None, None, None).unwrap(), LoginMode::ServiceAccount);
+    assert_eq!(LoginMode::from_flags(&user, None, None, None).unwrap(), LoginMode::UserBrowser(alice()));
     assert_eq!(
-        LoginMode::from_flags(Identity::User, Some("https://m/cb".to_string()), None, None).unwrap(),
-        LoginMode::RemoteStart { redirect_uri: "https://m/cb".to_string() }
+        LoginMode::from_flags(&user, Some("https://m/cb".to_string()), None, None).unwrap(),
+        LoginMode::RemoteStart { id: alice(), redirect_uri: "https://m/cb".to_string() }
     );
     assert_eq!(
-        LoginMode::from_flags(Identity::User, None, Some("c".to_string()), Some("s".to_string())).unwrap(),
-        LoginMode::RemoteComplete { code: "c".to_string(), state: "s".to_string() }
+        LoginMode::from_flags(&user, None, Some("c".to_string()), Some("s".to_string())).unwrap(),
+        LoginMode::RemoteComplete { id: alice(), code: "c".to_string(), state: "s".to_string() }
     );
 }
 
@@ -25,29 +30,30 @@ fn remote_login_without_user_is_rejected_with_the_corrected_command() {
     // Regression guard for issue #164: --user became global, and clap cannot
     // enforce `requires = "user"` when --user is written before the
     // subcommand, so the check moved here.
-    let start = LoginMode::from_flags(Identity::Service, Some("https://m/cb".to_string()), None, None)
+    let start = LoginMode::from_flags(&Identity::Service, Some("https://m/cb".to_string()), None, None)
         .unwrap_err()
         .to_string();
-    let complete = LoginMode::from_flags(Identity::Service, None, Some("c".to_string()), Some("s".to_string()))
+    let complete = LoginMode::from_flags(&Identity::Service, None, Some("c".to_string()), Some("s".to_string()))
         .unwrap_err()
         .to_string();
 
-    let expected = "a remote login (--remote, --code, --state) logs in the human identity and needs --user. \
-        Retry with --user: confluence auth login --user --remote --redirect-uri <redirect-uri>, \
-        then confluence auth login --user --code <CODE> --state <STATE>";
+    let expected = "a remote login (--remote, --code, --state) logs in a person and needs --user <USER_ID>. \
+        Retry with: confluence auth login --user <USER_ID> --remote --redirect-uri <redirect-uri>, \
+        then confluence auth login --user <USER_ID> --code <CODE> --state <STATE>";
     assert_eq!(start, expected);
     assert_eq!(complete, expected);
 }
 
 #[test]
 fn each_login_mode_saves_to_its_own_identity() {
-    // A service login must never overwrite the human's credentials, and vice versa.
+    // A login must only ever write the credentials of the identity it names.
+    let user = Identity::User(alice());
     assert_eq!(LoginMode::ServiceAccount.identity(), Identity::Service);
-    assert_eq!(LoginMode::UserBrowser.identity(), Identity::User);
-    assert_eq!(LoginMode::RemoteStart { redirect_uri: "u".to_string() }.identity(), Identity::User);
+    assert_eq!(LoginMode::UserBrowser(alice()).identity(), user);
+    assert_eq!(LoginMode::RemoteStart { id: alice(), redirect_uri: "u".to_string() }.identity(), user);
     assert_eq!(
-        LoginMode::RemoteComplete { code: "c".to_string(), state: "s".to_string() }.identity(),
-        Identity::User
+        LoginMode::RemoteComplete { id: alice(), code: "c".to_string(), state: "s".to_string() }.identity(),
+        user
     );
 }
 
@@ -68,7 +74,7 @@ fn remote_start_output_has_url_state_and_rfc3339_expiry_but_never_the_verifier()
     assert!(!output.to_string().contains(pending.code_verifier.as_deref().unwrap()));
 }
 
-const RESTART: &str = "Start a new remote login with: confluence auth login --user --remote --redirect-uri <redirect-uri>";
+const RESTART: &str = "Start a new remote login with: confluence auth login --user alice --remote --redirect-uri <redirect-uri>";
 
 #[test]
 fn pending_login_errors_say_how_to_restart() {
@@ -77,7 +83,7 @@ fn pending_login_errors_say_how_to_restart() {
         (PendingLoginError::Expired, "expired"),
         (PendingLoginError::StateMismatch, "Use the code and state of the latest link"),
     ] {
-        let err = remote_login_error(LoginError::PendingLogin(error)).to_string();
+        let err = remote_login_error(LoginError::PendingLogin(error), &alice()).to_string();
 
         assert!(err.starts_with("remote login failed: "), "got {err}");
         assert!(err.contains(fragment), "got {err}");
@@ -87,7 +93,7 @@ fn pending_login_errors_say_how_to_restart() {
 
 #[test]
 fn a_refused_code_explains_codes_are_single_use() {
-    let err = remote_login_error(LoginError::TokenExchange("403 Forbidden: invalid_grant".to_string()));
+    let err = remote_login_error(LoginError::TokenExchange("403 Forbidden: invalid_grant".to_string()), &alice());
 
     assert_eq!(
         err.to_string(),
@@ -103,7 +109,7 @@ fn a_refused_code_explains_codes_are_single_use() {
 #[test]
 fn every_other_step_two_failure_also_says_how_to_restart() {
     for error in [LoginError::NoAccessibleResources, LoginError::AccessibleResources("500".to_string())] {
-        let err = remote_login_error(error).to_string();
+        let err = remote_login_error(error, &alice()).to_string();
 
         assert!(err.starts_with("remote login failed: "), "got {err}");
         assert!(!err.contains("refused the code"), "got {err}");

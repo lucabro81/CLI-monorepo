@@ -12,16 +12,18 @@
 //!
 //! Other layers:
 //!
-//! - **Identities** (`Identity`) — every crate stores two identities side by
-//!   side (issue #164): the service identity (`client_credentials`, the
-//!   default) and the human (`--user`). Each has its own `app.json` section and
-//!   its own credentials file.
+//! - **Identities** (`Identity`) — every crate stores its identities side by
+//!   side: the service identity (`client_credentials`, the default, issue #164)
+//!   and any number of humans (`--user <id>`, issue #175). The service identity
+//!   uses `app.json`'s `service` section, every human the `user` section; each
+//!   identity has its own credentials file.
 //! - **App identity** (`AppConfig`, one `OAuthConfig` per section) — the static
 //!   Atlassian OAuth app credentials loaded from a crate's `app.json`, with
 //!   helpers for loading, validating and rewriting the file.
 //! - **Session credentials** (`Credentials`) — the dynamic token set (access token,
 //!   optional refresh token, expiry, cloud ID, optional site URL) persisted to
-//!   the identity's `credentials-service.json` / `credentials-user.json`.
+//!   the identity's `credentials-service.json` / `users/<id>/credentials.json`,
+//!   renewed under a per-file lock.
 //!
 //! `refresh` exchanges a refresh token for a new token pair. Atlassian refresh
 //! tokens **rotate on every use** — the new pair must always be persisted immediately
@@ -129,10 +131,11 @@ impl AppConfig {
     }
 
     /// The OAuth app configured for `identity`, if its section is present.
-    pub fn section(&self, identity: Identity) -> Option<&OAuthConfig> {
+    /// Every human uses the same `user` section (issue #175).
+    pub fn section(&self, identity: &Identity) -> Option<&OAuthConfig> {
         match identity {
             Identity::Service => self.service.as_ref(),
-            Identity::User => self.user.as_ref(),
+            Identity::User(_) => self.user.as_ref(),
         }
     }
 }
@@ -140,19 +143,6 @@ impl AppConfig {
 /// Path to a crate's app credentials file: `<config_dir>/<cli_dir>/app.json`.
 pub fn app_config_path(config_dir: &Path, cli_dir: &str) -> PathBuf {
     config_dir.join(cli_dir).join("app.json")
-}
-
-/// The single credentials file used before issue #164:
-/// `<config_dir>/<cli_dir>/credentials.json`. No longer read; crates only
-/// report it (`doctor`) so it can be deleted. See [`Identity::credentials_path`].
-pub fn legacy_credentials_path(config_dir: &Path, cli_dir: &str) -> PathBuf {
-    config_dir.join(cli_dir).join("credentials.json")
-}
-
-/// Path to the state kept between the two steps of a remote login:
-/// `<config_dir>/<cli_dir>/pending-login.json`.
-pub fn pending_login_path(config_dir: &Path, cli_dir: &str) -> PathBuf {
-    config_dir.join(cli_dir).join("pending-login.json")
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -203,6 +193,10 @@ pub enum LoginError {
     /// e.g. after a successful code exchange — not a refused code.
     #[error("could not list the Atlassian sites this account can access ({0}). Retry the login")]
     AccessibleResources(String),
+    /// Writing the credentials file (or taking its lock) failed, e.g. an
+    /// unwritable config folder — distinct from `Io`, which covers reading it.
+    #[error("could not write credentials file: {0}")]
+    SaveCredentials(String),
     /// A condition that should be unreachable given valid inputs.
     /// If this surfaces it indicates a bug in the CLI itself.
     #[error("internal error: {0}")]
@@ -529,9 +523,9 @@ pub fn renew(config: &OAuthConfig, credentials: &Credentials) -> Result<Credenti
 /// grant from the stored token (`refresh_token` or `client_credentials`), so
 /// without this check a human slot with no refresh token would be renewed as
 /// the app, and a service slot holding a human login as that human.
-pub fn check_identity(credentials: &Credentials, identity: Identity) -> Result<(), LoginError> {
+pub fn check_identity(credentials: &Credentials, identity: &Identity) -> Result<(), LoginError> {
     match (identity, credentials.refresh_token.is_some()) {
-        (Identity::User, false) => Err(LoginError::WrongIdentity(
+        (Identity::User(_), false) => Err(LoginError::WrongIdentity(
             "the human credentials file holds no refresh token, so it is not a human login",
         )),
         (Identity::Service, true) => Err(LoginError::WrongIdentity(
@@ -542,34 +536,60 @@ pub fn check_identity(credentials: &Credentials, identity: Identity) -> Result<(
 }
 
 /// Loads `identity`'s credentials from disk, renewing them first if the access token has expired.
-pub fn load_credentials(config: &OAuthConfig, path: &Path, identity: Identity) -> Result<Credentials, LoginError> {
+pub fn load_credentials(config: &OAuthConfig, path: &Path, identity: &Identity) -> Result<Credentials, LoginError> {
+    load_credentials_with(path, identity, |credentials| renew(config, credentials))
+}
+
+/// [`load_credentials`] with the renewal injected, so tests can count and fake it.
+///
+/// Renewal runs under an exclusive lock on the file (issue #175): two calls
+/// for the same identity may both find the token expired, and Atlassian
+/// refresh tokens rotate, so the second must not spend the refresh token the
+/// first already used. After taking the lock the file is read again, and a
+/// token renewed meanwhile is returned as is.
+pub(crate) fn load_credentials_with(
+    path: &Path,
+    identity: &Identity,
+    renew: impl FnOnce(&Credentials) -> Result<Credentials, LoginError>,
+) -> Result<Credentials, LoginError> {
+    let credentials = read_credentials(path, identity)?;
+    if !expiring(&credentials) {
+        return Ok(credentials);
+    }
+
+    let _lock = oauth_user_login::lock_exclusive(path).map_err(|e| LoginError::SaveCredentials(e.to_string()))?;
+    let credentials = read_credentials(path, identity)?;
+    if !expiring(&credentials) {
+        return Ok(credentials);
+    }
+    let renewed = renew(&credentials)?;
+    save_credentials(path, &renewed)?;
+    Ok(renewed)
+}
+
+fn read_credentials(path: &Path, identity: &Identity) -> Result<Credentials, LoginError> {
     let raw = std::fs::read_to_string(path).map_err(LoginError::Io)?;
     let credentials: Credentials =
         serde_json::from_str(&raw).map_err(|e| LoginError::TokenExchange(e.to_string()))?;
     check_identity(&credentials, identity)?;
-
-    if now_unix() + 60 >= credentials.expires_at {
-        let renewed = renew(config, &credentials)?;
-        save_credentials(path, &renewed)?;
-        return Ok(renewed);
-    }
-
     Ok(credentials)
 }
 
-/// Serialises credentials to JSON and writes them to `path`, creating parent directories as needed.
+/// Renewed a minute early, so a token never expires mid-command.
+fn expiring(credentials: &Credentials) -> bool {
+    now_unix() + 60 >= credentials.expires_at
+}
+
+/// Writes credentials as JSON to `path` (atomically, owner-only), creating parent directories as needed.
 pub fn save_credentials(path: &Path, credentials: &Credentials) -> Result<(), LoginError> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(LoginError::Io)?;
-    }
     let json = serde_json::to_string_pretty(credentials).map_err(|e| {
         LoginError::Internal(format!("failed to serialize credentials: {e}"))
     })?;
-    std::fs::write(path, json).map_err(LoginError::Io)
+    oauth_user_login::write_secret_file(path, json.as_bytes()).map_err(|e| LoginError::SaveCredentials(e.to_string()))
 }
 
 /// Dynamic session credentials persisted to the identity's credentials file
-/// (`credentials-service.json` / `credentials-user.json`).
+/// (`credentials-service.json` / `users/<id>/credentials.json`).
 /// Fully managed by the CLI — never edit by hand. Refreshed transparently before expiry.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Credentials {

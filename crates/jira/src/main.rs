@@ -47,15 +47,15 @@ fn run() -> Result<(), CliError> {
         cli_fields::Select::Fields(&select_paths)
     };
 
-    // Global --user: act as the human instead of the service account.
+    // Global --user <id>: act as that person instead of the service account.
     let identity = Identity::from_user_flag(cli.user);
 
     match cli.command {
         Command::Init { client_id, client_secret } => {
-            commands::init::run_init(identity, client_id, client_secret)
+            commands::init::run_init(&identity, client_id, client_secret)
         }
         Command::Doctor => {
-            let (report, all_ok) = commands::doctor::run_doctor(identity)?;
+            let (report, all_ok) = commands::doctor::run_doctor(&identity)?;
             // Exempt from the mandatory --select requirement: the report is generated
             // internally (fixed, small shape, not an arbitrary external blob). An
             // explicit --select/--select-all is still honored if passed.
@@ -66,12 +66,13 @@ fn run() -> Result<(), CliError> {
             Ok(())
         }
         Command::Auth { command: AuthCommand::Login { remote: _, redirect_uri, code, state } } => {
-            commands::auth::run_login(commands::auth::LoginMode::from_flags(identity, redirect_uri, code, state)?, select)
+            commands::auth::run_login(commands::auth::LoginMode::from_flags(&identity, redirect_uri, code, state)?, select)
         }
-        Command::Auth { command: AuthCommand::Whoami } => commands::auth::run_whoami(select, identity),
-        Command::Issue { command } => commands::issue::run(command, select, identity),
-        Command::User { command } => commands::user::run(command, select, identity),
-        Command::Project { command } => commands::project::run(command, select, identity),
+        Command::Auth { command: AuthCommand::Whoami } => commands::auth::run_whoami(select, &identity),
+        Command::Auth { command: AuthCommand::Logout } => commands::auth::run_logout(select, &identity),
+        Command::Issue { command } => commands::issue::run(command, select, &identity),
+        Command::User { command } => commands::user::run(command, select, &identity),
+        Command::Project { command } => commands::project::run(command, select, &identity),
     }
 }
 

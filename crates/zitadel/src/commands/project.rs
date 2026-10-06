@@ -15,7 +15,7 @@ use crate::error::CliError;
 
 const FILTER_CONTAINS_IGNORE_CASE: &str = "TEXT_FILTER_METHOD_CONTAINS_IGNORE_CASE";
 
-pub fn run(command: ProjectCommand, select: cli_fields::Select<'_>, identity: Identity) -> Result<(), CliError> {
+pub fn run(command: ProjectCommand, select: cli_fields::Select<'_>, identity: &Identity) -> Result<(), CliError> {
     match command {
         ProjectCommand::List {
             name,

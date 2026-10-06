@@ -81,12 +81,14 @@ than barrel ahead.
 3. **Decide and confirm with the user** (AskUserQuestion for anything
    ambiguous): grant type, scopes needed for the baseline commands (step 3),
    config file layout (`app.json` / `credentials-service.json` /
-   `credentials-user.json` under `$XDG_CONFIG_HOME/<crate>-cli/`, matching
-   existing crates unless there's a reason to deviate), whether the service
-   has both a non-interactive and a human identity (then follow root
-   `CLAUDE.md`'s "Two identities per CLI": global `--user`, one credentials
-   file and one `app.json` section per identity), and whether a one-time
-   human bootstrap step (`init --user` equivalent) is required.
+   `users/<id>/credentials.json` under `$XDG_CONFIG_HOME/<crate>-cli/`,
+   matching existing crates unless there's a reason to deviate), whether the
+   service has both a non-interactive and a human identity (then follow root
+   `CLAUDE.md`'s "Service and per-person identities": global `--user <USER_ID>`,
+   one credentials file per identity and per person, renewal under
+   `oauth_user_login::lock_exclusive`, secrets written with
+   `write_secret_file`, `auth logout`), and whether a one-time human bootstrap
+   step (`init --user <id>` equivalent) is required.
 4. Write this decision down as a draft "Auth design" section for
    `crates/<crate>/CLAUDE.md` (you'll place it properly in step 4) — don't
    leave it only in conversation, the bootstrap step (step 5) implements

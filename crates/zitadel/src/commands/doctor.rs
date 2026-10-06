@@ -5,19 +5,21 @@
 //! 1. `app_config` — `app.json` exists and is valid; reports the instance URL and
 //!    whether the service user key / Native app client id are configured.
 //! 2. `credentials` — the selected identity's credentials file
-//!    (`credentials-service.json`, or `credentials-user.json` with `--user`) holds
-//!    a usable token (renewed first if expiring); reports the identity kind
+//!    (`credentials-service.json`, or `users/<id>/credentials.json` with
+//!    `--user <id>`) holds a usable token (renewed first if expiring, under the
+//!    same lock as every command's); reports the identity kind
 //!    (`service_user` / `user`) and expiry.
 //! 3. `api` — live `GET /auth/v1/users/me`: user id, name, type, organization.
 //! 4. `memberships` — the identity's administrator roles per instance /
 //!    organization / project / project grant. ZITADEL authorizes by these roles,
 //!    so they decide which commands will succeed; none at all is an error.
 //!
-//! 5. `pending_login` — informational, outside the cascade and `all_ok`: whether a
-//!    two-step `auth login --user --remote` is waiting for its code, and until when.
+//! 5. `pending_login` — informational, outside the cascade and `all_ok`: whether
+//!    the selected person's two-step `auth login --user <id> --remote` is waiting
+//!    for its code, and until when (always `none` for the service user).
 //! 6. `identities` — informational, outside the cascade and `all_ok`, no network:
-//!    the identity checked, which identities have a credentials file, and whether
-//!    a pre-#164 `credentials.json` is still lying around.
+//!    the identity checked, whether the service user is logged in, the ids of the
+//!    people logged in, and credentials files of earlier layouts still lying around.
 //!
 //! Checks cascade: a failed check marks every later check `skipped`. Failures
 //! never surface as `Err` — they are captured in the report, and the caller
@@ -32,12 +34,12 @@ use crate::client::ZitadelClient;
 use crate::context::{client_error_to_cli, config_dir, login_command};
 use crate::error::CliError;
 
-pub fn run_doctor(identity: Identity) -> Result<(Value, bool), CliError> {
+pub fn run_doctor(identity: &Identity) -> Result<(Value, bool), CliError> {
     Ok(run_doctor_in(&config_dir()?, identity))
 }
 
 /// Runs every check against `config_dir` for `identity`. Returns `(report, all_ok)`.
-pub(crate) fn run_doctor_in(config_dir: &Path, identity: Identity) -> (Value, bool) {
+pub(crate) fn run_doctor_in(config_dir: &Path, identity: &Identity) -> (Value, bool) {
     let (app_check, config) = check_app_config(config_dir);
     let (creds_check, client) = match &config {
         Some(config) => check_credentials(config, config_dir, identity),
@@ -61,16 +63,20 @@ pub(crate) fn run_doctor_in(config_dir: &Path, identity: Identity) -> (Value, bo
         "credentials": creds_check,
         "api": identity_check,
         "memberships": memberships_check,
-        "pending_login": check_pending_login(config_dir, auth::now_unix()),
+        "pending_login": check_pending_login(config_dir, identity, auth::now_unix()),
         "identities": check_identities(config_dir, identity),
     });
     (report, all_ok)
 }
 
-/// Informational: a two-step (`--remote`) login waiting for its code. Never
-/// affects `all_ok` (an idle CLI has none, and that is fine).
-pub(crate) fn check_pending_login(config_dir: &Path, now: u64) -> Value {
-    match oauth_user_login::pending_login_status(&auth::pending_login_path(config_dir), now) {
+/// Informational: the selected person's two-step (`--remote`) login waiting
+/// for its code. Never affects `all_ok` (an idle CLI has none, and that is
+/// fine); the service user never has one.
+pub(crate) fn check_pending_login(config_dir: &Path, identity: &Identity, now: u64) -> Value {
+    let Identity::User(id) = identity else {
+        return json!({"status": "none"});
+    };
+    match oauth_user_login::pending_login_status(&auth::pending_login_path(config_dir, id), now) {
         Ok(None) => json!({"status": "none"}),
         Ok(Some(status)) => json!({
             "status": "pending",
@@ -80,32 +86,33 @@ pub(crate) fn check_pending_login(config_dir: &Path, now: u64) -> Value {
         Err(e) => json!({
             "status": "error",
             "message": format!(
-                "{e}. Start a new remote login with: zitadel auth login --user --remote --redirect-uri <redirect-uri>"
+                "{e}. Start a new remote login with: zitadel auth login --user {id} --remote --redirect-uri <redirect-uri>"
             ),
         }),
     }
 }
 
-/// Informational, no network: which identity this report checks, which
-/// identities have a credentials file, and whether a pre-#164
-/// `credentials.json` (no longer read) is still there to be deleted.
-pub(crate) fn check_identities(config_dir: &Path, selected: Identity) -> Value {
-    let name = |identity: Identity| match identity {
-        Identity::Service => "service",
-        Identity::User => "user",
+/// Informational, no network: which identity this report checks, whether
+/// the service user is logged in, the ids of the people logged in, and
+/// credentials files of earlier layouts (no longer read) still there to be deleted.
+pub(crate) fn check_identities(config_dir: &Path, selected: &Identity) -> Value {
+    let service = if auth::credentials_path(config_dir, &Identity::Service).exists() {
+        "present"
+    } else {
+        "missing"
     };
-    let presence = |identity: Identity| {
-        if auth::credentials_path(config_dir, identity).exists() {
-            "present"
-        } else {
-            "missing"
-        }
-    };
+    // An unreadable users/ folder lists nobody; the selected identity's own
+    // checks above report any real problem.
+    let users: Vec<String> = auth::list_users(config_dir)
+        .unwrap_or_default()
+        .iter()
+        .map(ToString::to_string)
+        .collect();
     json!({
-        "selected": name(selected),
-        "service": presence(Identity::Service),
-        "user": presence(Identity::User),
-        "legacy_credentials_file": auth::legacy_credentials_path(config_dir).exists(),
+        "selected": selected.label(),
+        "service": service,
+        "users": users,
+        "legacy_credentials_files": auth::legacy_credentials_files(config_dir),
     })
 }
 
@@ -146,7 +153,7 @@ fn check_app_config(config_dir: &Path) -> (Value, Option<AppConfig>) {
     }
 }
 
-fn check_credentials(config: &AppConfig, config_dir: &Path, identity: Identity) -> (Value, Option<ZitadelClient>) {
+fn check_credentials(config: &AppConfig, config_dir: &Path, identity: &Identity) -> (Value, Option<ZitadelClient>) {
     let path = auth::credentials_path(config_dir, identity);
     let login = login_command(identity);
     match auth::load_credentials(config, &path, identity) {

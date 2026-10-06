@@ -11,6 +11,10 @@ fn parse(args: &[&str]) -> Result<Cli, clap::Error> {
     Cli::try_parse_from(std::iter::once("zitadel").chain(args.iter().copied()))
 }
 
+fn user(cli: &Cli) -> Option<&str> {
+    cli.user.as_ref().map(oauth_user_login::UserId::as_str)
+}
+
 fn error_kind(args: &[&str]) -> ErrorKind {
     parse(args).unwrap_err().kind()
 }
@@ -19,7 +23,7 @@ fn error_kind(args: &[&str]) -> ErrorKind {
 fn parses_auth_login() {
     let cli = parse(&["auth", "login"]).unwrap();
 
-    assert!(!cli.user);
+    assert_eq!(cli.user, None);
     assert!(matches!(
         cli.command,
         Command::Auth {
@@ -30,9 +34,9 @@ fn parses_auth_login() {
 
 #[test]
 fn parses_auth_login_user() {
-    let cli = parse(&["auth", "login", "--user"]).unwrap();
+    let cli = parse(&["auth", "login", "--user", "alice"]).unwrap();
 
-    assert!(cli.user);
+    assert_eq!(user(&cli), Some("alice"));
     assert!(matches!(
         cli.command,
         Command::Auth {
@@ -43,11 +47,12 @@ fn parses_auth_login_user() {
 
 #[test]
 fn parses_auth_login_remote_start() {
-    let cli = parse(&["auth", "login", "--user", "--remote", "--redirect-uri", "https://m.example/cb"]).unwrap();
+    let cli = parse(&["auth", "login", "--user", "alice", "--remote", "--redirect-uri", "https://m.example/cb"]).unwrap();
 
+    assert_eq!(user(&cli), Some("alice"));
     match cli.command {
         Command::Auth { command: AuthCommand::Login { remote, redirect_uri, code, state } } => {
-            assert!(cli.user && remote);
+            assert!(remote);
             assert_eq!(redirect_uri.as_deref(), Some("https://m.example/cb"));
             assert_eq!((code, state), (None, None));
         }
@@ -57,11 +62,12 @@ fn parses_auth_login_remote_start() {
 
 #[test]
 fn parses_auth_login_remote_complete() {
-    let cli = parse(&["auth", "login", "--user", "--code", "c1", "--state", "s1"]).unwrap();
+    let cli = parse(&["auth", "login", "--user", "alice", "--code", "c1", "--state", "s1"]).unwrap();
 
+    assert_eq!(user(&cli), Some("alice"));
     match cli.command {
         Command::Auth { command: AuthCommand::Login { remote, redirect_uri, code, state } } => {
-            assert!(cli.user && !remote);
+            assert!(!remote);
             assert_eq!(redirect_uri, None);
             assert_eq!((code.as_deref(), state.as_deref()), (Some("c1"), Some("s1")));
         }
@@ -73,28 +79,28 @@ fn parses_auth_login_remote_complete() {
 fn remote_requires_redirect_uri() {
     // "--remote/--code need --user" is checked by LoginMode::from_flags, not clap:
     // clap cannot see a global --user written before the subcommand.
-    assert_eq!(error_kind(&["auth", "login", "--user", "--remote"]), ErrorKind::MissingRequiredArgument);
+    assert_eq!(error_kind(&["auth", "login", "--user", "alice", "--remote"]), ErrorKind::MissingRequiredArgument);
 }
 
 #[test]
 fn redirect_uri_requires_remote() {
     assert_eq!(
-        error_kind(&["auth", "login", "--user", "--redirect-uri", "https://m.example/cb"]),
+        error_kind(&["auth", "login", "--user", "alice", "--redirect-uri", "https://m.example/cb"]),
         ErrorKind::MissingRequiredArgument
     );
 }
 
 #[test]
 fn code_requires_state_and_state_requires_code() {
-    assert_eq!(error_kind(&["auth", "login", "--user", "--code", "c1"]), ErrorKind::MissingRequiredArgument);
-    assert_eq!(error_kind(&["auth", "login", "--user", "--state", "s1"]), ErrorKind::MissingRequiredArgument);
+    assert_eq!(error_kind(&["auth", "login", "--user", "alice", "--code", "c1"]), ErrorKind::MissingRequiredArgument);
+    assert_eq!(error_kind(&["auth", "login", "--user", "alice", "--state", "s1"]), ErrorKind::MissingRequiredArgument);
 }
 
 #[test]
 fn remote_start_and_completion_cannot_be_combined() {
     assert_eq!(
         error_kind(&[
-            "auth", "login", "--user", "--remote", "--redirect-uri", "https://m.example/cb", "--code", "c1",
+            "auth", "login", "--user", "alice", "--remote", "--redirect-uri", "https://m.example/cb", "--code", "c1",
             "--state", "s1",
         ]),
         ErrorKind::ArgumentConflict
@@ -311,32 +317,57 @@ fn cli_definition_is_consistent() {
     Cli::command().debug_assert();
 }
 
-// ── global --user (issue #164) ──────────────────────────────────────────
+// ── global --user <id> (issues #164, #175) ─────────────────────────────
 
 #[test]
 fn user_flag_defaults_to_the_service_user() {
-    assert!(!parse(&["user", "search"]).unwrap().user);
+    assert_eq!(parse(&["user", "search"]).unwrap().user, None);
 }
 
 #[test]
 fn user_flag_is_accepted_after_any_subcommand() {
     for args in [
-        &["user", "search", "--user"][..],
-        &["user", "get", "123456789012345678", "--user"],
-        &["organization", "list", "--user"],
-        &["project", "list", "--user"],
-        &["auth", "whoami", "--user"],
-        &["doctor", "--user"],
-        &["init", "--user"],
+        &["user", "search", "--user", "alice"][..],
+        &["user", "get", "123456789012345678", "--user", "alice"],
+        &["organization", "list", "--user", "alice"],
+        &["project", "list", "--user", "alice"],
+        &["auth", "whoami", "--user", "alice"],
+        &["doctor", "--user", "alice"],
+        &["init", "--user", "alice"],
     ] {
         let cli = parse(args).unwrap_or_else(|e| panic!("{args:?}: {e}"));
-        assert!(cli.user, "{args:?} should select the human identity");
+        assert_eq!(user(&cli), Some("alice"), "{args:?} should select that person");
     }
 }
 
 #[test]
 fn user_flag_is_accepted_before_the_subcommand() {
-    let cli = parse(&["--user", "auth", "login", "--code", "c1", "--state", "s1"]).unwrap();
+    let cli = parse(&["--user", "alice", "auth", "login", "--code", "c1", "--state", "s1"]).unwrap();
 
-    assert!(cli.user);
+    assert_eq!(user(&cli), Some("alice"));
+}
+
+#[test]
+fn user_flag_needs_the_persons_id() {
+    // Issue #175: --user names the person; a bare --user would silently pick
+    // whoever logged in last.
+    assert_eq!(error_kind(&["user", "search", "--user"]), ErrorKind::InvalidValue);
+}
+
+#[test]
+fn user_flag_rejects_an_id_that_is_not_a_slug() {
+    for id in ["Jane", "../etc", "a/b", ".hidden", "jane doe"] {
+        let err = parse(&["auth", "whoami", "--user", id]).unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::ValueValidation, "{id}");
+        assert!(err.to_string().contains("lowercase slug"), "{id}: {err}");
+    }
+}
+
+#[test]
+fn parses_auth_logout() {
+    let cli = parse(&["auth", "logout", "--user", "alice"]).unwrap();
+
+    assert_eq!(user(&cli), Some("alice"));
+    assert!(matches!(cli.command, Command::Auth { command: AuthCommand::Logout }));
+    assert_eq!(parse(&["auth", "logout"]).unwrap().user, None);
 }

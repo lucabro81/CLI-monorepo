@@ -6,8 +6,8 @@ use crate::test_support::one_shot_server;
 
 use super::{
     AppConfig, AppConfigError, Credentials, KeyFileError, LoginError, ServiceUserKey, app_config_path,
-    build_assertion, credentials_path, is_expiring, legacy_credentials_path, Identity, jwt_claims, load_credentials,
-    login_service_user, save_credentials,
+    build_assertion, credentials_path, is_expiring, Identity, jwt_claims, load_credentials,
+    load_credentials_with, login_service_user, pending_login_path, save_credentials, UserId,
 };
 
 /// Throwaway RSA key pair generated only for these tests (PKCS#1, the format
@@ -150,14 +150,21 @@ fn config_paths_are_under_zitadel_cli_dir() {
 
     assert_eq!(app_config_path(base), base.join("zitadel-cli").join("app.json"));
     assert_eq!(
-        credentials_path(base, Identity::Service),
+        credentials_path(base, &Identity::Service),
         base.join("zitadel-cli").join("credentials-service.json")
     );
     assert_eq!(
-        credentials_path(base, Identity::User),
-        base.join("zitadel-cli").join("credentials-user.json")
+        credentials_path(base, &alice()),
+        base.join("zitadel-cli").join("users").join("alice").join("credentials.json")
     );
-    assert_eq!(legacy_credentials_path(base), base.join("zitadel-cli").join("credentials.json"));
+    assert_eq!(
+        pending_login_path(base, &UserId::parse("alice").unwrap()),
+        base.join("zitadel-cli").join("users").join("alice").join("pending-login.json")
+    );
+}
+
+fn alice() -> Identity {
+    Identity::User(UserId::parse("alice").unwrap())
 }
 
 // ── service user key file ───────────────────────────────────────────────
@@ -386,7 +393,7 @@ fn credentials_round_trip_through_disk() {
     );
     // Far-future expiry: returned as-is, no network call.
     let config = config_with("https://unused.invalid", None);
-    assert_eq!(load_credentials(&config, &path, Identity::User).unwrap(), creds);
+    assert_eq!(load_credentials(&config, &path, &alice()).unwrap(), creds);
 }
 
 #[test]
@@ -415,7 +422,7 @@ fn load_credentials_renews_expired_service_user_token_and_persists_it() {
     )
     .unwrap();
 
-    let creds = load_credentials(&config_with(&url, Some(test_key())), &path, Identity::Service).unwrap();
+    let creds = load_credentials(&config_with(&url, Some(test_key())), &path, &Identity::Service).unwrap();
     server.join().unwrap();
 
     assert_eq!(creds.access_token, "fresh");
@@ -431,14 +438,12 @@ fn token_is_expiring_within_60_second_leeway() {
     assert!(is_expiring(0, 1_000));
 }
 
-#[cfg(unix)]
 #[test]
 fn renewal_that_cannot_be_saved_is_reported_as_a_save_failure() {
     // Regression: a successful renewal followed by a failed write of
     // credentials.json used to surface as an I/O error indistinguishable from
     // "no credentials", which told the user to log in again instead of pointing
     // at the unwritable file.
-    use std::os::unix::fs::PermissionsExt;
     let (url, server) = one_shot_server(
         "200 OK",
         r#"{"access_token":"fresh","token_type":"Bearer","expires_in":43199}"#,
@@ -450,9 +455,11 @@ fn renewal_that_cannot_be_saved_is_reported_as_a_save_failure() {
         &Credentials { access_token: "stale".to_string(), refresh_token: None, expires_at: 0 },
     )
     .unwrap();
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o444)).unwrap();
+    // Credentials are written through a `<file>.tmp` sibling renamed over the
+    // target; a directory in its place makes that write fail.
+    std::fs::create_dir(dir.path().join("credentials.json.tmp")).unwrap();
 
-    let err = load_credentials(&config_with(&url, Some(test_key())), &path, Identity::Service).unwrap_err();
+    let err = load_credentials(&config_with(&url, Some(test_key())), &path, &Identity::Service).unwrap_err();
     server.join().unwrap();
 
     assert!(matches!(err, LoginError::SaveCredentials(_)), "got {err:?}");
@@ -464,7 +471,7 @@ fn corrupted_credentials_file_is_reported_as_such() {
     let path = dir.path().join("credentials.json");
     std::fs::write(&path, "{not json").unwrap();
 
-    let err = load_credentials(&config_with("https://unused.invalid", None), &path, Identity::Service).unwrap_err();
+    let err = load_credentials(&config_with("https://unused.invalid", None), &path, &Identity::Service).unwrap_err();
 
     assert!(matches!(err, LoginError::InvalidCredentialsFile(_)), "got {err:?}");
     // The login command depends on the identity, so the caller (CliError) adds it.
@@ -481,7 +488,7 @@ fn expired_service_user_token_without_key_cannot_be_renewed() {
     )
     .unwrap();
 
-    let err = load_credentials(&config_with("https://unused.invalid", None), &path, Identity::Service).unwrap_err();
+    let err = load_credentials(&config_with("https://unused.invalid", None), &path, &Identity::Service).unwrap_err();
 
     assert!(matches!(err, LoginError::ServiceUserNotConfigured), "got {err:?}");
 }
@@ -517,10 +524,10 @@ fn a_user_slot_without_a_refresh_token_is_refused_before_any_renewal() {
     // Renewal re-signs the service user's JWT when there is no refresh token,
     // which would make a --user command act as the service user.
     let dir = tempfile::tempdir().unwrap();
-    let path = credentials_path(dir.path(), Identity::User);
+    let path = credentials_path(dir.path(), &alice());
     save_credentials(&path, &unexpired(None)).unwrap();
 
-    let err = load_credentials(&config_with("https://unused.invalid", None), &path, Identity::User).unwrap_err();
+    let err = load_credentials(&config_with("https://unused.invalid", None), &path, &alice()).unwrap_err();
 
     assert!(matches!(err, LoginError::WrongIdentity(_)), "got {err:?}");
 }
@@ -528,10 +535,10 @@ fn a_user_slot_without_a_refresh_token_is_refused_before_any_renewal() {
 #[test]
 fn a_service_slot_holding_a_human_login_is_refused() {
     let dir = tempfile::tempdir().unwrap();
-    let path = credentials_path(dir.path(), Identity::Service);
+    let path = credentials_path(dir.path(), &Identity::Service);
     save_credentials(&path, &unexpired(Some("rt"))).unwrap();
 
-    let err = load_credentials(&config_with("https://unused.invalid", None), &path, Identity::Service).unwrap_err();
+    let err = load_credentials(&config_with("https://unused.invalid", None), &path, &Identity::Service).unwrap_err();
 
     assert!(matches!(err, LoginError::WrongIdentity(_)), "got {err:?}");
 }
@@ -539,11 +546,56 @@ fn a_service_slot_holding_a_human_login_is_refused() {
 #[test]
 fn saving_one_identity_leaves_the_other_identity_file_untouched() {
     let dir = tempfile::tempdir().unwrap();
-    let service = credentials_path(dir.path(), Identity::Service);
+    let service = credentials_path(dir.path(), &Identity::Service);
     save_credentials(&service, &unexpired(None)).unwrap();
     let before = std::fs::read(&service).unwrap();
 
-    save_credentials(&credentials_path(dir.path(), Identity::User), &unexpired(Some("rt"))).unwrap();
+    save_credentials(&credentials_path(dir.path(), &alice()), &unexpired(Some("rt"))).unwrap();
 
     assert_eq!(std::fs::read(&service).unwrap(), before);
+}
+
+fn expired(refresh_token: Option<&str>) -> Credentials {
+    Credentials { expires_at: 0, ..unexpired(refresh_token) }
+}
+
+fn renewed(access_token: &str) -> Credentials {
+    Credentials { access_token: access_token.to_string(), ..unexpired(Some("rt-2")) }
+}
+
+#[test]
+fn a_renewal_done_by_another_process_while_waiting_for_the_lock_is_reused() {
+    // Issue #175: two calls renewing the same person at once would each spend
+    // the same refresh token; the second must wait for the lock, re-read the
+    // file and keep the first one's result.
+    let dir = tempfile::tempdir().unwrap();
+    let path = credentials_path(dir.path(), &alice());
+    save_credentials(&path, &expired(Some("rt"))).unwrap();
+
+    let other_process = oauth_user_login::lock_exclusive(&path).unwrap();
+    let waiting = {
+        let path = path.clone();
+        std::thread::spawn(move || load_credentials_with(&path, &alice(), |_| panic!("must not renew: already renewed")))
+    };
+    std::thread::sleep(std::time::Duration::from_millis(100));
+    save_credentials(&path, &renewed("by-the-other-process")).unwrap();
+    drop(other_process);
+
+    assert_eq!(waiting.join().unwrap().unwrap(), renewed("by-the-other-process"));
+}
+
+#[test]
+fn expired_credentials_are_renewed_once_under_the_lock() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = credentials_path(dir.path(), &alice());
+    save_credentials(&path, &expired(Some("rt"))).unwrap();
+    let mut calls = 0;
+
+    let loaded = load_credentials_with(&path, &alice(), |_| {
+        calls += 1;
+        Ok(renewed("fresh"))
+    })
+    .unwrap();
+
+    assert_eq!((calls, loaded), (1, renewed("fresh")));
 }

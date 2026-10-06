@@ -10,6 +10,7 @@ CLI for Jira Cloud, designed to be driven by an LLM agent (output is JSON, error
   - [`jira init`](#jira-init)
   - [`jira doctor`](#jira-doctor)
   - [`jira auth login`](#jira-auth-login)
+  - [`jira auth logout`](#jira-auth-logout)
   - [`jira auth whoami`](#jira-auth-whoami)
   - [`jira issue get <KEY>`](#jira-issue-get-key)
   - [`jira issue create`](#jira-issue-create)
@@ -28,18 +29,21 @@ CLI for Jira Cloud, designed to be driven by an LLM agent (output is JSON, error
 
 ## Setup
 
-The CLI holds two identities side by side, and every command picks one per call:
+The CLI holds the Service Account and any number of people side by side, and every command picks one per call:
 
 - **Service Account (the default identity)** — what every command acts as without `--user`. Generated in Atlassian's admin console, with site access assigned by an org admin at generation time; no human ever needs to authorize anything — verified end-to-end against a real org: `jira auth login` and `jira doctor` (all six checks) succeed immediately with no browser step.
-- **Human (`--user`)** — what a command acts as when given `--user`. Needs a 3LO app registered in the developer console, plus one human completing a browser consent. Only needed if you want an interactive human identity in addition to the agent identity.
+- **A person (`--user <USER_ID>`)** — what a command acts as when given `--user <USER_ID>`. `<USER_ID>` is your own name for that person, a lowercase slug (`a-z`, `0-9`, `.`, `_`, `-`, e.g. `jane.doe`); an agent working for many people uses its own id for each. Needs a 3LO app registered in the developer console (one app for everybody), plus each person completing a browser consent once. Only needed if commands must act as people in addition to the agent identity.
 
-Both live in one config folder, `$XDG_CONFIG_HOME/jira-cli/` (typically `~/.config/jira-cli/`):
+All of them live in one config folder, `$XDG_CONFIG_HOME/jira-cli/` (typically `~/.config/jira-cli/`):
 
 | File | Written by | Holds |
 |---|---|---|
-| `app.json` | `jira init` / `jira init --user` | `"service"` section (Service Account Client ID/Secret) and `"user"` section (3LO app Client ID/Secret) — either may be missing |
+| `app.json` | `jira init` / `jira init --user <USER_ID>` | `"service"` section (Service Account Client ID/Secret) and `"user"` section (3LO app Client ID/Secret, shared by every person) — either may be missing |
 | `credentials-service.json` | `jira auth login` | the Service Account's token |
-| `credentials-user.json` | `jira auth login --user` | the human's token and refresh token |
+| `users/<USER_ID>/credentials.json` | `jira auth login --user <USER_ID>` | that person's token and refresh token |
+| `users/<USER_ID>/pending-login.json` | `jira auth login --user <USER_ID> --remote` | that person's [remote login](#remote-login-in-two-steps--jira-auth-login---user-user_id---remote) waiting for its code |
+
+Every file is written with mode `0600` (owner only): they hold client secrets and tokens. An empty `<credentials file>.lock` (mode `0600`) appears next to a credentials file after its first renewal: it keeps parallel commands from renewing the same token twice. Leave it in place.
 
 ```json
 {
@@ -48,7 +52,7 @@ Both live in one config folder, `$XDG_CONFIG_HOME/jira-cli/` (typically `~/.conf
 }
 ```
 
-Each `init`/`auth login` touches only its own section and file, so setting up or logging in as one identity never logs the other out. An `app.json` in the old flat format (`client_id` at top level, before issue #164) is rejected with the commands to recreate it; a leftover `credentials.json` is ignored and reported by `jira doctor` so it can be deleted.
+Each `init`/`auth login` touches only its own section and file, so setting up or logging in as one identity never logs another out; `jira auth logout [--user <USER_ID>]` removes one. An `app.json` in the old flat format (`client_id` at top level, before issue #164) is rejected with the commands to recreate it; leftover credentials files of earlier layouts (`credentials.json`, `credentials-user.json`) are ignored and reported by `jira doctor` so they can be deleted.
 
 ### Service Account (the default identity, no human login ever)
 
@@ -69,14 +73,14 @@ Requires an Atlassian **organization** (admin.atlassian.com) — a different, or
 
 Site access for this credential was already assigned by whoever set up the service account in steps 1–3, in the admin console itself — there is no separate "grant access" step.
 
-### Human identity: 3LO app (`--user`)
+### People: 3LO app (`--user <USER_ID>`)
 
-Only needed for commands run with `--user`.
+Only needed for commands run with `--user <USER_ID>`. One app serves every person.
 
 Go to [developer.atlassian.com/console/myapps](https://developer.atlassian.com/console/myapps/) and create a new **OAuth 2.0 integration**:
 
 - **Access type**: select **Resource-level**, not Account-level. This CLI only supports a single Jira site: `fetch_primary_resource` (`atlassian-auth` crate) takes the first entry returned by the accessible-resources endpoint and assumes it's the only one. Resource-level matches this — the consent screen limits the grant (and what `accessible-resources` returns) to the one site the user selects. Account-level would let one consent cover every site in the user's Atlassian account, which this codebase doesn't handle: multiple accessible sites would make `fetch_primary_resource` silently pick an arbitrary one. Supporting Account-level (letting the user or config pick which site to target) is a separate, deliberate change — not a setup detail to work around here.
-- **Callback/redirect URI**: `http://localhost:8080/callback` (add more lines for [remote logins](#remote-login-in-two-steps--jira-auth-login---user---remote))
+- **Callback/redirect URI**: `http://localhost:8080/callback` (add more lines for [remote logins](#remote-login-in-two-steps--jira-auth-login---user-user_id---remote))
 - **Permissions**: enable Jira API access with scopes `read:jira-work`, `read:jira-user` and `write:jira-work`
 
 From the app's **Settings** page, note down the **Client ID** and **Client Secret**.
@@ -88,23 +92,23 @@ Make sure the Atlassian account you'll log in with has access to at least one Ji
 This app has **no** access to any Jira site until a human grants it, by completing the consent screen once:
 
 ```sh
-cargo run -p jira -- init --user --client-id <ID> --client-secret <SECRET>
+cargo run -p jira -- init --user jane.doe --client-id <ID> --client-secret <SECRET>
 ```
 
-(or `cargo run -p jira -- auth login --user` if the `"user"` section is already set up)
+(or `cargo run -p jira -- auth login --user jane.doe` if the `"user"` section is already set up, which is how every further person logs in)
 
-This writes the `"user"` section of `app.json`, then opens the Atlassian **consent screen** in your browser, listing the site(s) the app is requesting access to (`read:jira-work read:jira-user write:jira-work offline_access`). **Approving this is the actual "install"/authorization step** — it's what makes the site show up in `https://api.atlassian.com/oauth/token/accessible-resources`. Finally it prints a `jira doctor --user` report.
+This writes the `"user"` section of `app.json`, then opens the Atlassian **consent screen** in your browser, listing the site(s) the app is requesting access to (`read:jira-work read:jira-user write:jira-work offline_access`). **Approving this is the actual "install"/authorization step** — it's what makes the site show up in `https://api.atlassian.com/oauth/token/accessible-resources`. Finally it prints a `jira doctor --user jane.doe` report.
 
 ### Day-to-day use
 
-Once logged in, neither identity needs a new login: tokens are renewed automatically (see below). An agent picks the identity on every call:
+Once logged in, no identity needs a new login: tokens are renewed automatically (see below). An agent picks the identity on every call:
 
 ```sh
-cargo run -p jira -- issue get PROJ-1 --select key          # as the Service Account
-cargo run -p jira -- issue get PROJ-1 --select key --user   # as the human
+cargo run -p jira -- issue get PROJ-1 --select key                   # as the Service Account
+cargo run -p jira -- issue get PROJ-1 --select key --user jane.doe   # as jane.doe
 ```
 
-Only when the human's refresh token expires or is revoked does a person need to run `jira auth login --user` again; every error says which login to run.
+Only when a person's refresh token expires or is revoked does that person need to run `jira auth login --user <USER_ID>` again; every error says which login to run.
 
 ## How the OAuth flow works
 
@@ -122,7 +126,7 @@ This is the expected mode for agent-driven usage: fast, no human interaction, an
 
 With a Service Account credential in the `"service"` section this works immediately: site access was already assigned by an org admin when the credential was created. (A 3LO app's credentials there would also work with `client_credentials`, but only after a one-time human consent for that app — Atlassian ties a 3LO app's site access to that authorization; without it the call fails with "no accessible resources".)
 
-### Human login: OAuth 2.0 (3LO) + PKCE — `jira auth login --user` or `jira init --user`
+### Human login: OAuth 2.0 (3LO) + PKCE — `jira auth login --user <USER_ID>` or `jira init --user <USER_ID>`
 
 The standard flow for apps that can't keep a secret fully safe (a CLI binary on a user's machine), combined with a confidential client (since Atlassian 3LO apps do issue a client secret).
 
@@ -130,48 +134,48 @@ The standard flow for apps that can't keep a secret fully safe (a CLI binary on 
 2. **Local callback** — the CLI binds a TCP listener on `127.0.0.1:8080` (before opening the browser, so a busy port fails right away) and waits for the callback. After you approve access in the browser, Atlassian redirects to `http://localhost:8080/callback?code=...&state=...`. Stray requests such as `/favicon.ico` get a 404 and the CLI keeps waiting. The CLI checks `state` matches (aborting on mismatch — a sign of a hijacked flow), reports a denied consent as such, and replies with a short plain-text page.
 3. **Token exchange** — the CLI POSTs the authorization `code`, the PKCE `code_verifier`, and the app's `client_id`/`client_secret` to `https://auth.atlassian.com/oauth/token`, receiving an `access_token`, `refresh_token`, and expiry.
 4. **Cloud ID resolution** — Jira's OAuth API is accessed through `https://api.atlassian.com/ex/jira/<cloud_id>/...`, not the site's own URL. The CLI calls `https://api.atlassian.com/oauth/token/accessible-resources` with the new access token to discover the `cloud_id` of the authorized site.
-5. **Persisting credentials** — `access_token`, `refresh_token`, `expires_at` (unix timestamp), and `cloud_id` are written to `credentials-user.json`.
+5. **Persisting credentials** — `access_token`, `refresh_token`, `expires_at` (unix timestamp), and `cloud_id` are written to `users/<USER_ID>/credentials.json`.
 
-### Remote login, in two steps — `jira auth login --user --remote`
+### Remote login, in two steps — `jira auth login --user <USER_ID> --remote`
 
 The same 3LO grant for a person who is not at the CLI's machine (the CLI runs on a server, the person is in a chat or a web page). Nothing opens a browser or listens on a port; whoever runs the CLI carries the link to the person and the code back. Uses the `"user"` section (a 3LO app): a Service Account credential can't do a user login at all.
 
-1. `jira auth login --user --remote --redirect-uri <url>` stores a pending login (`state`, PKCE verifier, redirect URI; `pending-login.json`, mode `0600`) and prints `{"authorize_url", "state", "expires_at"}`. `<url>` must be one of the 3LO app's callback URLs (the console's Callback URL field takes one per line).
+1. `jira auth login --user <USER_ID> --remote --redirect-uri <url>` stores a pending login for that person (`state`, PKCE verifier, redirect URI; `users/<USER_ID>/pending-login.json`, mode `0600`) and prints `{"authorize_url", "state", "expires_at"}`. `<url>` must be one of the 3LO app's callback URLs (the console's Callback URL field takes one per line).
 2. The person opens `authorize_url`, picks the site and accepts; Atlassian redirects them to `<url>?code=...&state=...`.
-3. `jira auth login --user --code <code> --state <state>` checks the state and the expiry, exchanges the code with the stored verifier and redirect URI, resolves the `cloud_id`, saves `credentials-user.json`, and prints what `auth whoami --user` prints.
+3. `jira auth login --user <USER_ID> --code <code> --state <state>` checks the state and the expiry, exchanges the code with the stored verifier and redirect URI, resolves the `cloud_id`, saves `users/<USER_ID>/credentials.json`, and prints what `auth whoami --user <USER_ID>` prints.
 
-`--remote`, `--code` and `--state` always need `--user` (before or after `auth login`); without it the CLI answers with the corrected commands. A pending login is valid for 10 minutes and its state is single-use (consumed even if Atlassian then refuses the code). A new step 1 replaces the previous pending login. Everything lives in the config folder the CLI resolves, so pointing `XDG_CONFIG_HOME` at one folder per person keeps people's logins apart. `jira doctor` shows a pending login under `pending_login`. For other people to log in, the 3LO app must have sharing enabled (developer console → Distribution).
+`--remote`, `--code` and `--state` always need `--user <USER_ID>` (before or after `auth login`); without it the CLI answers with the corrected commands. A pending login is valid for 10 minutes and its state is single-use (consumed even if Atlassian then refuses the code). Each person has their own pending login, so several people can be mid-login at once; a new step 1 for the same person replaces theirs. `jira doctor --user <USER_ID>` shows it under `pending_login`. For other people to log in, the 3LO app must have sharing enabled (developer console → Distribution).
 
 ### Automatic renewal
 
 Before each API call, the CLI checks whether the selected identity's access token is expired (or about to expire within 60s). How it renews depends on whether those credentials have a `refresh_token`:
 
-- **Human credentials** (`credentials-user.json`, `refresh_token` present) — exchanges it for a new token pair via the `refresh_token` grant and **overwrites** `credentials-user.json` with the new values. **Atlassian refresh tokens rotate on every use**: each refresh invalidates the previous refresh token and issues a new one. The CLI always persists the freshest pair — if you copy the file to another machine and both machines try to refresh independently, one will end up with a stale, invalidated token.
+- **A person's credentials** (`users/<USER_ID>/credentials.json`, `refresh_token` present) — exchanges it for a new token pair via the `refresh_token` grant and **overwrites** the file with the new values. **Atlassian refresh tokens rotate on every use**: each refresh invalidates the previous refresh token and issues a new one. The renewal runs under a lock on the file and re-reads it first, so parallel commands for the same person renew once and share the result. The CLI always persists the freshest pair — if you copy the file to another machine and both machines try to refresh independently, one will end up with a stale, invalidated token.
 - **Service account credentials** (`credentials-service.json`, `refresh_token` absent) — re-runs the `client_credentials` token request to get a fresh access token.
 
 ## Usage
 
-Every command accepts the global `--user` flag: without it the command acts as the Service Account, with it as the human (see [Setup](#setup)). Examples below omit it unless it changes what the command does.
+Every command accepts the global `--user <USER_ID>` flag: without it the command acts as the Service Account, with it as that person (see [Setup](#setup)). Examples below omit it unless it changes what the command does.
 
 ### `jira init`
 
 Onboarding for one identity. Prints setup instructions, prompts for Client ID and Client Secret (or accepts `--client-id`/`--client-secret` flags for non-interactive use), writes that identity's section of `app.json` (leaving the other section alone), logs in, and prints a `jira doctor` JSON report for that identity as final confirmation.
 
 - `jira init` — the Service Account: writes `"service"`, runs the non-interactive `client_credentials` login.
-- `jira init --user` — the human: writes `"user"`, runs the browser consent flow.
+- `jira init --user <USER_ID>` — the 3LO app every person uses: writes `"user"`, runs the browser consent flow for that person.
 
 ```sh
 cargo run -p jira -- init --client-id <ID> --client-secret <SECRET>          # Service Account
-cargo run -p jira -- init --user --client-id <ID> --client-secret <SECRET>   # 3LO app, browser login
+cargo run -p jira -- init --user jane.doe --client-id <ID> --client-secret <SECRET>   # 3LO app, jane.doe logs in
 ```
 
 ### `jira doctor`
 
-Runs its checks for the selected identity (the Service Account, or the human with `--user`) and prints a structured JSON report: `app_config` (app.json exists and has the identity's section), `credentials` (that identity's tokens exist and are not expired), `api` (live call to Jira succeeds), `oauth_scopes`, `service_user` (global permissions of the account), `projects` (per-project permissions and roles). Exits non-zero if any check fails. Two informational keys never affect the exit code: `pending_login` (a remote login waiting for its code) and `identities` (which identity was checked, whether each identity has a credentials file, and whether a pre-#164 `credentials.json` is still there).
+Runs its checks for the selected identity (the Service Account, or the person with `--user <USER_ID>`) and prints a structured JSON report: `app_config` (app.json exists and has the identity's section), `credentials` (that identity's tokens exist and are not expired), `api` (live call to Jira succeeds), `oauth_scopes`, `service_user` (global permissions of the account), `projects` (per-project permissions and roles). Exits non-zero if any check fails. Two informational keys never affect the exit code: `pending_login` (the selected person's remote login waiting for its code) and `identities` (which identity was checked, whether the Service Account is logged in, the ids of the people logged in under `users`, and credentials files of earlier layouts under `legacy_credentials_files`).
 
 ```sh
 cargo run -p jira -- doctor
-cargo run -p jira -- doctor --user
+cargo run -p jira -- doctor --user jane.doe
 cargo run -p jira -- doctor --select app_config.status,credentials.status,api.status,identities
 ```
 
@@ -179,24 +183,32 @@ The `service_user` check reports which of `BROWSE_PROJECTS`, `CREATE_ISSUES`, `E
 
 ### `jira auth login`
 
-Logs in one identity and stores its credentials, leaving the other identity's untouched. By default runs the non-interactive `client_credentials` flow for the Service Account (`credentials-service.json`) — no browser, no human interaction. Pass `--user` for the interactive OAuth 2.0 (3LO) + PKCE flow for a human Atlassian account (`credentials-user.json`), or `--user --remote` for the [two-step remote login](#remote-login-in-two-steps--jira-auth-login---user---remote) (step 1 prints `{authorize_url, state, expires_at}`, step 2 prints the `auth whoami --user` output).
+Logs in one identity and stores its credentials, leaving every other identity's untouched. By default runs the non-interactive `client_credentials` flow for the Service Account (`credentials-service.json`) — no browser, no human interaction. Pass `--user <USER_ID>` for the interactive OAuth 2.0 (3LO) + PKCE flow for that person's Atlassian account (`users/<USER_ID>/credentials.json`), or `--user <USER_ID> --remote` for the [two-step remote login](#remote-login-in-two-steps--jira-auth-login---user-user_id---remote) (step 1 prints `{authorize_url, state, expires_at}`, step 2 prints the `auth whoami --user <USER_ID>` output).
 
 ```sh
 cargo run -p jira -- auth login              # Service Account (client_credentials)
-cargo run -p jira -- auth login --user       # human account (OAuth 2.0 3LO + PKCE)
-cargo run -p jira -- auth login --user --remote --redirect-uri https://app.example.com/oauth/callback   # step 1
-cargo run -p jira -- auth login --user --code <CODE> --state <STATE>                                   # step 2
+cargo run -p jira -- auth login --user jane.doe       # a person (OAuth 2.0 3LO + PKCE)
+cargo run -p jira -- auth login --user jane.doe --remote --redirect-uri https://app.example.com/oauth/callback   # step 1
+cargo run -p jira -- auth login --user jane.doe --code <CODE> --state <STATE>                                   # step 2
 ```
 
-Run each once per machine, or again if that identity's credentials file is lost or revoked.
+Run each once per identity per machine, or again if that identity's credentials file is lost or revoked.
+
+### `jira auth logout`
+
+Removes the stored login of the Service Account, or of the person with `--user <USER_ID>` (their whole `users/<USER_ID>/` folder, including a pending remote login), and prints `{"logged_out": "service"}` or `{"logged_out": "user:<USER_ID>"}`. Other identities and `app.json` are untouched. Local only: tokens are not revoked at Atlassian. Fails, naming the login command, if that identity had no stored login.
+
+```sh
+cargo run -p jira -- auth logout --user jane.doe
+```
 
 ### `jira auth whoami`
 
-Prints the account the CLI acts as, as JSON: the Service Account, or the human with `--user`. Useful to verify that authentication is working. That account is also what JQL's `currentUser()` resolves to — so to filter issues by a person, look up their `accountId` with [`jira user search`](#jira-user-search---query-text) and use it explicitly (e.g. `--jql "assignee=5b10ac8d82e05b22cc7d4ef5"`).
+Prints the account the CLI acts as, as JSON: the Service Account, or the person with `--user <USER_ID>`. Useful to verify that authentication is working. That account is also what JQL's `currentUser()` resolves to — so to filter issues by a person, look up their `accountId` with [`jira user search`](#jira-user-search---query-text) and use it explicitly (e.g. `--jql "assignee=5b10ac8d82e05b22cc7d4ef5"`).
 
 ```sh
 cargo run -p jira -- auth whoami
-cargo run -p jira -- auth whoami --user
+cargo run -p jira -- auth whoami --user jane.doe
 ```
 
 ### `jira issue get <KEY>`
@@ -208,7 +220,7 @@ cargo run -p jira -- issue get KAN-4 --select key,fields.summary,fields.status.n
 cargo run -p jira -- issue get KAN-4 --select fields.summary,fields.status.name,fields.assignee.displayName,browse_url
 ```
 
-On error (issue not found, not authenticated, etc.), prints a message to stderr and exits non-zero. If not authenticated, the hint points you to `jira auth login` (or `jira auth login --user` when run with `--user`).
+On error (issue not found, not authenticated, etc.), prints a message to stderr and exits non-zero. If not authenticated, the hint points you to `jira auth login` (or `jira auth login --user <USER_ID>`, with the person's id, when run with `--user`).
 
 ### `jira issue create`
 
@@ -363,7 +375,7 @@ Client-side field projection: pass a comma-separated list of dot-notation paths 
 
 **`--select` is mandatory** on commands whose output can be large: `issue get`, `issue search`, `user search`, `project search`. Without it they print nothing and exit non-zero, reporting the response's byte size and top-level field names so you can retry with an informed `--select`. To print the whole response anyway, pass `--select-all`. It is still refused above 30000 bytes, and the error reports the actual size and top-level fields.
 
-All other commands are **exempt** and always print their full (small, fixed-shape) result: `doctor`, `auth whoami`, `issue create`, `issue delete`, `issue transitions`, `issue transition`, `issue assign`, `issue comment add`, `issue comment remove`. `--select` still narrows their output if passed.
+All other commands are **exempt** and always print their full (small, fixed-shape) result: `doctor`, `auth whoami`, `auth logout`, `issue create`, `issue delete`, `issue transitions`, `issue transition`, `issue assign`, `issue comment add`, `issue comment remove`. `--select` still narrows their output if passed.
 
 Paths are relative to the top level of the response and must match its exact structure: a path that doesn't exist is silently dropped, not an error. For example, `issue get KAN-4 --select summary` prints `{}` with exit 0, because the summary lives under `fields.summary`. Use the top-level field names from the refusal message to build the right path.
 
@@ -434,7 +446,7 @@ This searches for all `[jira-cli-e2e]` issues in the project and deletes them.
 All errors are plain text, no colors or symbols — designed to be read by an LLM. Each message is self-contained: it states what went wrong and what to do next. Example:
 
 ```
-not logged in as the service account. Run: jira auth login. To act as the human logged in with jira auth login --user, pass --user instead
+not logged in as the service account. Run: jira auth login. To act as a person logged in with jira auth login --user <USER_ID>, pass --user <USER_ID> instead
 ```
 
 Errors are typed with `thiserror` (`CliError` in `error.rs`). Internal module errors (`LoginError`, `ClientError`) are mapped to `CliError` at the top-level `run()` function and never surface directly to the user.

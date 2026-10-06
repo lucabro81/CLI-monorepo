@@ -38,15 +38,15 @@ pub enum CliError {
         "login failed: {reason}. Check the Native application in the console: its client id must \
         match app.json (zitadel init --client-id <client-id>), its redirect URI must be \
         http://localhost:8080/callback, authentication method PKCE, refresh token enabled. Then \
-        retry: zitadel auth login --user"
+        retry: zitadel auth login --user {id}"
     )]
-    UserLoginFailed { reason: String },
+    UserLoginFailed { reason: String, id: String },
 
     #[error(
-        "remote login failed: {reason}. Start a new remote login with: zitadel auth login --user \
+        "remote login failed: {reason}. Start a new remote login with: zitadel auth login --user {id} \
         --remote --redirect-uri <redirect-uri>"
     )]
-    RemoteLoginFailed { reason: String },
+    RemoteLoginFailed { reason: String, id: String },
 
     #[error(
         "failed to save credentials to {path}: {reason}. \
@@ -56,15 +56,15 @@ pub enum CliError {
 
     #[error(
         "not logged in as the service user ({reason}). Run: zitadel auth login. \
-        To act as the human logged in with zitadel auth login --user, pass --user instead"
+        To act as a person logged in with zitadel auth login --user <USER_ID>, pass --user <USER_ID> instead"
     )]
     NotAuthenticatedService { reason: String },
 
     #[error(
-        "not logged in as a human ({reason}). \
-        Run: zitadel auth login --user (a person must approve the login in a browser)"
+        "user {id} is not logged in ({reason}). \
+        Run: zitadel auth login --user {id} (the person must approve the login in a browser)"
     )]
-    NotAuthenticatedUser { reason: String },
+    NotAuthenticatedUser { reason: String, id: String },
 
     #[error(
         "failed to renew the access token: {reason}. Run: zitadel auth login \
@@ -73,15 +73,15 @@ pub enum CliError {
     TokenRenewalFailedService { reason: String },
 
     #[error(
-        "failed to refresh the human's token: {reason}. \
-        The refresh token may have expired or been revoked. Run: zitadel auth login --user"
+        "failed to refresh the token of user {id}: {reason}. \
+        The refresh token may have expired or been revoked. Run: zitadel auth login --user {id}"
     )]
-    TokenRefreshFailedUser { reason: String },
+    TokenRefreshFailedUser { reason: String, id: String },
 
     #[error(
-        "a remote login (--remote, --code, --state) logs in the human identity and needs --user. \
-        Retry with --user: zitadel auth login --user --remote --redirect-uri <redirect-uri>, \
-        then zitadel auth login --user --code <CODE> --state <STATE>"
+        "a remote login (--remote, --code, --state) logs in a person and needs --user <USER_ID>. \
+        Retry with: zitadel auth login --user <USER_ID> --remote --redirect-uri <redirect-uri>, \
+        then zitadel auth login --user <USER_ID> --code <CODE> --state <STATE>"
     )]
     RemoteLoginNeedsUser,
 
@@ -93,7 +93,7 @@ pub enum CliError {
 
     #[error(
         "ZITADEL rejected the access token (401): {body}. Run: zitadel auth login \
-        (zitadel auth login --user if the command was run with --user)"
+        (zitadel auth login --user <USER_ID> if the command was run with --user <USER_ID>)"
     )]
     ApiUnauthorized { body: String },
 
@@ -118,6 +118,12 @@ pub enum CliError {
 
     #[error("one or more doctor checks failed. See the JSON report above for details.")]
     DoctorCheckFailed,
+
+    #[error("I/O error: {reason}")]
+    IoError { reason: String },
+
+    #[error("nothing to log out: identity \"{label}\" has no stored login on this machine. To log in: {login}")]
+    NothingToLogOut { label: String, login: String },
 
     #[error(
         "no instance URL known. Pass it explicitly: \

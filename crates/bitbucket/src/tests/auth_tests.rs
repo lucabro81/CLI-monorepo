@@ -3,6 +3,7 @@
 use std::path::Path;
 
 use super::*;
+use oauth_user_login::UserId;
 
 fn section(client_id: &str, client_secret: &str) -> OAuthConfig {
     OAuthConfig {
@@ -94,20 +95,12 @@ fn each_identity_has_its_own_credentials_file_under_bitbucket_cli_dir() {
     let config_dir = Path::new("/home/user/.config");
 
     assert_eq!(
-        credentials_path(config_dir, Identity::Service),
+        credentials_path(config_dir, &Identity::Service),
         Path::new("/home/user/.config/bitbucket-cli/credentials-service.json")
     );
     assert_eq!(
-        credentials_path(config_dir, Identity::User),
-        Path::new("/home/user/.config/bitbucket-cli/credentials-user.json")
-    );
-}
-
-#[test]
-fn legacy_credentials_path_is_the_pre_164_single_file() {
-    assert_eq!(
-        legacy_credentials_path(Path::new("/home/user/.config")),
-        Path::new("/home/user/.config/bitbucket-cli/credentials.json")
+        credentials_path(config_dir, &alice()),
+        Path::new("/home/user/.config/bitbucket-cli/users/alice/credentials.json")
     );
 }
 
@@ -208,7 +201,7 @@ fn save_and_load_credentials_roundtrip_without_expiry() {
         client_id: "ignored".to_string(),
         client_secret: "ignored".to_string(),
     };
-    let loaded = load_credentials(&config, &path, Identity::Service).expect("should load without renewing");
+    let loaded = load_credentials(&config, &path, &Identity::Service).expect("should load without renewing");
 
     assert_eq!(loaded, creds);
 }
@@ -271,7 +264,7 @@ fn denied_consent_ends_with_the_retry_command() {
     assert_eq!(
         err.to_string(),
         "authorization denied: access_denied (User denied access). Approve the consent page to \
-        log in, then retry the login: bitbucket auth login --user"
+        log in, then retry the login: bitbucket auth login --user <USER_ID>"
     );
 }
 
@@ -279,7 +272,7 @@ fn denied_consent_ends_with_the_retry_command() {
 fn state_mismatch_ends_with_the_retry_command() {
     let err = LoginError::Callback(oauth_user_login::WaitError::StateMismatch);
 
-    assert!(err.to_string().ends_with("Login aborted: retry it: bitbucket auth login --user"), "got {err}");
+    assert!(err.to_string().ends_with("Login aborted: retry it: bitbucket auth login --user <USER_ID>"), "got {err}");
 }
 
 #[test]
@@ -289,7 +282,7 @@ fn a_busy_callback_port_names_the_port_and_the_retry_command() {
     let err = LoginError::CallbackListener(oauth_user_login::bind_listener(&address).unwrap_err());
 
     assert!(err.to_string().starts_with(&format!("cannot listen for the login callback on {address}")), "got {err}");
-    assert!(err.to_string().ends_with("and retry: bitbucket auth login --user"), "got {err}");
+    assert!(err.to_string().ends_with("and retry: bitbucket auth login --user <USER_ID>"), "got {err}");
 }
 
 #[test]
@@ -406,10 +399,10 @@ fn renewal_form_uses_client_credentials_for_app_credentials() {
 const NOW: u64 = 1_800_000_000;
 
 #[test]
-fn pending_login_path_is_under_bitbucket_cli_dir() {
+fn each_persons_pending_login_is_under_bitbucket_cli_dir() {
     assert_eq!(
-        pending_login_path(Path::new("/cfg")),
-        std::path::PathBuf::from("/cfg/bitbucket-cli/pending-login.json")
+        pending_login_path(Path::new("/cfg"), &UserId::parse("alice").unwrap()),
+        std::path::PathBuf::from("/cfg/bitbucket-cli/users/alice/pending-login.json")
     );
 }
 
@@ -547,6 +540,10 @@ fn unexpired(refresh_token: Option<&str>) -> Credentials {
     }
 }
 
+fn alice() -> Identity {
+    Identity::User(UserId::parse("alice").unwrap())
+}
+
 fn ignored_config() -> OAuthConfig {
     OAuthConfig { client_id: "ignored".to_string(), client_secret: "ignored".to_string() }
 }
@@ -556,10 +553,10 @@ fn a_user_slot_without_a_refresh_token_is_refused_before_any_renewal() {
     // Regression guard (issue #164 review): renewal picks client_credentials
     // when there is no refresh token, which would act as the app.
     let dir = tempfile::tempdir().unwrap();
-    let path = credentials_path(dir.path(), Identity::User);
+    let path = credentials_path(dir.path(), &alice());
     save_credentials(&path, &unexpired(None)).unwrap();
 
-    let err = load_credentials(&ignored_config(), &path, Identity::User).unwrap_err();
+    let err = load_credentials(&ignored_config(), &path, &alice()).unwrap_err();
 
     assert!(matches!(err, LoginError::WrongIdentity(_)), "got {err:?}");
 }
@@ -567,10 +564,10 @@ fn a_user_slot_without_a_refresh_token_is_refused_before_any_renewal() {
 #[test]
 fn a_service_slot_holding_a_human_login_is_refused() {
     let dir = tempfile::tempdir().unwrap();
-    let path = credentials_path(dir.path(), Identity::Service);
+    let path = credentials_path(dir.path(), &Identity::Service);
     save_credentials(&path, &unexpired(Some("rt"))).unwrap();
 
-    let err = load_credentials(&ignored_config(), &path, Identity::Service).unwrap_err();
+    let err = load_credentials(&ignored_config(), &path, &Identity::Service).unwrap_err();
 
     assert!(matches!(err, LoginError::WrongIdentity(_)), "got {err:?}");
 }
@@ -578,15 +575,122 @@ fn a_service_slot_holding_a_human_login_is_refused() {
 #[test]
 fn saving_one_identity_leaves_the_other_identity_file_untouched() {
     let dir = tempfile::tempdir().unwrap();
-    let service = credentials_path(dir.path(), Identity::Service);
+    let service = credentials_path(dir.path(), &Identity::Service);
     save_credentials(&service, &unexpired(None)).unwrap();
     let before = std::fs::read(&service).unwrap();
 
-    save_credentials(&credentials_path(dir.path(), Identity::User), &unexpired(Some("rt"))).unwrap();
+    save_credentials(&credentials_path(dir.path(), &alice()), &unexpired(Some("rt"))).unwrap();
 
     assert_eq!(std::fs::read(&service).unwrap(), before);
     assert_eq!(
-        load_credentials(&ignored_config(), &credentials_path(dir.path(), Identity::User), Identity::User).unwrap(),
+        load_credentials(&ignored_config(), &credentials_path(dir.path(), &alice()), &alice()).unwrap(),
         unexpired(Some("rt"))
     );
+}
+
+fn expired(refresh_token: Option<&str>) -> Credentials {
+    Credentials { expires_at: 0, ..unexpired(refresh_token) }
+}
+
+fn renewed(access_token: &str) -> Credentials {
+    Credentials { access_token: access_token.to_string(), ..unexpired(Some("rt-2")) }
+}
+
+#[test]
+fn expired_credentials_are_renewed_once_and_saved() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = credentials_path(dir.path(), &alice());
+    save_credentials(&path, &expired(Some("rt"))).unwrap();
+    let mut calls = 0;
+
+    let loaded = load_credentials_with(&path, &alice(), |old| {
+        calls += 1;
+        assert_eq!(old, &expired(Some("rt")));
+        Ok(renewed("fresh"))
+    })
+    .unwrap();
+
+    assert_eq!(calls, 1);
+    assert_eq!(loaded, renewed("fresh"));
+    assert_eq!(load_credentials(&ignored_config(), &path, &alice()).unwrap(), renewed("fresh"));
+}
+
+#[test]
+fn a_renewal_done_by_another_process_while_waiting_for_the_lock_is_reused() {
+    // Issue #175: Bitbucket refresh tokens rotate. Two calls renewing the same
+    // person at once would each spend the same refresh token; the second must
+    // wait for the lock, re-read the file and keep the first one's result.
+    let dir = tempfile::tempdir().unwrap();
+    let path = credentials_path(dir.path(), &alice());
+    save_credentials(&path, &expired(Some("rt"))).unwrap();
+
+    let other_process = oauth_user_login::lock_exclusive(&path).unwrap();
+    let waiting = {
+        let path = path.clone();
+        std::thread::spawn(move || load_credentials_with(&path, &alice(), |_| panic!("must not renew: already renewed")))
+    };
+    std::thread::sleep(std::time::Duration::from_millis(100));
+    save_credentials(&path, &renewed("by-the-other-process")).unwrap();
+    drop(other_process);
+
+    assert_eq!(waiting.join().unwrap().unwrap(), renewed("by-the-other-process"));
+}
+
+#[test]
+fn a_failed_renewal_leaves_the_stored_credentials_untouched() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = credentials_path(dir.path(), &alice());
+    save_credentials(&path, &expired(Some("rt"))).unwrap();
+
+    let err = load_credentials_with(&path, &alice(), |_| Err(LoginError::TokenExchange("invalid_grant".into())))
+        .unwrap_err();
+
+    assert!(matches!(err, LoginError::TokenExchange(_)), "got {err:?}");
+    let on_disk: Credentials = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    assert_eq!(on_disk, expired(Some("rt")));
+}
+
+#[cfg(unix)]
+#[test]
+fn saved_credentials_are_readable_only_by_the_owner() {
+    // Regression for #165: credentials were written with the umask's 0644.
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let path = credentials_path(dir.path(), &alice());
+    save_credentials(&path, &unexpired(Some("rt"))).unwrap();
+
+    assert_eq!(std::fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
+}
+
+#[test]
+fn a_renewal_that_cannot_be_saved_is_a_save_failure_not_a_missing_login() {
+    // Regression guard (#175 review): a failed write after a renewal used to be
+    // an Io error, which callers report as "not logged in" — logging in again
+    // would not fix an unwritable folder.
+    let dir = tempfile::tempdir().unwrap();
+    let path = credentials_path(dir.path(), &alice());
+    save_credentials(&path, &expired(Some("rt"))).unwrap();
+    // Credentials are written through a `<file>.tmp` sibling renamed over the
+    // target; a directory in its place makes that write fail.
+    let mut tmp = path.clone().into_os_string();
+    tmp.push(".tmp");
+    std::fs::create_dir(&tmp).unwrap();
+
+    let err = load_credentials_with(&path, &alice(), |_| Ok(renewed("fresh"))).unwrap_err();
+
+    assert!(matches!(err, LoginError::SaveCredentials(_)), "got {err:?}");
+}
+
+#[test]
+fn a_lock_that_cannot_be_taken_is_a_save_failure_not_a_missing_login() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = credentials_path(dir.path(), &alice());
+    save_credentials(&path, &expired(Some("rt"))).unwrap();
+    let mut lock = path.clone().into_os_string();
+    lock.push(".lock");
+    std::fs::create_dir(&lock).unwrap();
+
+    let err = load_credentials_with(&path, &alice(), |_| panic!("must not renew without the lock")).unwrap_err();
+
+    assert!(matches!(err, LoginError::SaveCredentials(_)), "got {err:?}");
 }

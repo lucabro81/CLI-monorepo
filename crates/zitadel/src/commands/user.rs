@@ -14,7 +14,7 @@ use crate::context::{
 };
 use crate::error::CliError;
 
-pub fn run(command: UserCommand, select: cli_fields::Select<'_>, identity: Identity) -> Result<(), CliError> {
+pub fn run(command: UserCommand, select: cli_fields::Select<'_>, identity: &Identity) -> Result<(), CliError> {
     match command {
         UserCommand::Search {
             email,

@@ -10,6 +10,7 @@
 use std::path::{Path, PathBuf};
 
 pub use atlassian_auth::{AppConfig, Credentials, Identity, LoginError, OAuthConfig, OAuthConfigError};
+pub use oauth_user_login::UserId;
 
 const CLI_DIR: &str = "jira-cli";
 
@@ -24,23 +25,32 @@ pub fn app_config_path(config_dir: &Path) -> PathBuf {
 }
 
 /// Path to `identity`'s credentials file:
-/// `<config_dir>/jira-cli/credentials-service.json` or `credentials-user.json`.
-pub fn credentials_path(config_dir: &Path, identity: Identity) -> PathBuf {
+/// `<config_dir>/jira-cli/credentials-service.json` or `users/<id>/credentials.json`.
+pub fn credentials_path(config_dir: &Path, identity: &Identity) -> PathBuf {
     identity.credentials_path(config_dir, CLI_DIR)
 }
 
-/// The single credentials file used before issue #164
-/// (`<config_dir>/jira-cli/credentials.json`); no longer read, only reported by `doctor`.
-pub fn legacy_credentials_path(config_dir: &Path) -> PathBuf {
-    atlassian_auth::legacy_credentials_path(config_dir, CLI_DIR)
+/// Path to a person's pending remote login: `<config_dir>/jira-cli/users/<id>/pending-login.json`.
+pub fn pending_login_path(config_dir: &Path, id: &UserId) -> PathBuf {
+    oauth_user_login::pending_login_path(config_dir, CLI_DIR, id)
 }
 
-/// Path to the pending remote login: `<config_dir>/jira-cli/pending-login.json`.
-pub fn pending_login_path(config_dir: &Path) -> PathBuf {
-    atlassian_auth::pending_login_path(config_dir, CLI_DIR)
+/// The people logged in, for `doctor`.
+pub fn list_users(config_dir: &Path) -> std::io::Result<Vec<UserId>> {
+    oauth_user_login::list_users(config_dir, CLI_DIR)
 }
 
-/// Step 1 of `auth login --user --remote`, requesting this crate's [`SCOPES`].
+/// Credentials files of earlier layouts still present (never read), for `doctor`.
+pub fn legacy_credentials_files(config_dir: &Path) -> Vec<&'static str> {
+    oauth_user_login::legacy_credentials_files(config_dir, CLI_DIR)
+}
+
+/// Removes `identity`'s stored login (`auth logout`); `false` when there was none.
+pub fn remove_identity(config_dir: &Path, identity: &Identity) -> std::io::Result<bool> {
+    oauth_user_login::remove_identity(config_dir, CLI_DIR, identity)
+}
+
+/// Step 1 of `auth login --user <id> --remote`, requesting this crate's [`SCOPES`].
 pub fn start_remote_login(
     config: &OAuthConfig,
     redirect_uri: &str,
@@ -49,7 +59,7 @@ pub fn start_remote_login(
     atlassian_auth::start_remote_login(config, SCOPES, redirect_uri, pending_path, atlassian_auth::now_unix())
 }
 
-/// Step 2 of `auth login --user --remote` (`--code --state`).
+/// Step 2 of `auth login --user <id> --remote` (`--code --state`).
 pub fn complete_remote_login(
     config: &OAuthConfig,
     pending_path: &Path,
@@ -68,11 +78,7 @@ pub fn login_client_credentials(config: &OAuthConfig) -> Result<Credentials, Log
     atlassian_auth::login_client_credentials(config)
 }
 
-pub fn renew(config: &OAuthConfig, credentials: &Credentials) -> Result<Credentials, LoginError> {
-    atlassian_auth::renew(config, credentials)
-}
-
-pub fn load_credentials(config: &OAuthConfig, path: &Path, identity: Identity) -> Result<Credentials, LoginError> {
+pub fn load_credentials(config: &OAuthConfig, path: &Path, identity: &Identity) -> Result<Credentials, LoginError> {
     atlassian_auth::load_credentials(config, path, identity)
 }
 

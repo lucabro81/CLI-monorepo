@@ -65,9 +65,13 @@ fn non_empty_fields_still_succeeds() {
 
 use std::path::Path;
 
-use crate::auth::{AppConfig, Identity, LoginError, OAuthConfig, OAuthConfigError};
+use crate::auth::{AppConfig, Identity, LoginError, OAuthConfig, OAuthConfigError, UserId};
 
 use super::{app_config_error, login_command, login_error_to_cli, oauth_section};
+
+fn alice() -> Identity {
+    Identity::User(UserId::parse("alice").unwrap())
+}
 
 fn app(service: bool, user: bool) -> AppConfig {
     let config = || OAuthConfig { client_id: "k".to_string(), client_secret: "s".to_string() };
@@ -76,21 +80,21 @@ fn app(service: bool, user: bool) -> AppConfig {
 
 #[test]
 fn login_command_names_the_identity() {
-    assert_eq!(login_command(Identity::Service), "bitbucket auth login");
-    assert_eq!(login_command(Identity::User), "bitbucket auth login --user");
+    assert_eq!(login_command(&Identity::Service), "bitbucket auth login");
+    assert_eq!(login_command(&alice()), "bitbucket auth login --user alice");
 }
 
 #[test]
 fn oauth_section_returns_the_section_of_the_requested_identity() {
     let path = Path::new("/cfg/bitbucket-cli/app.json");
 
-    assert!(oauth_section(app(true, false), Identity::Service, path).is_ok());
-    assert!(oauth_section(app(false, true), Identity::User, path).is_ok());
+    assert!(oauth_section(app(true, false), &Identity::Service, path).is_ok());
+    assert!(oauth_section(app(false, true), &alice(), path).is_ok());
 }
 
 #[test]
 fn a_missing_service_section_says_to_run_init_for_the_app() {
-    let err = oauth_section(app(false, true), Identity::Service, Path::new("/cfg/bitbucket-cli/app.json"))
+    let err = oauth_section(app(false, true), &Identity::Service, Path::new("/cfg/bitbucket-cli/app.json"))
         .unwrap_err()
         .to_string();
 
@@ -103,15 +107,15 @@ fn a_missing_service_section_says_to_run_init_for_the_app() {
 
 #[test]
 fn a_missing_user_section_says_to_run_init_with_user() {
-    let err = oauth_section(app(true, false), Identity::User, Path::new("/cfg/bitbucket-cli/app.json"))
+    let err = oauth_section(app(true, false), &alice(), Path::new("/cfg/bitbucket-cli/app.json"))
         .unwrap_err()
         .to_string();
 
     assert_eq!(
         err,
         "app.json at /cfg/bitbucket-cli/app.json has no \"user\" section (the OAuth consumer used with \
-        --user to act as a human; it may be the same consumer). \
-        Run: bitbucket init --user --client-id <KEY> --client-secret <SECRET>"
+        --user to act as a person, every person through it; it may be the same consumer). \
+        Run: bitbucket init --user alice --client-id <KEY> --client-secret <SECRET>"
     );
 }
 
@@ -123,7 +127,7 @@ fn a_legacy_app_config_names_both_init_commands() {
         err,
         "app.json at /cfg/bitbucket-cli/app.json uses the old single-identity format (client_id at top level). \
         Recreate it: bitbucket init --client-id <KEY> --client-secret <SECRET> for the app identity, \
-        and bitbucket init --user --client-id <KEY> --client-secret <SECRET> for the human used with --user \
+        and bitbucket init --user <USER_ID> --client-id <KEY> --client-secret <SECRET> for the people used with --user \
         (the same consumer can serve both)"
     );
 }
@@ -135,39 +139,40 @@ fn a_missing_app_config_names_both_init_commands() {
 
     assert!(err.starts_with("app credentials file not found at /cfg/bitbucket-cli/app.json."), "{err}");
     assert!(err.contains("bitbucket init --client-id <KEY> --client-secret <SECRET>"), "{err}");
-    assert!(err.contains("bitbucket init --user --client-id <KEY> --client-secret <SECRET>"), "{err}");
+    assert!(err.contains("bitbucket init --user <USER_ID> --client-id <KEY> --client-secret <SECRET>"), "{err}");
 }
 
 #[test]
 fn missing_app_credentials_suggest_login_or_the_user_flag() {
-    let err = login_error_to_cli(LoginError::Io(std::io::ErrorKind::NotFound.into()), Identity::Service).to_string();
+    let err = login_error_to_cli(LoginError::Io(std::io::ErrorKind::NotFound.into()), Path::new("/c/credentials.json"), &Identity::Service).to_string();
 
     assert_eq!(
         err,
         "not logged in as the OAuth app. Run: bitbucket auth login. \
-        To act as the human logged in with bitbucket auth login --user, pass --user instead"
+        To act as a person logged in with bitbucket auth login --user <USER_ID>, pass --user <USER_ID> instead"
     );
 }
 
 #[test]
-fn missing_user_credentials_say_a_human_must_log_in() {
-    let err = login_error_to_cli(LoginError::Io(std::io::ErrorKind::NotFound.into()), Identity::User).to_string();
+fn missing_user_credentials_name_the_person_and_their_login() {
+    let err = login_error_to_cli(LoginError::Io(std::io::ErrorKind::NotFound.into()), Path::new("/c/credentials.json"), &alice()).to_string();
 
     assert_eq!(
         err,
-        "not logged in as a human. Run: bitbucket auth login --user (a person must approve the login in a browser)"
+        "user alice is not logged in. Run: bitbucket auth login --user alice \
+        (the person must approve the login in a browser)"
     );
 }
 
 #[test]
 fn a_failed_renewal_names_the_login_of_the_same_identity() {
-    let user = login_error_to_cli(LoginError::TokenExchange("invalid_grant".to_string()), Identity::User).to_string();
-    let app = login_error_to_cli(LoginError::TokenExchange("invalid_client".to_string()), Identity::Service).to_string();
+    let user = login_error_to_cli(LoginError::TokenExchange("invalid_grant".to_string()), Path::new("/c/credentials.json"), &alice()).to_string();
+    let app = login_error_to_cli(LoginError::TokenExchange("invalid_client".to_string()), Path::new("/c/credentials.json"), &Identity::Service).to_string();
 
     assert_eq!(
         user,
-        "failed to refresh the human's token: invalid_grant. The refresh token may have expired \
-        (unused for 3 months) or been revoked. Run: bitbucket auth login --user"
+        "failed to refresh the token of user alice: invalid_grant. The refresh token may have expired \
+        (unused for 3 months) or been revoked. Run: bitbucket auth login --user alice"
     );
     assert_eq!(
         app,
@@ -178,7 +183,24 @@ fn a_failed_renewal_names_the_login_of_the_same_identity() {
 
 #[test]
 fn credentials_of_the_wrong_identity_mean_that_identity_is_not_logged_in() {
-    let err = login_error_to_cli(LoginError::WrongIdentity("x"), Identity::User).to_string();
+    let err = login_error_to_cli(LoginError::WrongIdentity("x"), Path::new("/c/credentials.json"), &alice()).to_string();
 
-    assert!(err.starts_with("not logged in as a human. Run: bitbucket auth login --user"), "{err}");
+    assert!(err.starts_with("user alice is not logged in. Run: bitbucket auth login --user alice"), "{err}");
+}
+
+#[test]
+fn an_unwritable_credentials_file_names_the_file_not_a_relogin() {
+    // Regression guard (#175 review): a failed save or lock after a renewal
+    // used to read "not logged in", and logging in again would not fix it.
+    let err = login_error_to_cli(
+        LoginError::SaveCredentials("permission denied".to_string()),
+        Path::new("/c/credentials.json"),
+        &alice(),
+    );
+
+    assert!(
+        matches!(&err, CliError::SaveCredentialsFailed { path, reason }
+            if path == "/c/credentials.json" && reason == "could not write credentials file: permission denied"),
+        "got {err:?}"
+    );
 }

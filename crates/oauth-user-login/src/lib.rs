@@ -4,8 +4,10 @@
 //! For a login where the person is not at the CLI's machine
 //! (`auth login --user --remote`), [`PendingLogin`] keeps `state`, the PKCE
 //! verifier and the redirect URI on disk between the two steps. [`Identity`]
-//! names the two identities each CLI stores side by side (the service identity
-//! and the human) and their credentials files.
+//! names the identities each CLI stores side by side (the service identity and
+//! any number of humans, each named by a [`UserId`]) and their credentials
+//! files; [`write_secret_file`] and [`lock_exclusive`] write those files
+//! owner-only and serialize their renewal across processes.
 //!
 //! Everything that varies by provider stays in each crate: the authorize URL's
 //! parameters, the token endpoint and its auth style, scopes, and refresh
@@ -16,14 +18,18 @@ mod callback;
 mod identity;
 mod pending;
 mod pkce;
+mod secret_file;
 
 pub use callback::{
     CallbackError, CallbackParams, ListenerError, WaitError, bind_listener,
     parse_callback_request_line, wait_for_callback,
 };
-pub use identity::Identity;
+pub use identity::{
+    Identity, UserId, legacy_credentials_files, list_users, pending_login_path, remove_identity,
+};
 pub use pending::{
     PENDING_LOGIN_TTL_SECS, PendingLogin, PendingLoginError, PendingLoginStatus, pending_login_status,
     rfc3339_utc, take_pending_login,
 };
 pub use pkce::{code_challenge, generate_code_verifier, generate_state};
+pub use secret_file::{FileLock, lock_exclusive, write_secret_file};

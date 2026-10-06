@@ -1,5 +1,5 @@
 //! Handler for the `init` command: writes `app.json`, logs in as the service
-//! user (if configured) or, with `--user`, as the human through the browser,
+//! user (if configured) or, with `--user <id>`, as that person through the browser,
 //! and runs `doctor` for that identity as the final verification.
 //!
 //! Flag-driven only (no interactive prompts — an LLM caller can't answer them).
@@ -17,7 +17,7 @@ use crate::context::{config_dir, print_json};
 use crate::error::CliError;
 
 pub fn run_init(
-    identity: Identity,
+    identity: &Identity,
     instance_url: Option<&str>,
     key_file: Option<&Path>,
     client_id: Option<&str>,
@@ -41,9 +41,7 @@ pub fn run_init(
     eprintln!("Wrote {}", app_path.display());
 
     if instance_changed(previous.as_ref(), &config) {
-        for stale in [Identity::Service, Identity::User] {
-            discard_credentials(&auth::credentials_path(&config_dir, stale))?;
-        }
+        discard_instance_credentials(&config_dir)?;
         eprintln!("Instance URL changed: removed the credentials of the previous instance.");
     }
 
@@ -52,16 +50,19 @@ pub fn run_init(
         Identity::Service if config.service_user.is_none() => {
             eprintln!(
                 "No service user key configured (--key-file): skipping login. \
-                Run zitadel init --user --client-id <ID> to log in as yourself instead."
+                Run zitadel init --user <USER_ID> --client-id <ID> to log in as a person instead."
             );
             None
         }
         Identity::Service => Some(
             auth::login_service_user(&config).map_err(|e| CliError::LoginFailed { reason: e.to_string() })?,
         ),
-        Identity::User => {
-            eprintln!("Starting the browser login as yourself.");
-            Some(auth::login_user(&config).map_err(|e| CliError::UserLoginFailed { reason: e.to_string() })?)
+        Identity::User(id) => {
+            eprintln!("Starting the browser login as {id}.");
+            Some(
+                auth::login_user(&config)
+                    .map_err(|e| CliError::UserLoginFailed { reason: e.to_string(), id: id.to_string() })?,
+            )
         }
     };
     if let Some(credentials) = credentials {
@@ -100,16 +101,18 @@ pub(crate) fn instance_changed(previous: Option<&AppConfig>, new: &AppConfig) ->
     previous.is_some_and(|p| p.instance_url != new.instance_url)
 }
 
-/// Removes a credentials file; a missing file is fine.
-pub(crate) fn discard_credentials(path: &Path) -> Result<(), CliError> {
-    match std::fs::remove_file(path) {
-        Ok(()) => Ok(()),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(e) => Err(CliError::SaveCredentialsFailed {
-            path: path.display().to_string(),
-            reason: format!("could not remove the previous instance's credentials: {e}"),
-        }),
+/// Removes every stored login (the service user's and every person's): they
+/// belong to the previous instance.
+pub(crate) fn discard_instance_credentials(config_dir: &Path) -> Result<(), CliError> {
+    let failed = |e: std::io::Error| CliError::SaveCredentialsFailed {
+        path: config_dir.join("zitadel-cli").display().to_string(),
+        reason: format!("could not remove the previous instance's credentials: {e}"),
+    };
+    let users = auth::list_users(config_dir).map_err(failed)?;
+    for stale in std::iter::once(Identity::Service).chain(users.into_iter().map(Identity::User)) {
+        auth::remove_identity(config_dir, &stale).map_err(failed)?;
     }
+    Ok(())
 }
 
 /// Merges flags over an existing config; flags win, omitted flags keep the
@@ -154,16 +157,13 @@ fn app_config_json(config: &AppConfig) -> serde_json::Value {
     value
 }
 
-/// Writes `app.json` with owner-only permissions (it holds the private key),
-/// tightening them if the file already existed with looser ones.
+/// Writes `app.json` atomically with owner-only permissions (it holds the
+/// private key), creating its folder; a looser existing file ends up 0600 too.
 pub(crate) fn write_app_config(path: &Path, config: &AppConfig) -> Result<(), CliError> {
     let fail = |e: std::io::Error| CliError::WriteAppConfigFailed {
         path: path.display().to_string(),
         reason: e.to_string(),
     };
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(fail)?;
-    }
     let mut contents = serde_json::to_string_pretty(&app_config_json(config)).map_err(|e| {
         CliError::WriteAppConfigFailed {
             path: path.display().to_string(),
@@ -171,13 +171,7 @@ pub(crate) fn write_app_config(path: &Path, config: &AppConfig) -> Result<(), Cl
         }
     })?;
     contents.push('\n');
-    std::fs::write(path, contents).map_err(fail)?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)).map_err(fail)?;
-    }
-    Ok(())
+    oauth_user_login::write_secret_file(path, contents.as_bytes()).map_err(fail)
 }
 
 #[cfg(test)]

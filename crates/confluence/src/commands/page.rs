@@ -27,7 +27,7 @@ use crate::auth::Identity;
 use crate::context::{authenticated_client, client_error_to_cli, print_json};
 use crate::error::CliError;
 
-pub fn run(command: PageCommand, select: cli_fields::Select<'_>, identity: Identity) -> Result<(), CliError> {
+pub fn run(command: PageCommand, select: cli_fields::Select<'_>, identity: &Identity) -> Result<(), CliError> {
     match command {
         PageCommand::Get { id } => {
             let value = authenticated_client(identity)?
@@ -95,7 +95,7 @@ fn run_create(
     parent_id: Option<String>,
     source: BodySource,
     select: cli_fields::Select<'_>,
-    identity: Identity,
+    identity: &Identity,
 ) -> Result<(), CliError> {
     let client = authenticated_client(identity)?;
 
@@ -149,7 +149,7 @@ fn run_update(
     title: Option<&str>,
     body: Option<&str>,
     select: cli_fields::Select<'_>,
-    identity: Identity,
+    identity: &Identity,
 ) -> Result<(), CliError> {
     validate_update_target(title, body)?;
 
@@ -187,7 +187,7 @@ fn run_delete(
     confirm: bool,
     purge: bool,
     select: cli_fields::Select<'_>,
-    identity: Identity,
+    identity: &Identity,
 ) -> Result<(), CliError> {
     if !confirm {
         return Err(CliError::PageDeleteNotConfirmed { id: id.to_string() });

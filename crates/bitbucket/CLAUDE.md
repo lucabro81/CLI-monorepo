@@ -4,7 +4,7 @@ Architecture and design notes for the `bitbucket` crate. Global rules (TDD, erro
 
 ## Status
 
-`init`, `doctor`, `auth login`, `auth whoami`, `repo get`, `repo list`, `repo create`, `repo delete`, `pr get`, `pr list`, `pr create`, `pr update`, `pr comment`, `pr list-comments`, `pr update-comment`, `pr approve`, `pr unapprove`, `pr decline`, `pr merge`, `pr diff`, `branch list`, `branch create`, `branch suggest-name`, `workspace members` implemented. Other commands not started yet.
+`init`, `doctor`, `auth login`, `auth whoami`, `auth logout`, `repo get`, `repo list`, `repo create`, `repo delete`, `pr get`, `pr list`, `pr create`, `pr update`, `pr comment`, `pr list-comments`, `pr update-comment`, `pr approve`, `pr unapprove`, `pr decline`, `pr merge`, `pr diff`, `branch list`, `branch create`, `branch suggest-name`, `workspace members` implemented. Other commands not started yet.
 
 ## Module map (mirrors crates/jira)
 
@@ -12,7 +12,7 @@ Architecture and design notes for the `bitbucket` crate. Global rules (TDD, erro
 src/
   commands/
     mod.rs        — pub mod declarations for all command handlers
-    auth.rs       — run_login(), run_whoami()      [implemented]
+    auth.rs       — run_login(), run_whoami(), run_logout() [implemented]
     doctor.rs     — run_doctor(); also called by init as final verification [implemented]
     init.rs       — run_init(), write_app_config(); human onboarding flow [implemented]
     repo.rs       — run(RepoCommand); dispatches all repo subcommands   [get, list, create, delete implemented]
@@ -21,11 +21,13 @@ src/
     branch.rs     — run(BranchCommand); dispatches all branch subcommands [list, create, suggest-name implemented]
     workspace.rs  — run(WorkspaceCommand); dispatches all workspace subcommands [members implemented]
   auth.rs         — AppConfig (sectioned app.json), OAuthConfig, Credentials,
-                    Identity (re-exported from oauth-user-login), credentials_path(dir,
-                    identity), legacy_credentials_path(), login_client_credentials(), login()
-                    (authorization_code, --user), renew(), load_credentials()/
-                    save_credentials() [implemented]; state and the callback
-                    listener come from crates/oauth-user-login
+                    Identity/UserId (re-exported from oauth-user-login), credentials_path(dir,
+                    identity), pending_login_path(dir, id), list_users(),
+                    legacy_credentials_files(), remove_identity(), login_client_credentials(),
+                    login() (authorization_code, --user <id>), renew(), load_credentials()
+                    (renews under a per-file lock)/save_credentials() (0600) [implemented];
+                    state, the callback listener and the secret-file helpers come from
+                    crates/oauth-user-login
   client.rs       — BitbucketClient (blocking reqwest); get_json/post_json/put_json/delete helpers;
                     Bitbucket REST API v2.0 methods [get_current_user, get_repository,
                     list_repositories, create_repository, delete_repository, list_pull_requests,
@@ -34,7 +36,7 @@ src/
                     update_pull_request_comment, approve_pull_request, unapprove_pull_request,
                     decline_pull_request, merge_pull_request, get_pull_request_diff, list_branches,
                     list_workspace_members implemented]
-  cli.rs          — clap structs: Cli (--select, --select-all, --user global), Command, AuthCommand, RepoCommand,
+  cli.rs          — clap structs: Cli (--select, --select-all, --user <USER_ID> global), Command, AuthCommand, RepoCommand,
                     PrCommand, BranchCommand, WorkspaceCommand. No logic.
   context.rs      — config_dir(), load_app_config(), load_oauth_config(identity),
                     authenticated_client(identity), login_command(identity),
@@ -48,7 +50,7 @@ src/
                     convention" below). tests/e2e_tests.rs holds the ignored e2e tests
                     against a real workspace (see "Testing" below).
   main.rs         — pure dispatch: resolve --select/--select-all into a
-                    cli_fields::Select and --user into an Identity once, match
+                    cli_fields::Select and --user <USER_ID> into an Identity once, match
                     Command, call commands::*.
 ```
 
@@ -97,24 +99,27 @@ consumer**, with two grants (one consumer per identity, possibly the same one):
 - `auth login` (default) — `client_credentials`: no human consent step, no browser,
   no refresh token. Every action is attributed to the OAuth app. **Intentional** for
   bot/agent usage: bot actions must be visibly a bot's.
-- `auth login --user` — `authorization_code`: browser consent, callback on
+- `auth login --user <id>` — `authorization_code`: browser consent, callback on
   `127.0.0.1:8080` (the consumer's callback URL must be
   `http://localhost:8080/callback`), stores a `refresh_token`. Every action is
-  attributed to the human who consented. For a human using the CLI instead of the UI.
+  attributed to the person who consented. For an agent acting as the person it works for.
 
-**Both identities are stored side by side (issue #164)** — see root `CLAUDE.md`'s
-"Two identities per CLI". The global `--user` flag selects, per call, the app
-(default: `app.json`'s `service` consumer, `credentials-service.json`) or the human
-(`user` consumer, `credentials-user.json`); `context::authenticated_client(identity)`
-loads and renews only that identity, and `LoginMode::identity()` decides which file a
-login writes. `--remote`/`--code` without `--user` fail in `LoginMode::from_flags`
-(`CliError::RemoteLoginNeedsUser`), since clap's `requires` can't see a global `--user`
-placed before the subcommand. `init` / `init --user` write only their own section
-(`client_credentials` for the app, the browser consent for the human).
+**The app and any number of people are stored side by side (issues #164, #175)** — see
+root `CLAUDE.md`'s "Service and per-person identities". The global `--user <USER_ID>`
+flag selects, per call, the app (default: `app.json`'s `service` consumer,
+`credentials-service.json`) or that person (`user` consumer, shared by every person,
+`users/<id>/credentials.json`); `context::authenticated_client(identity)` loads and
+renews (under a per-file lock) only that identity, `LoginMode` carries the person's id
+and `LoginMode::identity()` decides which file a login writes; `auth logout` removes
+one identity's login. `--remote`/`--code` without `--user` fail in
+`LoginMode::from_flags` (`CliError::RemoteLoginNeedsUser`), since clap's `requires`
+can't see a global `--user` placed before the subcommand. `init` / `init --user <id>`
+write only their own section (`client_credentials` for the app, the browser consent
+for that person).
 
 - **OAuth consumer**: created in the Bitbucket workspace (Settings → OAuth consumers →
   Add consumer). Callback URL `http://localhost:8080/callback` is needed only for
-  `--user`; it doesn't affect `client_credentials`. Produces a `Key` (client_id) and `Secret`
+  `--user <id>`; it doesn't affect `client_credentials`. Produces a `Key` (client_id) and `Secret`
   (client_secret). The token's identity is whichever account created the consumer —
   in production this should be a dedicated `bot@<domain>` account added as a workspace
   member, not a personal account.
@@ -124,18 +129,19 @@ placed before the subcommand. `init` / `init --user` write only their own sectio
   - API base: `https://api.bitbucket.org/2.0` (workspace slug used directly in paths,
     no `cloud_id` resolution step like jira)
 - **Renewal** (60s leeway, see `auth::load_credentials`/`auth::renew`): credentials
-  with a `refresh_token` (`--user`) renew via the `refresh_token` grant (Bitbucket
+  with a `refresh_token` (`--user <id>`) renew via the `refresh_token` grant (Bitbucket
   rotates it on every use; a response without one keeps the old one, so a user
   session never silently becomes the app); without one, via `client_credentials`
-  again. Access tokens last 1 hour; an unused refresh token expires after 3 months.
-- **`--user` specifics** (from Bitbucket's docs): no PKCE and no `redirect_uri`
+  again. Renewal holds a lock on the credentials file and re-reads it first, so
+  parallel commands for the same identity renew once. Access tokens last 1 hour; an unused refresh token expires after 3 months.
+- **`--user <id>` specifics** (from Bitbucket's docs): no PKCE and no `redirect_uri`
   parameter — Bitbucket always redirects to the consumer's callback URL. `state` is
   sent and checked for CSRF. The token response may name the scope field `scope` or
   `scopes`; both are accepted.
-- **`auth login --user --remote` — the same grant in two steps** (issue #146), for a
+- **`auth login --user <id> --remote` — the same grant in two steps** (issue #146), for a
   person not at this machine. Step 1 (`start_remote_login`) saves an
   `oauth_user_login::PendingLogin` with **state only** (no PKCE, no redirect URI) to
-  `pending-login.json` (0600, 10 minutes) and prints `{authorize_url, state,
+  that person's `users/<id>/pending-login.json` (0600, 10 minutes) and prints `{authorize_url, state,
   expires_at}`; step 2 (`--code --state`, `complete_remote_login`) takes it (state
   single-use) and exchanges the code. There is no `--redirect-uri`: Bitbucket always
   redirects to the consumer's callback URL, so remote use needs a consumer whose
@@ -148,25 +154,27 @@ Config layout, mirroring jira (`$XDG_CONFIG_HOME/bitbucket-cli/`, falling back t
 
 - `app.json` — `{"service": {"client_id": "...", "client_secret": "..."}, "user":
   {"client_id": "...", "client_secret": "..."}}` (each identity's OAuth consumer
-  Key/Secret, either section optional). Static, written by `init` / `init --user` or by
-  hand. The pre-#164 flat shape is rejected with `CliError::AppConfigLegacy`, naming
+  Key/Secret, either section optional). Static, written by `init` / `init --user <id>` or by
+  hand, mode 0600. The pre-#164 flat shape is rejected with `CliError::AppConfigLegacy`, naming
   both `init` commands; no automatic migration.
-- `credentials-service.json` / `credentials-user.json` — `access_token`, `expires_at`,
-  `scopes`, `refresh_token` (only for the human). Fully managed by the CLI. A leftover
-  pre-#164 `credentials.json` is not read; `doctor`'s `identities.legacy_credentials_file`
-  reports it.
-- `pending-login.json` — only between the two steps of `auth login --user --remote`
+- `credentials-service.json` / `users/<id>/credentials.json` — `access_token`, `expires_at`,
+  `scopes`, `refresh_token` (only for people). Mode 0600, `<file>.lock` next to them
+  during renewals. Fully managed by the CLI. Leftover `credentials.json` (pre-#164) and
+  `credentials-user.json` (#164) are not read; `doctor`'s
+  `identities.legacy_credentials_files` reports them.
+- `users/<id>/pending-login.json` — only between the two steps of `auth login --user <id> --remote`
   (`state`, `expires_at`). Removed by step 2.
 
 ## Implemented commands
 
 | Command | Notes |
 |---------|-------|
-| `init [--user] [--client-id --client-secret]` | Onboarding of one identity (`service` section + `client_credentials`, or `user` section + browser consent with `--user`); only command with narrative output |
-| `doctor [--user]` | Cascading JSON health check for the selected identity (app_config, credentials, api, permissions); `credentials.identity` is `user` or `app`; informational `pending_login` and `identities`; exit non-zero on any failure |
-| `auth login [--user]` | default: `client_credentials` exchange (the app) into `credentials-service.json`; `--user`: browser `authorization_code` flow (the human) into `credentials-user.json` |
-| `auth login --user --remote` / `--code --state` | two-step `authorization_code` for someone elsewhere: step 1 prints the consent URL (exempt from `--select`), step 2 exchanges the code and prints `auth whoami` |
-| `auth whoami [--user]` | `GET /2.0/user` as the selected identity, supports `--select` |
+| `init [--user <id>] [--client-id --client-secret]` | Onboarding of one identity (`service` section + `client_credentials`, or `user` section + browser consent for that person); only command with narrative output |
+| `doctor [--user <id>]` | Cascading JSON health check for the selected identity (app_config, credentials, api, permissions); `credentials.identity` is `user` or `app`; informational `pending_login` and `identities`; exit non-zero on any failure |
+| `auth login [--user <id>]` | default: `client_credentials` exchange (the app) into `credentials-service.json`; `--user <id>`: browser `authorization_code` flow (that person) into `users/<id>/credentials.json` |
+| `auth login --user <id> --remote` / `--code --state` | two-step `authorization_code` for someone elsewhere: step 1 prints the consent URL (exempt from `--select`), step 2 exchanges the code and prints `auth whoami` |
+| `auth whoami [--user <id>]` | `GET /2.0/user` as the selected identity, supports `--select` |
+| `auth logout [--user <id>]` | removes the selected identity's stored login (local only); prints `{"logged_out": ...}` |
 | `repo get <workspace>/<repo_slug>` | `GET /2.0/repositories/{workspace}/{repo_slug}`, supports `--select` |
 | `repo list <workspace> [--page]` | `GET /2.0/repositories/{workspace}`, paginated (`--page`), supports `--select` |
 | `repo create <workspace>/<repo_slug> [--description --private --project]` | `POST /2.0/repositories/{workspace}/{repo_slug}`, `scm` always `git`, supports `--select` |
@@ -210,6 +218,7 @@ scopes a command needs is documented per-command, not enforced by `doctor`.
   |---|---|---|
   | `doctor` | yes | internally-generated report, fixed/small |
   | `auth whoami` | yes | identity check, fixed/small |
+  | `auth logout` | yes | synthesized by us: `{"logged_out": "service"}` / `{"logged_out": "user:<id>"}` |
   | `repo get` | yes | single repository object, fixed shape |
   | `repo list` | **no** | paginated collection |
   | `repo create` | yes | single repository object, fixed shape |

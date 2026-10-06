@@ -3,11 +3,15 @@
 use super::{AuthCommand, BranchCommand, Cli, Command, PrCommand, RepoCommand, WorkspaceCommand};
 use clap::Parser;
 
+fn user(cli: &Cli) -> Option<&str> {
+    cli.user.as_ref().map(oauth_user_login::UserId::as_str)
+}
+
 #[test]
 fn parses_auth_login() {
     let cli = Cli::try_parse_from(["bitbucket", "auth", "login"]).expect("should parse");
 
-    assert!(!cli.user);
+    assert_eq!(cli.user, None);
     assert!(matches!(
         cli.command,
         Command::Auth {
@@ -18,9 +22,9 @@ fn parses_auth_login() {
 
 #[test]
 fn parses_auth_login_with_user() {
-    let cli = Cli::try_parse_from(["bitbucket", "auth", "login", "--user"]).expect("should parse");
+    let cli = Cli::try_parse_from(["bitbucket", "auth", "login", "--user", "alice"]).expect("should parse");
 
-    assert!(cli.user);
+    assert_eq!(user(&cli), Some("alice"));
     assert!(matches!(
         cli.command,
         Command::Auth {
@@ -31,9 +35,9 @@ fn parses_auth_login_with_user() {
 
 #[test]
 fn parses_auth_login_remote_start_without_redirect_uri() {
-    let cli = Cli::try_parse_from(["bitbucket", "auth", "login", "--user", "--remote"]).expect("should parse");
+    let cli = Cli::try_parse_from(["bitbucket", "auth", "login", "--user", "alice", "--remote"]).expect("should parse");
 
-    assert!(cli.user);
+    assert_eq!(user(&cli), Some("alice"));
     assert!(matches!(
         cli.command,
         Command::Auth {
@@ -44,12 +48,13 @@ fn parses_auth_login_remote_start_without_redirect_uri() {
 
 #[test]
 fn parses_auth_login_remote_complete() {
-    let cli = Cli::try_parse_from(["bitbucket", "auth", "login", "--user", "--code", "c1", "--state", "s1"])
+    let cli = Cli::try_parse_from(["bitbucket", "auth", "login", "--user", "alice", "--code", "c1", "--state", "s1"])
         .expect("should parse");
 
+    assert_eq!(user(&cli), Some("alice"));
     match cli.command {
         Command::Auth { command: AuthCommand::Login { remote, code, state } } => {
-            assert!(cli.user && !remote);
+            assert!(!remote);
             assert_eq!((code.as_deref(), state.as_deref()), (Some("c1"), Some("s1")));
         }
         other => panic!("unexpected command: {other:?}"),
@@ -64,42 +69,42 @@ fn auth_login_remote_flag_combinations_are_enforced() {
     };
     // "--remote/--code need --user" is checked by LoginMode::from_flags, not clap:
     // clap cannot see a global --user written before the subcommand.
-    assert_eq!(kind(&["--user", "--code", "c"]), MissingRequiredArgument);
-    assert_eq!(kind(&["--user", "--state", "s"]), MissingRequiredArgument);
-    assert_eq!(kind(&["--user", "--remote", "--code", "c", "--state", "s"]), ArgumentConflict);
+    assert_eq!(kind(&["--user", "alice", "--code", "c"]), MissingRequiredArgument);
+    assert_eq!(kind(&["--user", "alice", "--state", "s"]), MissingRequiredArgument);
+    assert_eq!(kind(&["--user", "alice", "--remote", "--code", "c", "--state", "s"]), ArgumentConflict);
     // Bitbucket has no redirect_uri parameter: the consumer's callback URL decides.
-    assert_eq!(kind(&["--user", "--remote", "--redirect-uri", "https://m/cb"]), UnknownArgument);
+    assert_eq!(kind(&["--user", "alice", "--remote", "--redirect-uri", "https://m/cb"]), UnknownArgument);
 }
 
-// --- global --user (issue #164) ---
+// --- global --user <id> (issues #164, #175) ---
 
 #[test]
 fn user_flag_defaults_to_the_app_identity() {
     let cli = Cli::try_parse_from(["bitbucket", "repo", "get", "acme/my-repo"]).expect("should parse");
 
-    assert!(!cli.user);
+    assert_eq!(cli.user, None);
 }
 
 #[test]
 fn user_flag_is_accepted_after_any_subcommand() {
     for args in [
-        &["bitbucket", "repo", "get", "acme/my-repo", "--user"][..],
-        &["bitbucket", "pr", "list", "acme/my-repo", "--user"],
-        &["bitbucket", "branch", "list", "acme/my-repo", "--user"],
-        &["bitbucket", "auth", "whoami", "--user"],
-        &["bitbucket", "doctor", "--user"],
-        &["bitbucket", "init", "--user"],
+        &["bitbucket", "repo", "get", "acme/my-repo", "--user", "alice"][..],
+        &["bitbucket", "pr", "list", "acme/my-repo", "--user", "alice"],
+        &["bitbucket", "branch", "list", "acme/my-repo", "--user", "alice"],
+        &["bitbucket", "auth", "whoami", "--user", "alice"],
+        &["bitbucket", "doctor", "--user", "alice"],
+        &["bitbucket", "init", "--user", "alice"],
     ] {
         let cli = Cli::try_parse_from(args).unwrap_or_else(|e| panic!("{args:?}: {e}"));
-        assert!(cli.user, "{args:?} should select the human identity");
+        assert_eq!(user(&cli), Some("alice"), "{args:?} should select that person");
     }
 }
 
 #[test]
 fn user_flag_is_accepted_before_the_subcommand() {
-    let cli = Cli::try_parse_from(["bitbucket", "--user", "auth", "login", "--remote"]).expect("should parse");
+    let cli = Cli::try_parse_from(["bitbucket", "--user", "alice", "auth", "login", "--remote"]).expect("should parse");
 
-    assert!(cli.user);
+    assert_eq!(user(&cli), Some("alice"));
 }
 
 #[test]
@@ -110,10 +115,30 @@ fn rejects_auth_login_short_user_flag() {
 }
 
 #[test]
-fn rejects_auth_login_user_with_value() {
-    let result = Cli::try_parse_from(["bitbucket", "auth", "login", "--user", "someone"]);
+fn user_flag_needs_the_persons_id() {
+    // Issue #175: --user names the person; a bare --user would silently pick
+    // whoever logged in last.
+    let err = Cli::try_parse_from(["bitbucket", "repo", "get", "acme/my-repo", "--user"]).unwrap_err();
+    assert_eq!(err.kind(), clap::error::ErrorKind::InvalidValue);
+}
 
-    assert!(result.is_err());
+#[test]
+fn user_flag_rejects_an_id_that_is_not_a_slug() {
+    for id in ["Jane", "../etc", "a/b", ".hidden", "jane doe"] {
+        let err = Cli::try_parse_from(["bitbucket", "auth", "whoami", "--user", id]).unwrap_err();
+        assert_eq!(err.kind(), clap::error::ErrorKind::ValueValidation, "{id}");
+        assert!(err.to_string().contains("lowercase slug"), "{id}: {err}");
+    }
+}
+
+#[test]
+fn parses_auth_logout() {
+    let cli = Cli::try_parse_from(["bitbucket", "auth", "logout", "--user", "alice"]).expect("should parse");
+
+    assert_eq!(user(&cli), Some("alice"));
+    assert!(matches!(cli.command, Command::Auth { command: AuthCommand::Logout }));
+    let app = Cli::try_parse_from(["bitbucket", "auth", "logout"]).expect("should parse");
+    assert_eq!(app.user, None);
 }
 
 #[test]
