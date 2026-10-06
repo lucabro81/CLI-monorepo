@@ -44,7 +44,8 @@ serve both.
 
 /// Writes `identity`'s section of `<config_dir>/bitbucket-cli/app.json`, keeping the
 /// other identity's section. A missing file or one in the legacy single-identity
-/// format is replaced; a file that is not valid JSON is left alone and reported.
+/// format is replaced (the latter with a notice); a file that is not valid JSON is
+/// left alone and reported.
 /// Creates parent directories if they do not exist.
 pub fn write_app_config(
     config_dir: &Path,
@@ -55,7 +56,19 @@ pub fn write_app_config(
     let path = auth::app_config_path(config_dir);
     let mut app = match AppConfig::load(&path) {
         Ok(app) => app,
-        Err(OAuthConfigError::NotFound(_) | OAuthConfigError::LegacyFormat) => {
+        Err(OAuthConfigError::NotFound(_)) => AppConfig { service: None, user: None },
+        Err(OAuthConfigError::LegacyFormat) => {
+            // Its one client_id/client_secret pair can't be assigned to an
+            // identity, so it is dropped: say so, the other identity may need it.
+            println!(
+                "Replacing the old single-identity {}: its client_id/client_secret are discarded. \
+                Run bitbucket init{} again if the other identity needs them.",
+                path.display(),
+                match identity {
+                    Identity::Service => " --user",
+                    Identity::User => "",
+                }
+            );
             AppConfig { service: None, user: None }
         }
         Err(e) => return Err(app_config_error(e, &path)),
