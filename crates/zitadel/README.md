@@ -78,7 +78,7 @@ For a person who is not at the CLI's machine (the CLI runs on a server, the pers
 
 Each login writes its own identity's file. Before each command, the selected identity's token is renewed if it expires within 60 seconds — via the refresh token for a person, by re-signing the JWT for the service user — under a lock on the file, so parallel commands for the same identity renew once and share the result.
 
-Config lives in `$XDG_CONFIG_HOME/zitadel-cli/` (fallback `~/.config/zitadel-cli/`): `app.json` (instance URL, service user key, optional client id), `credentials-service.json` and `users/<USER_ID>/credentials.json` (managed by the CLI), all with mode `0600`.
+Config lives in `$XDG_CONFIG_HOME/zitadel-cli/` (fallback `~/.config/zitadel-cli/`): `app.json` (instance URL, service user key, optional client id), `credentials-service.json` and `users/<USER_ID>/credentials.json` (managed by the CLI), all with mode `0600`. An empty `<credentials file>.lock` (mode `0600`) appears next to a credentials file after its first renewal: it keeps parallel commands from renewing the same token twice. Leave it in place.
 
 ## Usage
 
