@@ -122,7 +122,7 @@ pub enum CliError {
     #[error("I/O error: {reason}")]
     IoError { reason: String },
 
-    #[error("{label} has no stored login on this machine, so there is nothing to log out. To log in: {login}")]
+    #[error("nothing to log out: identity \"{label}\" has no stored login on this machine. To log in: {login}")]
     NothingToLogOut { label: String, login: String },
 
     #[error(
