@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [2.0.0](https://github.com/lucabro81/CLI-monorepo/compare/zitadel-v1.0.0...zitadel-v2.0.0) - 2026-10-06
+
+### Added
+- *(zitadel)* --user <id> selects a person, one credentials folder each, auth logout
+
+### Fixed
+- *(zitadel)* name the identity in the nothing-to-log-out error
+
+### Other
+- *(zitadel)* document --user <id>, per-person folders and auth logout (#175)
+- *(zitadel)* explain the .lock file next to the credentials (#175)
+- Merge pull request #176 from lucabro81/issue175 ([#176](https://github.com/lucabro81/CLI-monorepo/pull/176))
 ## [1.0.0](https://github.com/lucabro81/CLI-monorepo/compare/zitadel-v0.2.0...zitadel-v1.0.0) - 2026-10-06
 
 ### Added
