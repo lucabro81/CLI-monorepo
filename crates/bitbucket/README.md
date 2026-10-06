@@ -64,6 +64,8 @@ The CLI holds the OAuth app and any number of people side by side, and every com
 | `users/<USER_ID>/credentials.json` | `bitbucket auth login --user <USER_ID>` | that person's token and refresh token |
 | `users/<USER_ID>/pending-login.json` | `bitbucket auth login --user <USER_ID> --remote` | that person's remote login waiting for its code |
 
+An empty `<credentials file>.lock` (mode `0600`) appears next to a credentials file after its first renewal: it keeps parallel commands from renewing the same token twice. Leave it in place.
+
 ```sh
 cargo run -p bitbucket -- init --client-id <KEY> --client-secret <SECRET>          # the OAuth app, no browser
 cargo run -p bitbucket -- init --user jane.doe --client-id <KEY> --client-secret <SECRET>   # jane.doe, via browser consent
