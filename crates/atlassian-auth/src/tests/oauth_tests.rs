@@ -764,3 +764,34 @@ fn saved_credentials_are_readable_only_by_the_owner() {
 
     assert_eq!(std::fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
 }
+
+#[test]
+fn a_renewal_that_cannot_be_saved_is_a_save_failure_not_a_missing_login() {
+    // Regression guard (#175 review): a failed write after a renewal used to be
+    // an Io error, which callers report as "not logged in" — logging in again
+    // would not fix an unwritable folder.
+    let dir = tempfile::tempdir().unwrap();
+    let path = saved(dir.path(), &alice(), &expired(Some("rt")));
+    // Credentials are written through a `<file>.tmp` sibling renamed over the
+    // target; a directory in its place makes that write fail.
+    let mut tmp = path.clone().into_os_string();
+    tmp.push(".tmp");
+    std::fs::create_dir(&tmp).unwrap();
+
+    let err = load_credentials_with(&path, &alice(), |_| Ok(renewed("fresh"))).unwrap_err();
+
+    assert!(matches!(err, LoginError::SaveCredentials(_)), "got {err:?}");
+}
+
+#[test]
+fn a_lock_that_cannot_be_taken_is_a_save_failure_not_a_missing_login() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = saved(dir.path(), &alice(), &expired(Some("rt")));
+    let mut lock = path.clone().into_os_string();
+    lock.push(".lock");
+    std::fs::create_dir(&lock).unwrap();
+
+    let err = load_credentials_with(&path, &alice(), |_| panic!("must not renew without the lock")).unwrap_err();
+
+    assert!(matches!(err, LoginError::SaveCredentials(_)), "got {err:?}");
+}
