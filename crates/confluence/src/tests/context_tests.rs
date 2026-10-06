@@ -123,7 +123,7 @@ fn a_missing_app_config_names_both_init_commands() {
 
 #[test]
 fn missing_service_credentials_suggest_login_or_the_user_flag() {
-    let err = login_error_to_cli(LoginError::Io(std::io::ErrorKind::NotFound.into()), &Identity::Service).to_string();
+    let err = login_error_to_cli(LoginError::Io(std::io::ErrorKind::NotFound.into()), Path::new("/c/credentials.json"), &Identity::Service).to_string();
 
     assert_eq!(
         err,
@@ -134,7 +134,7 @@ fn missing_service_credentials_suggest_login_or_the_user_flag() {
 
 #[test]
 fn missing_user_credentials_name_the_person_and_their_login() {
-    let err = login_error_to_cli(LoginError::Io(std::io::ErrorKind::NotFound.into()), &alice()).to_string();
+    let err = login_error_to_cli(LoginError::Io(std::io::ErrorKind::NotFound.into()), Path::new("/c/credentials.json"), &alice()).to_string();
 
     assert_eq!(
         err,
@@ -145,8 +145,8 @@ fn missing_user_credentials_name_the_person_and_their_login() {
 
 #[test]
 fn a_failed_renewal_names_the_login_of_the_same_identity() {
-    let user = login_error_to_cli(LoginError::TokenExchange("invalid_grant".to_string()), &alice());
-    let service = login_error_to_cli(LoginError::TokenExchange("invalid_grant".to_string()), &Identity::Service);
+    let user = login_error_to_cli(LoginError::TokenExchange("invalid_grant".to_string()), Path::new("/c/credentials.json"), &alice());
+    let service = login_error_to_cli(LoginError::TokenExchange("invalid_grant".to_string()), Path::new("/c/credentials.json"), &Identity::Service);
 
     assert!(user.to_string().ends_with("Run: confluence auth login --user alice"), "{user}");
     assert!(service.to_string().ends_with("Run: confluence auth login"), "{service}");
@@ -156,7 +156,24 @@ fn a_failed_renewal_names_the_login_of_the_same_identity() {
 fn credentials_of_the_wrong_identity_mean_that_identity_is_not_logged_in() {
     // Regression guard (issue #164 review): a human slot without a refresh
     // token must not be renewed as the app.
-    let err = login_error_to_cli(LoginError::WrongIdentity("x"), &alice()).to_string();
+    let err = login_error_to_cli(LoginError::WrongIdentity("x"), Path::new("/c/credentials.json"), &alice()).to_string();
 
     assert!(err.starts_with("user alice is not logged in. Run: confluence auth login --user alice"), "{err}");
+}
+
+#[test]
+fn an_unwritable_credentials_file_names_the_file_not_a_relogin() {
+    // Regression guard (#175 review): a failed save or lock after a renewal
+    // used to read "not logged in", and logging in again would not fix it.
+    let err = login_error_to_cli(
+        LoginError::SaveCredentials("permission denied".to_string()),
+        Path::new("/c/credentials.json"),
+        &alice(),
+    );
+
+    assert!(
+        matches!(&err, CliError::SaveCredentialsFailed { path, reason }
+            if path == "/c/credentials.json" && reason == "could not write credentials file: permission denied"),
+        "got {err:?}"
+    );
 }
