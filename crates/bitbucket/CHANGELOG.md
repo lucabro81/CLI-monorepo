@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-## [1.0.0](https://github.com/lucabro81/CLI-monorepo/compare/bitbucket-v0.11.0...bitbucket-v1.0.0) - 2026-10-06
+## [2.0.0](https://github.com/lucabro81/CLI-monorepo/compare/bitbucket-v1.0.0...bitbucket-v2.0.0) - 2026-10-06
 
 ### Added
 - *(bitbucket)* --user <id> selects a person, one credentials folder each, auth logout
