@@ -7,7 +7,7 @@ use oauth_user_login::{CallbackError, WaitError};
 use super::{
     app_config_path, authorization_code_body, authorization_url, complete_remote_login,
     complete_remote_login_at,
-    credentials_path, merge_scopes_for_cloud_id, pending_login_path, refresh, start_remote_login,
+    legacy_credentials_path, merge_scopes_for_cloud_id, pending_login_path, refresh, start_remote_login,
     AccessibleResource, AppConfig, Credentials, Identity, LoginError, OAuthConfig, OAuthConfigError,
 };
 
@@ -150,8 +150,8 @@ fn refresh_without_refresh_token_returns_internal_error() {
 }
 
 #[test]
-fn credentials_path_is_under_given_cli_dir() {
-    let path = credentials_path(Path::new("/home/user/.config"), "confluence-cli");
+fn legacy_credentials_path_is_under_given_cli_dir() {
+    let path = legacy_credentials_path(Path::new("/home/user/.config"), "confluence-cli");
 
     assert_eq!(
         path,
@@ -176,54 +176,6 @@ fn app_config_path_differs_per_cli_dir() {
     let confluence_path = app_config_path(Path::new("/home/user/.config"), "confluence-cli");
 
     assert_ne!(jira_path, confluence_path);
-}
-
-#[test]
-fn parses_oauth_config_from_app_json() {
-    let json = r#"{"client_id": "abc", "client_secret": "shh"}"#;
-
-    let config = OAuthConfig::from_json(json).expect("should parse");
-
-    assert_eq!(
-        config,
-        OAuthConfig {
-            client_id: "abc".to_string(),
-            client_secret: "shh".to_string(),
-            redirect_uri: OAuthConfig::REDIRECT_URI.to_string(),
-        }
-    );
-}
-
-#[test]
-fn rejects_malformed_app_json() {
-    let result = OAuthConfig::from_json("not json");
-
-    assert!(matches!(result, Err(OAuthConfigError::InvalidJson(_))));
-}
-
-#[test]
-fn rejects_app_json_missing_client_id() {
-    let result = OAuthConfig::from_json(r#"{"client_secret": "shh"}"#);
-
-    assert!(matches!(result, Err(OAuthConfigError::InvalidJson(_))));
-}
-
-#[test]
-fn rejects_app_json_missing_client_secret() {
-    let result = OAuthConfig::from_json(r#"{"client_id": "abc"}"#);
-
-    assert!(matches!(result, Err(OAuthConfigError::InvalidJson(_))));
-}
-
-#[test]
-fn accepts_app_json_with_extra_fields() {
-    // serde ignores unknown fields — extra keys in app.json must not break loading.
-    let json = r#"{"client_id": "abc", "client_secret": "shh", "extra": "ignored"}"#;
-
-    let config = OAuthConfig::from_json(json).expect("should parse");
-
-    assert_eq!(config.client_id, "abc");
-    assert_eq!(config.client_secret, "shh");
 }
 
 #[test]
@@ -645,6 +597,23 @@ fn rejects_an_app_config_section_missing_its_secret() {
     let result = AppConfig::from_json(r#"{"user": {"client_id": "usr-id"}}"#);
 
     assert!(matches!(result, Err(OAuthConfigError::InvalidJson(_))));
+}
+
+#[test]
+fn rejects_an_app_config_section_missing_its_client_id() {
+    let result = AppConfig::from_json(r#"{"service": {"client_secret": "svc-secret"}}"#);
+
+    assert!(matches!(result, Err(OAuthConfigError::InvalidJson(_))));
+}
+
+#[test]
+fn accepts_an_app_config_with_extra_fields() {
+    // serde ignores unknown fields — extra keys in app.json must not break loading.
+    let json = r#"{"note": "x", "service": {"client_id": "svc-id", "client_secret": "svc-secret", "extra": 1}}"#;
+
+    let config = AppConfig::from_json(json).expect("should parse");
+
+    assert_eq!(config.section(Identity::Service), Some(&section("svc-id", "svc-secret")));
 }
 
 #[test]

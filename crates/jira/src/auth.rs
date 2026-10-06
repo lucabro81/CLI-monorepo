@@ -32,7 +32,7 @@ pub fn credentials_path(config_dir: &Path, identity: Identity) -> PathBuf {
 /// The single credentials file used before issue #164
 /// (`<config_dir>/jira-cli/credentials.json`); no longer read, only reported by `doctor`.
 pub fn legacy_credentials_path(config_dir: &Path) -> PathBuf {
-    atlassian_auth::credentials_path(config_dir, CLI_DIR)
+    atlassian_auth::legacy_credentials_path(config_dir, CLI_DIR)
 }
 
 /// Path to the pending remote login: `<config_dir>/jira-cli/pending-login.json`.

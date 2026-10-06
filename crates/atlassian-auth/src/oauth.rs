@@ -12,12 +12,16 @@
 //!
 //! Other layers:
 //!
-//! - **App identity** (`OAuthConfig`) — the static Atlassian OAuth app credentials
-//!   loaded from a crate's `app.json`. Includes helpers for loading and validating
-//!   the file.
+//! - **Identities** (`Identity`) — every crate stores two identities side by
+//!   side (issue #164): the service identity (`client_credentials`, the
+//!   default) and the human (`--user`). Each has its own `app.json` section and
+//!   its own credentials file.
+//! - **App identity** (`AppConfig`, one `OAuthConfig` per section) — the static
+//!   Atlassian OAuth app credentials loaded from a crate's `app.json`, with
+//!   helpers for loading, validating and rewriting the file.
 //! - **Session credentials** (`Credentials`) — the dynamic token set (access token,
-//!   optional refresh token, expiry, cloud ID, optional site URL) persisted to a
-//!   crate's `credentials.json`.
+//!   optional refresh token, expiry, cloud ID, optional site URL) persisted to
+//!   the identity's `credentials-service.json` / `credentials-user.json`.
 //!
 //! `refresh` exchanges a refresh token for a new token pair. Atlassian refresh
 //! tokens **rotate on every use** — the new pair must always be persisted immediately
@@ -27,7 +31,7 @@
 //! OAuth scopes are requested per product (Jira and Confluence grant different
 //! scope strings) — every function that needs them takes `scopes: &str` rather
 //! than hardcoding a product's scope list. Similarly, `app_config_path`/
-//! `credentials_path` take a `cli_dir` (e.g. `"jira-cli"`, `"confluence-cli"`)
+//! `Identity::credentials_path` take a `cli_dir` (e.g. `"jira-cli"`, `"confluence-cli"`)
 //! so each crate's config lives under its own directory.
 
 use serde::{Deserialize, Serialize};
@@ -35,8 +39,8 @@ use std::path::{Path, PathBuf};
 
 use crate::endpoints;
 
-/// Static OAuth 2.0 app identity loaded from `app.json`.
-/// Written once by hand (or by a crate's `init` command); never modified by the CLI at runtime.
+/// One OAuth 2.0 app: a section of `app.json` (see [`AppConfig`]).
+/// Written by a crate's `init` command (or by hand); never modified by the CLI at runtime.
 #[derive(Debug, PartialEq, Eq)]
 pub struct OAuthConfig {
     pub client_id: String,
@@ -46,25 +50,6 @@ pub struct OAuthConfig {
 
 impl OAuthConfig {
     pub const REDIRECT_URI: &'static str = "http://localhost:8080/callback";
-
-    /// Parses app credentials (`client_id`, `client_secret`) from the contents of `app.json`.
-    pub fn from_json(json: &str) -> Result<Self, OAuthConfigError> {
-        let app: AppCredentials =
-            serde_json::from_str(json).map_err(|e| OAuthConfigError::InvalidJson(e.to_string()))?;
-
-        Ok(OAuthConfig {
-            client_id: app.client_id,
-            client_secret: app.client_secret,
-            redirect_uri: Self::REDIRECT_URI.to_string(),
-        })
-    }
-
-    /// Loads app credentials from `app.json` at `path`.
-    pub fn load(path: &Path) -> Result<Self, OAuthConfigError> {
-        let raw = std::fs::read_to_string(path)
-            .map_err(|_| OAuthConfigError::NotFound(path.to_path_buf()))?;
-        Self::from_json(&raw)
-    }
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -186,8 +171,10 @@ pub fn app_config_path(config_dir: &Path, cli_dir: &str) -> PathBuf {
     config_dir.join(cli_dir).join("app.json")
 }
 
-/// Path to a crate's local credentials file: `<config_dir>/<cli_dir>/credentials.json`.
-pub fn credentials_path(config_dir: &Path, cli_dir: &str) -> PathBuf {
+/// The single credentials file used before issue #164:
+/// `<config_dir>/<cli_dir>/credentials.json`. No longer read; crates only
+/// report it (`doctor`) so it can be deleted. See [`Identity::credentials_path`].
+pub fn legacy_credentials_path(config_dir: &Path, cli_dir: &str) -> PathBuf {
     config_dir.join(cli_dir).join("credentials.json")
 }
 
