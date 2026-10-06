@@ -68,9 +68,16 @@ pub(crate) fn login_command(identity: &Identity) -> String {
     }
 }
 
-/// Maps a failure to load or renew `identity`'s stored credentials.
-pub(crate) fn login_error_to_cli(error: LoginError, identity: &Identity) -> CliError {
+/// Maps a failure to load or renew `identity`'s stored credentials, kept at `credentials_path`.
+pub(crate) fn login_error_to_cli(error: LoginError, credentials_path: &Path, identity: &Identity) -> CliError {
     let reason = match error {
+        // An unwritable file or folder: logging in again would not help.
+        LoginError::SaveCredentials(_) => {
+            return CliError::SaveCredentialsFailed {
+                path: credentials_path.display().to_string(),
+                reason: error.to_string(),
+            };
+        }
         LoginError::Io(_) | LoginError::WrongIdentity(_) => {
             return match identity {
                 Identity::Service => CliError::NotAuthenticatedService,
@@ -96,7 +103,7 @@ pub fn authenticated_client(identity: &Identity) -> Result<BitbucketClient, CliE
     let oauth_config = load_oauth_config(identity)?;
     let path = auth::credentials_path(&config_dir()?, identity);
     let credentials =
-        auth::load_credentials(&oauth_config, &path, identity).map_err(|e| login_error_to_cli(e, identity))?;
+        auth::load_credentials(&oauth_config, &path, identity).map_err(|e| login_error_to_cli(e, &path, identity))?;
     Ok(BitbucketClient::new(&credentials))
 }
 

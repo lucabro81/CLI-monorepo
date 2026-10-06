@@ -187,6 +187,10 @@ pub enum LoginError {
     Callback(oauth_user_login::WaitError),
     #[error("{0}")]
     PendingLogin(oauth_user_login::PendingLoginError),
+    /// Writing the credentials file (or taking its lock) failed, e.g. an
+    /// unwritable config folder — distinct from `Io`, which covers reading it.
+    #[error("could not write credentials file: {0}")]
+    SaveCredentials(String),
     /// A condition that should be unreachable given valid inputs.
     /// If this surfaces it indicates a bug in the CLI itself.
     #[error("internal error: {0}")]
@@ -458,7 +462,7 @@ pub(crate) fn load_credentials_with(
         return Ok(credentials);
     }
 
-    let _lock = oauth_user_login::lock_exclusive(path)?;
+    let _lock = oauth_user_login::lock_exclusive(path).map_err(|e| LoginError::SaveCredentials(e.to_string()))?;
     let credentials = read_credentials(path, identity)?;
     if !expiring(&credentials) {
         return Ok(credentials);
@@ -484,8 +488,7 @@ fn expiring(credentials: &Credentials) -> bool {
 pub fn save_credentials(path: &Path, credentials: &Credentials) -> Result<(), LoginError> {
     let json = serde_json::to_string_pretty(credentials)
         .map_err(|e| LoginError::Internal(format!("failed to serialize credentials: {e}")))?;
-    oauth_user_login::write_secret_file(path, json.as_bytes())?;
-    Ok(())
+    oauth_user_login::write_secret_file(path, json.as_bytes()).map_err(|e| LoginError::SaveCredentials(e.to_string()))
 }
 
 #[cfg(test)]
