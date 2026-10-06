@@ -20,7 +20,7 @@ pub struct Cli {
     /// Required on most commands: if both this and --select-all are omitted, the
     /// command fails with an error reporting the byte size of the full response and
     /// its top-level field names, so you can retry with an informed --select. A few
-    /// commands whose output is always small and fixed-shape (doctor, auth whoami,
+    /// commands whose output is always small and fixed-shape (doctor, auth whoami, auth logout,
     /// issue create/delete/assign/transitions/transition/comment add/comment remove) are
     /// exempt and print in full regardless — see that command's own --help.
     /// This description is shared across every command and has no single
