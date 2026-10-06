@@ -1,7 +1,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use super::{
-    build_app_config, discard_credentials, instance_changed, read_key_file, write_app_config,
+    build_app_config, discard_instance_credentials, instance_changed, read_key_file, write_app_config,
 };
 use crate::auth::{AppConfig, ServiceUserKey};
 use crate::error::CliError;
@@ -145,21 +145,30 @@ fn instance_changed_only_when_an_existing_config_had_another_url() {
 }
 
 #[test]
-fn discard_credentials_removes_the_file() {
+fn a_new_instance_discards_every_stored_login_but_not_app_json() {
+    // The service user's and every person's tokens belong to the previous
+    // instance (issue #175: there may be many people, not one user file).
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("credentials.json");
-    std::fs::write(&path, "{}").unwrap();
+    let cli = dir.path().join("zitadel-cli");
+    for file in ["credentials-service.json", "users/alice/credentials.json", "users/bob/credentials.json", "app.json"] {
+        let path = cli.join(file);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, "{}").unwrap();
+    }
 
-    discard_credentials(&path).unwrap();
+    discard_instance_credentials(dir.path()).unwrap();
 
-    assert!(!path.exists());
+    assert!(!cli.join("credentials-service.json").exists());
+    assert!(!cli.join("users/alice").exists());
+    assert!(!cli.join("users/bob").exists());
+    assert!(cli.join("app.json").exists());
 }
 
 #[test]
-fn discard_credentials_tolerates_a_missing_file() {
+fn discarding_with_nothing_stored_is_fine() {
     let dir = tempfile::tempdir().unwrap();
 
-    discard_credentials(&dir.path().join("credentials.json")).unwrap();
+    discard_instance_credentials(dir.path()).unwrap();
 }
 
 #[test]

@@ -3,7 +3,7 @@
 //! - `config_dir` — resolves the XDG config directory (`$XDG_CONFIG_HOME` or `~/.config`).
 //! - `load_app_config` — loads and validates `app.json`, mapping `AppConfigError` to `CliError`.
 //! - `authenticated_client` — load config → load the selected identity's credentials
-//!   (the service user, or the human with `--user`) → renew if expiring → build client.
+//!   (the service user, or a person with `--user <id>`) → renew if expiring → build client.
 //! - `login_error_to_cli` — maps credential-loading failures (incl. a failed save
 //!   after renewal, which must not be reported as "log in again").
 //! - `client_error_to_cli` — maps `ClientError` to an actionable `CliError` (401/403/404 hints).
@@ -42,7 +42,7 @@ pub fn load_app_config() -> Result<AppConfig, CliError> {
 
 /// Builds a client for the configured instance acting as `identity`, renewing
 /// its stored token first if needed.
-pub fn authenticated_client(identity: Identity) -> Result<ZitadelClient, CliError> {
+pub fn authenticated_client(identity: &Identity) -> Result<ZitadelClient, CliError> {
     let config = load_app_config()?;
     let path = auth::credentials_path(&config_dir()?, identity);
     let credentials =
@@ -53,29 +53,29 @@ pub fn authenticated_client(identity: Identity) -> Result<ZitadelClient, CliErro
 /// Maps a credential-loading failure: unreadable/corrupted file → not
 /// authenticated; failed write after a renewal → save failure naming the file;
 /// anything else happened while renewing → token refresh failure.
-pub fn login_error_to_cli(error: LoginError, credentials_path: &std::path::Path, identity: Identity) -> CliError {
+pub fn login_error_to_cli(error: LoginError, credentials_path: &std::path::Path, identity: &Identity) -> CliError {
     let reason = error.to_string();
     match (error, identity) {
         (LoginError::Io(_) | LoginError::InvalidCredentialsFile(_) | LoginError::WrongIdentity(_), Identity::Service) => {
             CliError::NotAuthenticatedService { reason }
         }
-        (LoginError::Io(_) | LoginError::InvalidCredentialsFile(_) | LoginError::WrongIdentity(_), Identity::User) => {
-            CliError::NotAuthenticatedUser { reason }
+        (LoginError::Io(_) | LoginError::InvalidCredentialsFile(_) | LoginError::WrongIdentity(_), Identity::User(id)) => {
+            CliError::NotAuthenticatedUser { reason, id: id.to_string() }
         }
         (LoginError::SaveCredentials(reason), _) => CliError::SaveCredentialsFailed {
             path: credentials_path.display().to_string(),
             reason,
         },
         (_, Identity::Service) => CliError::TokenRenewalFailedService { reason },
-        (_, Identity::User) => CliError::TokenRefreshFailedUser { reason },
+        (_, Identity::User(id)) => CliError::TokenRefreshFailedUser { reason, id: id.to_string() },
     }
 }
 
 /// The command that logs `identity` in again.
-pub(crate) fn login_command(identity: Identity) -> &'static str {
+pub(crate) fn login_command(identity: &Identity) -> String {
     match identity {
-        Identity::Service => "zitadel auth login",
-        Identity::User => "zitadel auth login --user",
+        Identity::Service => "zitadel auth login".to_string(),
+        Identity::User(id) => format!("zitadel auth login --user {id}"),
     }
 }
 

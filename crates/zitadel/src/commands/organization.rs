@@ -12,7 +12,7 @@ use crate::context::{
 };
 use crate::error::CliError;
 
-pub fn run(command: OrganizationCommand, select: cli_fields::Select<'_>, identity: Identity) -> Result<(), CliError> {
+pub fn run(command: OrganizationCommand, select: cli_fields::Select<'_>, identity: &Identity) -> Result<(), CliError> {
     match command {
         OrganizationCommand::List { name, limit, offset } => {
             let body = build_list_body(name.as_deref(), limit, offset);

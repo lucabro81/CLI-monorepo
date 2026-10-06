@@ -1,5 +1,5 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
-//! Tests for the human (`auth login --user`) flow: authorization URL, callback
+//! Tests for the human (`auth login --user <id>`) flow: authorization URL, callback
 //! error wrapping, code exchange, refresh, and renewal dispatch. PKCE and the
 //! loopback listener live in crates/oauth-user-login.
 
@@ -129,7 +129,7 @@ fn exchange_without_refresh_token_explains_how_to_enable_it() {
     assert_eq!(
         err.to_string(),
         "ZITADEL issued no refresh token, so the session could not be renewed. In the console enable \
-        \"Refresh Token\" in the Native application's token settings, then run: zitadel auth login --user"
+        \"Refresh Token\" in the Native application's token settings, then run: zitadel auth login --user <USER_ID>"
     );
 }
 
@@ -184,7 +184,7 @@ fn expired_user_session_is_renewed_with_its_refresh_token_not_the_service_user()
     let path = dir.path().join("credentials.json");
     save_credentials(&path, &user_credentials()).unwrap();
 
-    let creds = load_credentials(&native_config(&url), &path, crate::auth::Identity::User).unwrap();
+    let creds = load_credentials(&native_config(&url), &path, &crate::auth::Identity::User(crate::auth::UserId::parse("alice").unwrap())).unwrap();
 
     assert_eq!(form(&server.join().unwrap())["grant_type"], "refresh_token");
     assert_eq!(creds.refresh_token.as_deref(), Some("rt-new"));
@@ -210,10 +210,10 @@ fn query(url: &str) -> HashMap<String, String> {
 }
 
 #[test]
-fn pending_login_lives_next_to_the_credentials() {
+fn pending_login_lives_next_to_the_persons_credentials() {
     assert_eq!(
-        pending_login_path(std::path::Path::new("/cfg")),
-        std::path::PathBuf::from("/cfg/zitadel-cli/pending-login.json")
+        pending_login_path(std::path::Path::new("/cfg"), &crate::auth::UserId::parse("alice").unwrap()),
+        std::path::PathBuf::from("/cfg/zitadel-cli/users/alice/pending-login.json")
     );
 }
 
