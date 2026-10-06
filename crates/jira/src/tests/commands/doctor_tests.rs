@@ -2,7 +2,9 @@
 
 use serde_json::json;
 
-use super::check_pending_login;
+use atlassian_auth::Identity;
+
+use super::{check_identities, check_pending_login};
 
 const NOW: u64 = 1_800_000_000;
 
@@ -42,4 +44,45 @@ fn an_unreadable_pending_login_is_reported_with_the_fix() {
         ),
         "got {check}"
     );
+}
+
+fn touch(dir: &std::path::Path, file: &str) {
+    let path = dir.join("jira-cli").join(file);
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(path, "{}").unwrap();
+}
+
+#[test]
+fn identities_reports_the_selected_identity_and_which_credentials_exist() {
+    let dir = tempfile::tempdir().unwrap();
+    touch(dir.path(), "credentials-user.json");
+
+    assert_eq!(
+        check_identities(dir.path(), Identity::User),
+        json!({"selected": "user", "service": "missing", "user": "present", "legacy_credentials_file": false})
+    );
+}
+
+#[test]
+fn identities_reports_both_identities_when_both_logged_in() {
+    let dir = tempfile::tempdir().unwrap();
+    touch(dir.path(), "credentials-service.json");
+    touch(dir.path(), "credentials-user.json");
+
+    assert_eq!(
+        check_identities(dir.path(), Identity::Service),
+        json!({"selected": "service", "service": "present", "user": "present", "legacy_credentials_file": false})
+    );
+}
+
+#[test]
+fn identities_flags_a_leftover_pre_164_credentials_file() {
+    // credentials.json is no longer read; doctor surfaces it so it can be deleted.
+    let dir = tempfile::tempdir().unwrap();
+    touch(dir.path(), "credentials.json");
+
+    let check = check_identities(dir.path(), Identity::Service);
+
+    assert_eq!(check["service"], "missing");
+    assert_eq!(check["legacy_credentials_file"], true);
 }

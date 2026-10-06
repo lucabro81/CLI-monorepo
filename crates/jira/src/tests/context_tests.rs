@@ -33,3 +33,115 @@ fn non_empty_fields_still_succeeds() {
 
     assert!(print_json(&value, Select::Fields(&["summary"])).is_ok());
 }
+
+// --- identities (issue #164) ---
+
+use std::path::Path;
+
+use atlassian_auth::{AppConfig, Identity, LoginError, OAuthConfig, OAuthConfigError};
+
+use super::{app_config_error, login_command, login_error_to_cli, oauth_section};
+
+fn app(service: bool, user: bool) -> AppConfig {
+    let config = || OAuthConfig {
+        client_id: "id".to_string(),
+        client_secret: "secret".to_string(),
+        redirect_uri: OAuthConfig::REDIRECT_URI.to_string(),
+    };
+    AppConfig {
+        service: service.then(config),
+        user: user.then(config),
+    }
+}
+
+#[test]
+fn login_command_names_the_identity() {
+    assert_eq!(login_command(Identity::Service), "jira auth login");
+    assert_eq!(login_command(Identity::User), "jira auth login --user");
+}
+
+#[test]
+fn oauth_section_returns_the_section_of_the_requested_identity() {
+    let path = Path::new("/cfg/jira-cli/app.json");
+
+    assert!(oauth_section(app(true, false), Identity::Service, path).is_ok());
+    assert!(oauth_section(app(false, true), Identity::User, path).is_ok());
+}
+
+#[test]
+fn a_missing_service_section_says_to_run_init_for_the_service_account() {
+    let err = oauth_section(app(false, true), Identity::Service, Path::new("/cfg/jira-cli/app.json"))
+        .unwrap_err()
+        .to_string();
+
+    assert_eq!(
+        err,
+        "app.json at /cfg/jira-cli/app.json has no \"service\" section (the Service Account credential \
+        used without --user). Run: jira init --client-id <ID> --client-secret <SECRET>"
+    );
+}
+
+#[test]
+fn a_missing_user_section_says_to_run_init_for_the_3lo_app() {
+    let err = oauth_section(app(true, false), Identity::User, Path::new("/cfg/jira-cli/app.json"))
+        .unwrap_err()
+        .to_string();
+
+    assert_eq!(
+        err,
+        "app.json at /cfg/jira-cli/app.json has no \"user\" section (the 3LO app used with --user). \
+        Run: jira init --user --client-id <ID> --client-secret <SECRET>"
+    );
+}
+
+#[test]
+fn a_legacy_app_config_names_both_init_commands() {
+    let err = app_config_error(OAuthConfigError::LegacyFormat, Path::new("/cfg/jira-cli/app.json")).to_string();
+
+    assert_eq!(
+        err,
+        "app.json at /cfg/jira-cli/app.json uses the old single-identity format (client_id at top level). \
+        Recreate it: jira init --client-id <ID> --client-secret <SECRET> for the Service Account, \
+        and jira init --user --client-id <ID> --client-secret <SECRET> for the 3LO app used with --user"
+    );
+}
+
+#[test]
+fn a_missing_app_config_names_both_init_commands() {
+    let path = Path::new("/cfg/jira-cli/app.json");
+    let err = app_config_error(OAuthConfigError::NotFound(path.to_path_buf()), path).to_string();
+
+    assert!(err.starts_with("app credentials file not found at /cfg/jira-cli/app.json."), "{err}");
+    assert!(err.contains("jira init --client-id <ID> --client-secret <SECRET>"), "{err}");
+    assert!(err.contains("jira init --user --client-id <ID> --client-secret <SECRET>"), "{err}");
+}
+
+#[test]
+fn missing_service_credentials_suggest_login_or_the_user_flag() {
+    let err = login_error_to_cli(LoginError::Io(std::io::ErrorKind::NotFound.into()), Identity::Service).to_string();
+
+    assert_eq!(
+        err,
+        "not logged in as the service account. Run: jira auth login. \
+        To act as the human logged in with jira auth login --user, pass --user instead"
+    );
+}
+
+#[test]
+fn missing_user_credentials_say_a_human_must_log_in() {
+    let err = login_error_to_cli(LoginError::Io(std::io::ErrorKind::NotFound.into()), Identity::User).to_string();
+
+    assert_eq!(
+        err,
+        "not logged in as a human. Run: jira auth login --user (a person must approve the login in a browser)"
+    );
+}
+
+#[test]
+fn a_failed_renewal_names_the_login_of_the_same_identity() {
+    let user = login_error_to_cli(LoginError::TokenExchange("invalid_grant".to_string()), Identity::User);
+    let service = login_error_to_cli(LoginError::TokenExchange("invalid_grant".to_string()), Identity::Service);
+
+    assert!(user.to_string().ends_with("Run: jira auth login --user"), "{user}");
+    assert!(service.to_string().ends_with("Run: jira auth login"), "{service}");
+}

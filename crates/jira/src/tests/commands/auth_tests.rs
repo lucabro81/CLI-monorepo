@@ -1,6 +1,6 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use atlassian_auth::LoginError;
+use atlassian_auth::{Identity, LoginError};
 use oauth_user_login::{PendingLogin, PendingLoginError};
 use serde_json::json;
 
@@ -8,15 +8,46 @@ use super::{LoginMode, remote_login_error, remote_start_output};
 
 #[test]
 fn login_mode_follows_the_flags() {
-    assert_eq!(LoginMode::from_flags(false, None, None, None), LoginMode::ServiceAccount);
-    assert_eq!(LoginMode::from_flags(true, None, None, None), LoginMode::UserBrowser);
+    assert_eq!(LoginMode::from_flags(Identity::Service, None, None, None).unwrap(), LoginMode::ServiceAccount);
+    assert_eq!(LoginMode::from_flags(Identity::User, None, None, None).unwrap(), LoginMode::UserBrowser);
     assert_eq!(
-        LoginMode::from_flags(true, Some("https://m/cb".to_string()), None, None),
+        LoginMode::from_flags(Identity::User, Some("https://m/cb".to_string()), None, None).unwrap(),
         LoginMode::RemoteStart { redirect_uri: "https://m/cb".to_string() }
     );
     assert_eq!(
-        LoginMode::from_flags(true, None, Some("c".to_string()), Some("s".to_string())),
+        LoginMode::from_flags(Identity::User, None, Some("c".to_string()), Some("s".to_string())).unwrap(),
         LoginMode::RemoteComplete { code: "c".to_string(), state: "s".to_string() }
+    );
+}
+
+#[test]
+fn remote_login_without_user_is_rejected_with_the_corrected_command() {
+    // Regression guard for issue #164: --user became global, and clap cannot
+    // enforce `requires = "user"` when --user is written before the
+    // subcommand, so the check moved here.
+    let start = LoginMode::from_flags(Identity::Service, Some("https://m/cb".to_string()), None, None)
+        .unwrap_err()
+        .to_string();
+    let complete = LoginMode::from_flags(Identity::Service, None, Some("c".to_string()), Some("s".to_string()))
+        .unwrap_err()
+        .to_string();
+
+    let expected = "a remote login (--remote, --code, --state) logs in the human identity and needs --user. \
+        Retry with --user: jira auth login --user --remote --redirect-uri <redirect-uri>, \
+        then jira auth login --user --code <CODE> --state <STATE>";
+    assert_eq!(start, expected);
+    assert_eq!(complete, expected);
+}
+
+#[test]
+fn each_login_mode_saves_to_its_own_identity() {
+    // A service login must never overwrite the human's credentials, and vice versa.
+    assert_eq!(LoginMode::ServiceAccount.identity(), Identity::Service);
+    assert_eq!(LoginMode::UserBrowser.identity(), Identity::User);
+    assert_eq!(LoginMode::RemoteStart { redirect_uri: "u".to_string() }.identity(), Identity::User);
+    assert_eq!(
+        LoginMode::RemoteComplete { code: "c".to_string(), state: "s".to_string() }.identity(),
+        Identity::User
     );
 }
 

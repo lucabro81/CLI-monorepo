@@ -1,13 +1,14 @@
 //! Handler for the `project` command group.
 
 use crate::cli::ProjectCommand;
+use crate::auth::Identity;
 use crate::context::{authenticated_client, client_error_to_cli, print_json};
 use crate::error::CliError;
 
-pub fn run(command: ProjectCommand, select: cli_fields::Select<'_>) -> Result<(), CliError> {
+pub fn run(command: ProjectCommand, select: cli_fields::Select<'_>, identity: Identity) -> Result<(), CliError> {
     match command {
         ProjectCommand::Search { query } => {
-            let client = authenticated_client()?;
+            let client = authenticated_client(identity)?;
             let value = client.search_projects(&query).map_err(client_error_to_cli)?;
             print_json(&value, select)
         }
