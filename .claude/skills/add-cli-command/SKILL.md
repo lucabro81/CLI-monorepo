@@ -21,7 +21,8 @@ gh issue create --title "<crate>: <command>" --body "<plan>"
 gh issue develop <issue-number> --name "issue<issue-number>" --checkout
 ```
 
-Everything from step 1 onward happens on this branch.
+Everything from step 1 onward happens on this branch. The plan's last step is
+always the independent review (step 10: `cold-reviewer` + `docs-auditor`).
 
 ## 1. Identify the crate and load its addendum
 
@@ -162,7 +163,7 @@ unexpected 4xx because of an account/workspace-level constraint, a field name
 that differs from the docs).
 
 If the command is destructive or creates persistent state, tell the user what
-was created/modified in the real target as part of the final report (step 10)
+was created/modified in the real target as part of the final report (step 11)
 — don't silently leave test artifacts without mentioning them.
 
 ## 7. Extended verification (e2e, if this crate has it)
@@ -235,6 +236,7 @@ correct it, and re-run the full loop — don't patch around it locally.
   touches more than one crate. Note this only applies to crates already
   wired into the release pipeline's matrix (see `new-cli-crate`'s step 4) —
   a brand-new crate isn't auto-discovered.
+- After the commits, run step 10 (independent review) **before** pushing.
 - Push the branch and **open a PR against `main`** — don't push commits
   directly to `main`. Include `Closes #<issue-number>` in the PR body (the
   issue opened in step 0) so merging the PR closes it automatically. The
@@ -242,7 +244,31 @@ correct it, and re-run the full loop — don't patch around it locally.
   merging it is what eventually triggers `release-pr.yml` to draft a release
   PR for this crate (see root CLAUDE.md).
 
-## 10. Final report
+## 10. Independent review — last step of every plan
+
+Before pushing and opening the PR, launch the two project subagents in
+`.claude/agents/` in parallel, each with **only** the issue number from step
+0 and the branch name — no summary of what you did, so their review stays
+independent:
+
+- `cold-reviewer` — adversarial review of the branch against the issue:
+  spec match, dead code, edge-case test coverage, correctness bugs, root
+  `CLAUDE.md` rules (it runs `cargo test`/`cargo clippy` itself).
+- `docs-auditor` — README, crate `CLAUDE.md`, `ADDENDUM.md`, root docs and
+  `--help` against the code, in both directions.
+
+Then follow each agent's "For the caller" section:
+
+- `docs-auditor`: fix every finding, commit, re-run it, until APPROVE.
+- `cold-reviewer`: fix minor and medium findings yourself, commit, re-run it,
+  until APPROVE (a finding you reject needs a stated reason). Stop and ask
+  the user only for **severe** findings or anything you aren't confident
+  deciding alone.
+
+Re-run step 8's loop after each round of fixes. The plan written in step 0
+must list this step as its last one.
+
+## 11. Final report
 
 This skill is meant to run largely unsupervised end-to-end — possibly invoked
 by an agent that is itself a user of this CLI, not a human watching every
@@ -263,3 +289,6 @@ covering:
   a short bulleted "needs human review" section at the end of the report.
 - Final state of the verification loop (test/clippy/e2e/live results) and
   any known-skipped checks with a reason.
+- The independent review from step 10: every `cold-reviewer` and
+  `docs-auditor` finding with its outcome (fixed, rejected and why, or
+  waiting for the user), and how many rounds it took to reach APPROVE.
