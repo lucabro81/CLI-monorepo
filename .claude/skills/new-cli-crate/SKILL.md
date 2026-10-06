@@ -26,7 +26,9 @@ gh issue create --title "New crate: <service>" --body "<plan>"
 gh issue develop <issue-number> --name "issue<issue-number>" --checkout
 ```
 
-Everything from step 1 (scaffold) onward happens on this branch. The auth
+Everything from step 1 (scaffold) onward happens on this branch. The plan's
+last step is always the independent review (step 7: `cold-reviewer` +
+`docs-auditor`). The auth
 design (step 2) and command pool (step 3) discussions with the user can
 still refine the plan after the issue is opened — update the issue body
 (`gh issue edit <number> --body ...`) if it changes materially rather than
@@ -163,9 +165,22 @@ after this step — the crate must build clean before moving on.
 Loop `add-cli-command` over the commands agreed in step 3, one at a time,
 same as adding any command to an existing crate.
 
-## 7. Final report
+## 7. Independent review — last step of the plan
 
-Same shape as `add-cli-command`'s step 10: what was created (crate, files,
+Once the crate and its core commands are committed, and before pushing and
+opening the PR, run `add-cli-command`'s step 10 on the whole branch: launch
+`cold-reviewer` and `docs-auditor` (`.claude/agents/`) in parallel with only
+the issue number from step 0 and the branch name, fix and re-run per their
+"For the caller" sections until both approve. The `docs-auditor` round must
+also confirm the new crate is in the root `README.md` table and in root
+`CLAUDE.md`'s crate and scope-label lists. Each `add-cli-command` run inside
+steps 5-6 already did this per command; this final pass covers the crate as
+a whole. The plan written in step 0 must list this step as its last one.
+
+## 8. Final report
+
+Same shape as `add-cli-command`'s step 11 (including every finding from
+step 7 and its outcome): what was created (crate, files,
 commits), the tracking issue/branch/PR from step 0, the auth design decided
 and why, the command pool and rationale, any GitHub issues opened for edge
 cases/design notes (e.g. a new shared-library candidate flagged but
