@@ -31,13 +31,14 @@ CLI for Bitbucket Cloud, designed to be driven by an LLM agent (output is JSON, 
   - [`bitbucket branch list <workspace>/<repo_slug>`](#bitbucket-branch-list-workspacerepo_slug)
   - [`bitbucket branch create <workspace>/<repo_slug> <name>`](#bitbucket-branch-create-workspacerepo_slug-name)
   - [`bitbucket branch suggest-name --issue-key <KEY> --issue-type <TYPE> --issue-summary <SUMMARY>`](#bitbucket-branch-suggest-name---issue-key-key---issue-type-type---issue-summary-summary)
+  - [`bitbucket workspace members <workspace>`](#bitbucket-workspace-members-workspace)
   - [`--select <PATHS>` (global flag)](#--select-paths-global-flag)
 - [Testing](#testing)
 - [Error design](#error-design)
 
 ## Status
 
-`init`, `doctor`, `auth login`/`auth whoami`, `repo get`, `repo list`, `repo create`, `repo delete`, `pr get`, `pr list`, `pr create`, `pr update`, `pr comment`, `pr list-comments`, `pr update-comment`, `pr approve`, `pr unapprove`, `pr decline`, `pr merge`, `branch list` implemented. See [CLAUDE.md](CLAUDE.md) for architecture and the planned command list.
+`init`, `doctor`, `auth login`/`auth whoami`, `repo get`, `repo list`, `repo create`, `repo delete`, `pr get`, `pr list`, `pr create`, `pr update`, `pr comment`, `pr list-comments`, `pr update-comment`, `pr approve`, `pr unapprove`, `pr decline`, `pr merge`, `pr diff`, `branch list`, `branch create`, `branch suggest-name`, `workspace members` implemented. See [CLAUDE.md](CLAUDE.md) for architecture and the planned command list.
 
 ## Setup
 
@@ -438,6 +439,23 @@ cargo run -p bitbucket -- branch suggest-name --issue-key SBF-19 --issue-type Ta
 - `--prefix <PREFIX>` — optional; explicit override, skips inference and any lookup
 
 No auth/scope required unless `--repository` is used, in which case it requires the `repository` (read) scope (same as `branch list`).
+
+### `bitbucket workspace members <workspace>`
+
+Lists the members of a workspace, paginated (`GET /2.0/workspaces/{workspace}/members`). This is how to resolve a person to the `uuid` that `pr create --reviewers` and `pr update --reviewers` need: each entry's `user.uuid` (curly braces included) goes straight into `--reviewers`.
+
+`--select` is mandatory (the response is a paginated collection): pass `--select` with the paths you need, or `--select-all` to print the whole page.
+
+```sh
+cargo run -p bitbucket -- workspace members <workspace> --select values.user.uuid,values.user.display_name
+cargo run -p bitbucket -- workspace members <workspace> --page 2 --select values.user.uuid,values.user.display_name
+cargo run -p bitbucket -- workspace members <workspace> --select-all
+```
+
+**Flags:**
+- `--page <N>` — page number to fetch (Bitbucket pagination starts at 1)
+
+Requires the `account` scope.
 
 ### `--select <PATHS>` (global flag)
 
