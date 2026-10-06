@@ -62,7 +62,7 @@ fn setup() -> (JiraClient, Credentials) {
     let oauth_config = context::load_oauth_config(auth::Identity::Service)
         .expect("app.json has no service section — run `jira init` first");
     let credentials =
-        auth::load_credentials(&oauth_config, &auth::credentials_path(&config_dir, auth::Identity::Service))
+        auth::load_credentials(&oauth_config, &auth::credentials_path(&config_dir, auth::Identity::Service), auth::Identity::Service)
             .expect("not authenticated — run `jira auth login` first");
     let client = JiraClient::new(&credentials);
     (client, credentials)

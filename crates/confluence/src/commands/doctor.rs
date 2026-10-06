@@ -132,6 +132,13 @@ fn check_credentials(
         );
     };
 
+    if let Err(e) = atlassian_auth::check_identity(&credentials, identity) {
+        return (
+            json!({"status": "error", "path": path_str, "message": format!("{e}. Run: {login}")}),
+            None,
+        );
+    }
+
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()

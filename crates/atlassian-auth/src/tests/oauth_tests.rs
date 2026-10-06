@@ -7,7 +7,8 @@ use oauth_user_login::{CallbackError, WaitError};
 use super::{
     app_config_path, authorization_code_body, authorization_url, complete_remote_login,
     complete_remote_login_at,
-    legacy_credentials_path, merge_scopes_for_cloud_id, pending_login_path, refresh, start_remote_login,
+    legacy_credentials_path, load_credentials, merge_scopes_for_cloud_id, pending_login_path, refresh,
+    save_credentials, start_remote_login,
     AccessibleResource, AppConfig, Credentials, Identity, LoginError, OAuthConfig, OAuthConfigError,
 };
 
@@ -624,4 +625,72 @@ fn app_config_round_trips_through_json() {
     assert_eq!(AppConfig::from_json(&json).expect("should parse"), config);
     assert!(!json.contains("redirect_uri"), "redirect_uri is fixed, never stored: {json}");
     assert!(!json.contains("\"user\""), "an absent section is omitted: {json}");
+}
+
+fn unexpired(refresh_token: Option<&str>) -> Credentials {
+    Credentials {
+        access_token: "at".to_string(),
+        refresh_token: refresh_token.map(str::to_string),
+        expires_at: u64::MAX,
+        cloud_id: "cid".to_string(),
+        site_url: None,
+    }
+}
+
+fn saved(dir: &Path, identity: Identity, credentials: &Credentials) -> PathBuf {
+    let path = identity.credentials_path(dir, "some-cli");
+    save_credentials(&path, credentials).unwrap();
+    path
+}
+
+#[test]
+fn a_user_slot_without_a_refresh_token_is_refused_before_any_renewal() {
+    // Guards against acting as the wrong identity: a user slot with no
+    // refresh token would otherwise be renewed with client_credentials,
+    // i.e. as the app, without saying so.
+    let dir = tempfile::tempdir().unwrap();
+    let path = saved(dir.path(), Identity::User, &unexpired(None));
+
+    let err = load_credentials(&local_config(), &path, Identity::User).unwrap_err();
+
+    assert!(matches!(err, LoginError::WrongIdentity(_)), "got {err:?}");
+    assert_eq!(
+        err.to_string(),
+        "the human credentials file holds no refresh token, so it is not a human login"
+    );
+}
+
+#[test]
+fn a_service_slot_holding_a_human_login_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = saved(dir.path(), Identity::Service, &unexpired(Some("rt")));
+
+    let err = load_credentials(&local_config(), &path, Identity::Service).unwrap_err();
+
+    assert_eq!(
+        err.to_string(),
+        "the service credentials file holds a refresh token, so it is a human login"
+    );
+}
+
+#[test]
+fn credentials_matching_their_identity_load_unchanged() {
+    let dir = tempfile::tempdir().unwrap();
+    let service = saved(dir.path(), Identity::Service, &unexpired(None));
+    let user = saved(dir.path(), Identity::User, &unexpired(Some("rt")));
+
+    assert_eq!(load_credentials(&local_config(), &service, Identity::Service).unwrap(), unexpired(None));
+    assert_eq!(load_credentials(&local_config(), &user, Identity::User).unwrap(), unexpired(Some("rt")));
+}
+
+#[test]
+fn saving_one_identity_leaves_the_other_identity_file_untouched() {
+    // Issue #164: a login as one identity must never overwrite the other's tokens.
+    let dir = tempfile::tempdir().unwrap();
+    let service = saved(dir.path(), Identity::Service, &unexpired(None));
+    let before = std::fs::read(&service).unwrap();
+
+    saved(dir.path(), Identity::User, &unexpired(Some("rt")));
+
+    assert_eq!(std::fs::read(&service).unwrap(), before);
 }

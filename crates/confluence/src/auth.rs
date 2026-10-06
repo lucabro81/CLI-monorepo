@@ -79,8 +79,8 @@ pub fn renew(config: &OAuthConfig, credentials: &Credentials) -> Result<Credenti
     atlassian_auth::renew(config, credentials)
 }
 
-pub fn load_credentials(config: &OAuthConfig, path: &Path) -> Result<Credentials, LoginError> {
-    atlassian_auth::load_credentials(config, path)
+pub fn load_credentials(config: &OAuthConfig, path: &Path, identity: Identity) -> Result<Credentials, LoginError> {
+    atlassian_auth::load_credentials(config, path, identity)
 }
 
 pub fn save_credentials(path: &Path, credentials: &Credentials) -> Result<(), LoginError> {

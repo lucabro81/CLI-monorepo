@@ -92,7 +92,7 @@ pub fn authenticated_client(identity: Identity) -> Result<JiraClient, CliError> 
     let oauth_config = load_oauth_config(identity)?;
     let path = auth::credentials_path(&config_dir()?, identity);
     let credentials =
-        auth::load_credentials(&oauth_config, &path).map_err(|e| login_error_to_cli(e, identity))?;
+        auth::load_credentials(&oauth_config, &path, identity).map_err(|e| login_error_to_cli(e, identity))?;
     Ok(JiraClient::new(&credentials))
 }
 

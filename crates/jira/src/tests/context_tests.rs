@@ -145,3 +145,12 @@ fn a_failed_renewal_names_the_login_of_the_same_identity() {
     assert!(user.to_string().ends_with("Run: jira auth login --user"), "{user}");
     assert!(service.to_string().ends_with("Run: jira auth login"), "{service}");
 }
+
+#[test]
+fn credentials_of_the_wrong_identity_mean_that_identity_is_not_logged_in() {
+    // Regression guard (issue #164 review): a human slot without a refresh
+    // token must not be renewed as the app.
+    let err = login_error_to_cli(LoginError::WrongIdentity("x"), Identity::User).to_string();
+
+    assert!(err.starts_with("not logged in as a human. Run: jira auth login --user"), "{err}");
+}
