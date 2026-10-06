@@ -221,7 +221,7 @@ pub enum PrCommand {
     ///
     /// Always prints its full result regardless of --select — a single pull
     /// request object, fixed-shape.
-    #[command(after_help = "Examples:\n  bitbucket pr create <workspace>/my-repo --title \"My PR\" --source feature-branch\n  bitbucket pr create <workspace>/my-repo --title \"My PR\" --source feature-branch --destination main --description \"does things\"\n  bitbucket pr create <workspace>/my-repo --title \"My PR\" --source feature-branch --close-source-branch\n  bitbucket pr create <workspace>/my-repo --title \"My PR\" --source feature-branch --reviewers \"{504c3b62-8120-4f0c-a7bc-87800b9d6f70}\"\n  bitbucket pr create <workspace>/my-repo --title \"WIP: My PR\" --source feature-branch --draft")]
+    #[command(after_help = "Examples:\n  bitbucket pr create <workspace>/my-repo --title \"My PR\" --source feature-branch\n  bitbucket pr create <workspace>/my-repo --title \"My PR\" --source feature-branch --destination main --description \"does things\"\n  bitbucket pr create <workspace>/my-repo --title \"My PR\" --source feature-branch --close-source-branch\n  bitbucket pr create <workspace>/my-repo --title \"My PR\" --source feature-branch --reviewers \"{xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}\"\n  bitbucket pr create <workspace>/my-repo --title \"WIP: My PR\" --source feature-branch --draft")]
     Create {
         /// Full repository identifier in the form `workspace/repo_slug`
         repository: String,
@@ -241,7 +241,7 @@ pub enum PrCommand {
         #[arg(long)]
         close_source_branch: bool,
         /// Comma-separated list of reviewer UUIDs, each formatted with curly braces
-        /// (e.g. "{504c3b62-8120-4f0c-a7bc-87800b9d6f70}"). Find UUIDs with
+        /// (e.g. "{xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}"). Find UUIDs with
         /// `bitbucket workspace members <workspace>`.
         #[arg(long)]
         reviewers: Option<String>,
@@ -258,7 +258,7 @@ pub enum PrCommand {
     /// adding to it — to add a reviewer to an existing list, pass all current
     /// reviewer UUIDs plus the new one. Always prints its full result regardless
     /// of --select — a single pull request object, fixed shape.
-    #[command(after_help = "Examples:\n  bitbucket pr update <workspace>/my-repo 42 --title \"New title\"\n  bitbucket pr update <workspace>/my-repo 42 --description \"Updated description\"\n  bitbucket pr update <workspace>/my-repo 42 --destination develop\n  bitbucket pr update <workspace>/my-repo 42 --reviewers \"{504c3b62-8120-4f0c-a7bc-87800b9d6f70}\"\n  bitbucket pr update <workspace>/my-repo 42 --draft\n  bitbucket pr update <workspace>/my-repo 42 --ready-for-review")]
+    #[command(after_help = "Examples:\n  bitbucket pr update <workspace>/my-repo 42 --title \"New title\"\n  bitbucket pr update <workspace>/my-repo 42 --description \"Updated description\"\n  bitbucket pr update <workspace>/my-repo 42 --destination develop\n  bitbucket pr update <workspace>/my-repo 42 --reviewers \"{xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}\"\n  bitbucket pr update <workspace>/my-repo 42 --draft\n  bitbucket pr update <workspace>/my-repo 42 --ready-for-review")]
     Update {
         /// Full repository identifier in the form `workspace/repo_slug`
         repository: String,
@@ -274,7 +274,7 @@ pub enum PrCommand {
         #[arg(long)]
         destination: Option<String>,
         /// Comma-separated list of reviewer UUIDs, each formatted with curly braces
-        /// (e.g. "{504c3b62-8120-4f0c-a7bc-87800b9d6f70}"). Find UUIDs with
+        /// (e.g. "{xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}"). Find UUIDs with
         /// `bitbucket workspace members <workspace>`. Replaces the entire reviewer
         /// list rather than adding to it.
         #[arg(long)]
