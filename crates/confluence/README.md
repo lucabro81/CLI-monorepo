@@ -39,6 +39,8 @@ The CLI holds the Service Account and any number of people side by side, and eve
 | `users/<USER_ID>/credentials.json` | `confluence auth login --user <USER_ID>` | that person's token and refresh token |
 | `users/<USER_ID>/pending-login.json` | `confluence auth login --user <USER_ID> --remote` | that person's remote login waiting for its code |
 
+An empty `<credentials file>.lock` (mode `0600`) appears next to a credentials file after its first renewal: it keeps parallel commands from renewing the same token twice. Leave it in place.
+
 Each `init`/`auth login` touches only its own section and file; `confluence auth logout [--user <USER_ID>]` removes one identity's login. An `app.json` in the old flat format (`client_id` at top level, before issue #164) is rejected with the commands to recreate it; leftover credentials files of earlier layouts (`credentials.json`, `credentials-user.json`) are ignored and reported by `confluence doctor`.
 
 - **Service Account (the default identity)**: generated in Atlassian's admin console (admin.atlassian.com → Directory → Service accounts → Create credentials → OAuth 2.0), with site access assigned by an org admin at generation time. No human consent step ever needed. Select the scopes `init` prints ("Scopes to add", the `SCOPES` constant in `crates/confluence/src/auth.rs`) — see this crate's `CLAUDE.md` "OAuth / auth design" for the exact list and why it mixes classic and granular scopes. The same Service Account credential can serve `jira` too, scoped to both products.
