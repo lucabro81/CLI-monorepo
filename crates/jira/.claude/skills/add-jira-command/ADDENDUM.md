@@ -15,8 +15,8 @@ Steps not listed (3-5, 7-9) follow `SKILL.md` as-is.
   (`commands/doctor.rs`, `PERMISSION_KEYS`) reports a fixed map of booleans
   for permissions the CLI relies on. If the new endpoint needs a permission
   not in that map, add the key there.
-- A new OAuth scope requires re-running the `--user` consent flow (`jira
-  init --user` / `jira auth login --user`) — a one-time human step — and
+- A new OAuth scope requires every person to re-run the consent flow (`jira
+  auth login --user <USER_ID>`) — a one-time human step per person — and
   adding it to the Service Account credential in admin.atlassian.com for the
   default identity.
 
