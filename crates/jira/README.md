@@ -28,85 +28,87 @@ CLI for Jira Cloud, designed to be driven by an LLM agent (output is JSON, error
 
 ## Setup
 
-Whatever the source, the CLI ends up needing the same thing: `client_id`/`client_secret` written to `app.json`, used by `jira auth login` to get tokens (`credentials.json`). There are two ways to obtain that `client_id`/`client_secret` pair:
+The CLI holds two identities side by side, and every command picks one per call:
 
-- **Option A — Service Account (recommended for agent-driven usage)**: generated directly in Atlassian's admin console, with site access assigned by an org admin at generation time. No OAuth "app" is created at all, and no human ever needs to authorize anything afterward — verified end-to-end against a real org: `jira auth login` and `jira doctor` (all six checks) succeed immediately with no prior browser step.
-- **Option B — 3LO app (human login)**: requires actually registering an OAuth 2.0 app in the developer console, plus one human completing a one-time browser consent before that app has access to any site. Only needed if you specifically want an interactive human identity (`jira auth login --user`), in addition to or instead of the agent identity — don't do this if all you need is agent access.
+- **Service Account (the default identity)** — what every command acts as without `--user`. Generated in Atlassian's admin console, with site access assigned by an org admin at generation time; no human ever needs to authorize anything — verified end-to-end against a real org: `jira auth login` and `jira doctor` (all six checks) succeed immediately with no browser step.
+- **Human (`--user`)** — what a command acts as when given `--user`. Needs a 3LO app registered in the developer console, plus one human completing a browser consent. Only needed if you want an interactive human identity in addition to the agent identity.
 
-Both options produce the same `app.json` shape and both work with the same `jira auth login` / `jira doctor` / `jira issue ...` commands afterward — nothing downstream of `app.json` needs to know which option you used.
+Both live in one config folder, `$XDG_CONFIG_HOME/jira-cli/` (typically `~/.config/jira-cli/`):
 
-### Option A: Service Account credentials (recommended, no human login ever)
+| File | Written by | Holds |
+|---|---|---|
+| `app.json` | `jira init` / `jira init --user` | `"service"` section (Service Account Client ID/Secret) and `"user"` section (3LO app Client ID/Secret) — either may be missing |
+| `credentials-service.json` | `jira auth login` | the Service Account's token |
+| `credentials-user.json` | `jira auth login --user` | the human's token and refresh token |
 
-Requires an Atlassian **organization** (admin.atlassian.com) — this is a different, org-wide console from developer.atlassian.com's per-developer app console used in Option B.
+```json
+{
+  "service": { "client_id": "service-account-client-id", "client_secret": "service-account-client-secret" },
+  "user":    { "client_id": "3lo-app-client-id",        "client_secret": "3lo-app-client-secret" }
+}
+```
+
+Each `init`/`auth login` touches only its own section and file, so setting up or logging in as one identity never logs the other out. An `app.json` in the old flat format (`client_id` at top level, before issue #164) is rejected with the commands to recreate it; a leftover `credentials.json` is ignored and reported by `jira doctor` so it can be deleted.
+
+### Service Account (the default identity, no human login ever)
+
+Requires an Atlassian **organization** (admin.atlassian.com) — a different, org-wide console from developer.atlassian.com's per-developer app console used for the human identity.
 
 1. Go to [admin.atlassian.com](https://admin.atlassian.com) → **Directory** → **Service accounts**. (Free tier includes a small number of free service accounts; Atlassian Guard Standard/Enterprise unlocks more. Check your org's current limit in the console if you're unsure.)
 2. Create (or select an existing) service account.
 3. On the service account, click **Create credentials** → **OAuth 2.0**.
 4. Select scopes: the Jira product scopes matching this CLI's needs — `read:jira-work`, `read:jira-user`, `write:jira-work`. (`offline_access` doesn't apply here: `client_credentials` never returns a refresh token, by design — see "Automatic renewal" below.)
 5. Copy the generated **Client ID** and **Client Secret** immediately — they are shown once.
-6. Write `$XDG_CONFIG_HOME/jira-cli/app.json` (typically `~/.config/jira-cli/app.json`):
-
-   ```json
-   {
-     "client_id": "your-service-account-client-id",
-     "client_secret": "your-service-account-client-secret"
-   }
-   ```
-
-7. Log in and verify — no browser involved:
+6. Save them, log in and verify — no browser involved:
 
    ```sh
-   cargo run -p jira -- auth login
-   cargo run -p jira -- doctor
+   cargo run -p jira -- init --client-id <ID> --client-secret <SECRET>
    ```
 
-That's it. Site access for this credential was already assigned by whoever set up the service account in steps 1–3, in the admin console itself — there is no separate "grant access" step, and no equivalent of Option B's step below.
+   `init` writes the `"service"` section of `app.json`, runs `jira auth login` and prints a `jira doctor` report.
 
-### Option B: 3LO app (human login)
+Site access for this credential was already assigned by whoever set up the service account in steps 1–3, in the admin console itself — there is no separate "grant access" step.
 
-Only do this if you specifically need a human/interactive login (`jira auth login --user`) — skip straight to Option A above if agent-only access is all you need.
+### Human identity: 3LO app (`--user`)
+
+Only needed for commands run with `--user`.
 
 Go to [developer.atlassian.com/console/myapps](https://developer.atlassian.com/console/myapps/) and create a new **OAuth 2.0 integration**:
 
 - **Access type**: select **Resource-level**, not Account-level. This CLI only supports a single Jira site: `fetch_primary_resource` (`atlassian-auth` crate) takes the first entry returned by the accessible-resources endpoint and assumes it's the only one. Resource-level matches this — the consent screen limits the grant (and what `accessible-resources` returns) to the one site the user selects. Account-level would let one consent cover every site in the user's Atlassian account, which this codebase doesn't handle: multiple accessible sites would make `fetch_primary_resource` silently pick an arbitrary one. Supporting Account-level (letting the user or config pick which site to target) is a separate, deliberate change — not a setup detail to work around here.
-- **Callback/redirect URI**: `http://localhost:8080/callback`
-- **Permissions**: enable Jira API access with scopes `read:jira-work` and `read:jira-user` (more will be added as commands grow)
+- **Callback/redirect URI**: `http://localhost:8080/callback` (add more lines for [remote logins](#remote-login-in-two-steps--jira-auth-login---user---remote))
+- **Permissions**: enable Jira API access with scopes `read:jira-work`, `read:jira-user` and `write:jira-work`
 
 From the app's **Settings** page, note down the **Client ID** and **Client Secret**.
 
-> The third scope the CLI requests, `offline_access`, doesn't need to be enabled in the console — it's requested at runtime via the authorization URL and is what makes the refresh token possible.
-
-Write the same `app.json` shape as Option A (step 6 above), with this app's Client ID/Secret.
+> The fourth scope the CLI requests, `offline_access`, doesn't need to be enabled in the console — it's requested at runtime via the authorization URL and is what makes the refresh token possible.
 
 Make sure the Atlassian account you'll log in with has access to at least one Jira Cloud site (e.g. `your-name.atlassian.net`). If it doesn't, authorization fails with "Access denied — this app requires access to a Jira site...". Create a free site at [atlassian.com/software/jira/free](https://www.atlassian.com/software/jira/free) if needed.
 
-Unlike Option A, this app has **no** access to any Jira site until a human explicitly grants it, by completing the consent screen once:
+This app has **no** access to any Jira site until a human grants it, by completing the consent screen once:
 
 ```sh
-cargo run -p jira -- init
+cargo run -p jira -- init --user --client-id <ID> --client-secret <SECRET>
 ```
 
-(or `cargo run -p jira -- auth login --user` if `app.json` is already set up)
+(or `cargo run -p jira -- auth login --user` if the `"user"` section is already set up)
 
-This opens the Atlassian **consent screen** in your browser, listing the site(s) the app is requesting access to (`read:jira-work read:jira-user write:jira-work offline_access`). **Approving this is the actual "install"/authorization step** — it's what makes the site show up in `https://api.atlassian.com/oauth/token/accessible-resources`. This one-time human step is specific to Option B — Option A's Service Account has no equivalent, because site access is assigned in the admin console directly, not via a consent screen.
+This writes the `"user"` section of `app.json`, then opens the Atlassian **consent screen** in your browser, listing the site(s) the app is requesting access to (`read:jira-work read:jira-user write:jira-work offline_access`). **Approving this is the actual "install"/authorization step** — it's what makes the site show up in `https://api.atlassian.com/oauth/token/accessible-resources`. Finally it prints a `jira doctor --user` report.
 
-`jira init` does this plus writing `app.json`: it prints setup instructions, prompts for Client ID and Client Secret, writes `app.json`, runs this consent flow, and finally runs `jira doctor` as a confirmation. **`jira init` is only for Option B** — see the note in "Usage → `jira init`" below. If you're setting up a Service Account (Option A), skip `jira init` entirely.
+### Day-to-day use
 
-You must do the browser consent **at least once per Atlassian site**, signed in as a user who has access to that site, before the default `jira auth login` (the `client_credentials` grant, unchanged either way) can succeed against this app's credentials.
-
-### Day-to-day login
-
-Once `app.json` is in place — whichever option produced it — day-to-day login (e.g. for an agent) is the same, non-interactive command:
+Once logged in, neither identity needs a new login: tokens are renewed automatically (see below). An agent picks the identity on every call:
 
 ```sh
-cargo run -p jira -- auth login
+cargo run -p jira -- issue get PROJ-1 --select key          # as the Service Account
+cargo run -p jira -- issue get PROJ-1 --select key --user   # as the human
 ```
 
-You only need to do this once per machine — after that, the CLI renews tokens automatically (see below).
+Only when the human's refresh token expires or is revoked does a person need to run `jira auth login --user` again; every error says which login to run.
 
 ## How the OAuth flow works
 
-The CLI supports two OAuth 2.0 grant types, both using the same `client_id`/`client_secret` from `app.json`.
+The CLI supports two OAuth 2.0 grant types, one per identity: `client_credentials` with `app.json`'s `"service"` section, 3LO + PKCE with its `"user"` section.
 
 ### Service account login (default): `client_credentials`
 
@@ -114,18 +116,13 @@ The CLI supports two OAuth 2.0 grant types, both using the same `client_id`/`cli
 
 1. **Token request** — the CLI POSTs `grant_type=client_credentials`, `client_id`, `client_secret`, and `audience=api.atlassian.com` to `https://auth.atlassian.com/oauth/token`. No browser, no user interaction. Receives an `access_token` and expiry (no `refresh_token`).
 2. **Cloud ID resolution** — same as below: `https://api.atlassian.com/oauth/token/accessible-resources` with the new access token.
-3. **Persisting credentials** — `access_token`, `expires_at`, and `cloud_id` are written to `credentials.json` (`refresh_token` is omitted/`null`).
+3. **Persisting credentials** — `access_token`, `expires_at`, and `cloud_id` are written to `credentials-service.json` (`refresh_token` is omitted/`null`).
 
 This is the expected mode for agent-driven usage: fast, no human interaction, and the resulting account has `accountType: "app"` (visible via `jira auth whoami`).
 
-Whether this works immediately depends on which Setup option produced `app.json`:
+With a Service Account credential in the `"service"` section this works immediately: site access was already assigned by an org admin when the credential was created. (A 3LO app's credentials there would also work with `client_credentials`, but only after a one-time human consent for that app — Atlassian ties a 3LO app's site access to that authorization; without it the call fails with "no accessible resources".)
 
-- **Option A (Service Account)** — works immediately. Site access was already assigned by an org admin when the OAuth 2.0 credential was created in admin.atlassian.com; there is no prior-consent dependency at all.
-- **Option B (3LO app)** — requires the one-time human 3LO consent (`jira init` / `jira auth login --user`) to have been completed at least once for this app. Without it, this call fails with "no accessible resources" — Atlassian ties a 3LO app's site access to that one-time human authorization, not to the app registration itself.
-
-### Human login: OAuth 2.0 (3LO) + PKCE — `jira auth login --user` or `jira init`
-
-This is Option B from Setup above — not needed at all if you're using a Service Account (Option A).
+### Human login: OAuth 2.0 (3LO) + PKCE — `jira auth login --user` or `jira init --user`
 
 The standard flow for apps that can't keep a secret fully safe (a CLI binary on a user's machine), combined with a confidential client (since Atlassian 3LO apps do issue a client secret).
 
@@ -133,68 +130,73 @@ The standard flow for apps that can't keep a secret fully safe (a CLI binary on 
 2. **Local callback** — the CLI binds a TCP listener on `127.0.0.1:8080` (before opening the browser, so a busy port fails right away) and waits for the callback. After you approve access in the browser, Atlassian redirects to `http://localhost:8080/callback?code=...&state=...`. Stray requests such as `/favicon.ico` get a 404 and the CLI keeps waiting. The CLI checks `state` matches (aborting on mismatch — a sign of a hijacked flow), reports a denied consent as such, and replies with a short plain-text page.
 3. **Token exchange** — the CLI POSTs the authorization `code`, the PKCE `code_verifier`, and the app's `client_id`/`client_secret` to `https://auth.atlassian.com/oauth/token`, receiving an `access_token`, `refresh_token`, and expiry.
 4. **Cloud ID resolution** — Jira's OAuth API is accessed through `https://api.atlassian.com/ex/jira/<cloud_id>/...`, not the site's own URL. The CLI calls `https://api.atlassian.com/oauth/token/accessible-resources` with the new access token to discover the `cloud_id` of the authorized site.
-5. **Persisting credentials** — `access_token`, `refresh_token`, `expires_at` (unix timestamp), and `cloud_id` are written to `credentials.json`.
+5. **Persisting credentials** — `access_token`, `refresh_token`, `expires_at` (unix timestamp), and `cloud_id` are written to `credentials-user.json`.
 
 ### Remote login, in two steps — `jira auth login --user --remote`
 
-The same 3LO grant for a person who is not at the CLI's machine (the CLI runs on a server, the person is in a chat or a web page). Nothing opens a browser or listens on a port; whoever runs the CLI carries the link to the person and the code back. Needs a 3LO app (Option B): a Service Account credential can't do a user login at all.
+The same 3LO grant for a person who is not at the CLI's machine (the CLI runs on a server, the person is in a chat or a web page). Nothing opens a browser or listens on a port; whoever runs the CLI carries the link to the person and the code back. Uses the `"user"` section (a 3LO app): a Service Account credential can't do a user login at all.
 
 1. `jira auth login --user --remote --redirect-uri <url>` stores a pending login (`state`, PKCE verifier, redirect URI; `pending-login.json`, mode `0600`) and prints `{"authorize_url", "state", "expires_at"}`. `<url>` must be one of the 3LO app's callback URLs (the console's Callback URL field takes one per line).
 2. The person opens `authorize_url`, picks the site and accepts; Atlassian redirects them to `<url>?code=...&state=...`.
-3. `jira auth login --user --code <code> --state <state>` checks the state and the expiry, exchanges the code with the stored verifier and redirect URI, resolves the `cloud_id`, saves `credentials.json`, and prints what `auth whoami` prints.
+3. `jira auth login --user --code <code> --state <state>` checks the state and the expiry, exchanges the code with the stored verifier and redirect URI, resolves the `cloud_id`, saves `credentials-user.json`, and prints what `auth whoami --user` prints.
 
-A pending login is valid for 10 minutes and its state is single-use (consumed even if Atlassian then refuses the code). A new step 1 replaces the previous pending login. Everything lives in the config folder the CLI resolves, so pointing `XDG_CONFIG_HOME` at one folder per person keeps people's logins apart. `jira doctor` shows a pending login under `pending_login`. For other people to log in, the 3LO app must have sharing enabled (developer console → Distribution).
+`--remote`, `--code` and `--state` always need `--user` (before or after `auth login`); without it the CLI answers with the corrected commands. A pending login is valid for 10 minutes and its state is single-use (consumed even if Atlassian then refuses the code). A new step 1 replaces the previous pending login. Everything lives in the config folder the CLI resolves, so pointing `XDG_CONFIG_HOME` at one folder per person keeps people's logins apart. `jira doctor` shows a pending login under `pending_login`. For other people to log in, the 3LO app must have sharing enabled (developer console → Distribution).
 
 ### Automatic renewal
 
-Before each API call, the CLI checks whether the access token is expired (or about to expire within 60s). How it renews depends on whether the stored credentials have a `refresh_token`:
+Before each API call, the CLI checks whether the selected identity's access token is expired (or about to expire within 60s). How it renews depends on whether those credentials have a `refresh_token`:
 
-- **3LO credentials** (`refresh_token` present) — exchanges it for a new token pair via the `refresh_token` grant and **overwrites** `credentials.json` with the new values. **Atlassian refresh tokens rotate on every use**: each refresh invalidates the previous refresh token and issues a new one. The CLI always persists the freshest pair — if you copy `credentials.json` to another machine and both machines try to refresh independently, one will end up with a stale, invalidated token.
-- **Service account credentials** (`refresh_token` absent) — re-runs the `client_credentials` token request to get a fresh access token.
+- **Human credentials** (`credentials-user.json`, `refresh_token` present) — exchanges it for a new token pair via the `refresh_token` grant and **overwrites** `credentials-user.json` with the new values. **Atlassian refresh tokens rotate on every use**: each refresh invalidates the previous refresh token and issues a new one. The CLI always persists the freshest pair — if you copy the file to another machine and both machines try to refresh independently, one will end up with a stale, invalidated token.
+- **Service account credentials** (`credentials-service.json`, `refresh_token` absent) — re-runs the `client_credentials` token request to get a fresh access token.
 
 ## Usage
 
+Every command accepts the global `--user` flag: without it the command acts as the Service Account, with it as the human (see [Setup](#setup)). Examples below omit it unless it changes what the command does.
+
 ### `jira init`
 
-**Only for Option B (3LO app) from Setup.** It always ends by running the interactive browser consent flow — there is no way to skip that step, because that flow is what "installs" a 3LO app's access to a Jira site. If you're setting up a Service Account (Option A), skip `jira init`: write `app.json` by hand (Setup, Option A, step 6) and run `jira auth login` directly.
+Onboarding for one identity. Prints setup instructions, prompts for Client ID and Client Secret (or accepts `--client-id`/`--client-secret` flags for non-interactive use), writes that identity's section of `app.json` (leaving the other section alone), logs in, and prints a `jira doctor` JSON report for that identity as final confirmation.
 
-Interactive onboarding. Prints setup instructions, prompts for Client ID and Client Secret (or accepts `--client-id`/`--client-secret` flags for non-interactive use), writes `app.json`, runs the OAuth login flow, and prints a `jira doctor` JSON report as final confirmation.
+- `jira init` — the Service Account: writes `"service"`, runs the non-interactive `client_credentials` login.
+- `jira init --user` — the human: writes `"user"`, runs the browser consent flow.
 
 ```sh
-cargo run -p jira -- init
-cargo run -p jira -- init --client-id <ID> --client-secret <SECRET>
+cargo run -p jira -- init --client-id <ID> --client-secret <SECRET>          # Service Account
+cargo run -p jira -- init --user --client-id <ID> --client-secret <SECRET>   # 3LO app, browser login
 ```
 
 ### `jira doctor`
 
-Runs four checks and prints a structured JSON report: `app_config` (app.json exists and is valid), `credentials` (tokens exist and are not expired), `api` (live call to Jira succeeds), `permissions` (actual Jira permissions granted to the account, via `/rest/api/3/mypermissions`). Exits non-zero if any check fails.
+Runs its checks for the selected identity (the Service Account, or the human with `--user`) and prints a structured JSON report: `app_config` (app.json exists and has the identity's section), `credentials` (that identity's tokens exist and are not expired), `api` (live call to Jira succeeds), `oauth_scopes`, `service_user` (global permissions of the account), `projects` (per-project permissions and roles). Exits non-zero if any check fails. Two informational keys never affect the exit code: `pending_login` (a remote login waiting for its code) and `identities` (which identity was checked, whether each identity has a credentials file, and whether a pre-#164 `credentials.json` is still there).
 
 ```sh
 cargo run -p jira -- doctor
-cargo run -p jira -- doctor --select app_config.status,credentials.status,api.status,permissions
+cargo run -p jira -- doctor --user
+cargo run -p jira -- doctor --select app_config.status,credentials.status,api.status,identities
 ```
 
-The `permissions` check reports `BROWSE_PROJECTS`, `CREATE_ISSUES`, `EDIT_ISSUES`, `DELETE_ISSUES`, `ADD_COMMENTS`, and `TRANSITION_ISSUES`. `status` is `"ok"` only if `BROWSE_PROJECTS` is granted (without it no `issue` command works); the others are reported informationally. Note: these are **global** permission checks (no project context), so a permission can show `false` here while still being usable on specific projects you have access to — if an `issue` command unexpectedly fails with a permission error, check this project's permissions directly in Jira.
+The `service_user` check reports which of `BROWSE_PROJECTS`, `CREATE_ISSUES`, `EDIT_ISSUES`, `DELETE_ISSUES`, `ADD_COMMENTS`, `TRANSITION_ISSUES`, `USER_PICKER` and `ASSIGN_ISSUES` the account holds. These are **global** permission checks (no project context), so a permission can show `false` here while still being usable on specific projects — the `projects` check lists them per project.
 
 ### `jira auth login`
 
-Stores credentials locally. By default runs the non-interactive `client_credentials` flow (service account) — no browser, no human interaction. Pass `--user` for the interactive OAuth 2.0 (3LO) + PKCE flow for a human Atlassian account, or `--user --remote` for the [two-step remote login](#remote-login-in-two-steps--jira-auth-login---user---remote) (step 1 prints `{authorize_url, state, expires_at}`, step 2 prints the `auth whoami` output).
+Logs in one identity and stores its credentials, leaving the other identity's untouched. By default runs the non-interactive `client_credentials` flow for the Service Account (`credentials-service.json`) — no browser, no human interaction. Pass `--user` for the interactive OAuth 2.0 (3LO) + PKCE flow for a human Atlassian account (`credentials-user.json`), or `--user --remote` for the [two-step remote login](#remote-login-in-two-steps--jira-auth-login---user---remote) (step 1 prints `{authorize_url, state, expires_at}`, step 2 prints the `auth whoami --user` output).
 
 ```sh
-cargo run -p jira -- auth login              # service account (client_credentials)
+cargo run -p jira -- auth login              # Service Account (client_credentials)
 cargo run -p jira -- auth login --user       # human account (OAuth 2.0 3LO + PKCE)
 cargo run -p jira -- auth login --user --remote --redirect-uri https://app.example.com/oauth/callback   # step 1
 cargo run -p jira -- auth login --user --code <CODE> --state <STATE>                                   # step 2
 ```
 
-Run this once per machine, or again if `credentials.json` is lost or revoked. If `app.json` holds a 3LO app's credentials (Setup Option B), the `--user` flow must have been completed at least once (e.g. via `jira init`) before the default flow can succeed. If `app.json` holds Service Account credentials (Setup Option A), the default flow works immediately — no prior `--user` run needed or possible.
+Run each once per machine, or again if that identity's credentials file is lost or revoked.
 
 ### `jira auth whoami`
 
-Prints the currently authenticated user as JSON. Useful to verify that authentication is working and to see which account the CLI acts as. That account is also what JQL's `currentUser()` resolves to — the bot/service account when the CLI runs on someone else's behalf — so to filter issues by a person, look up their `accountId` with [`jira user search`](#jira-user-search---query-text) and use it explicitly (e.g. `--jql "assignee=5b10ac8d82e05b22cc7d4ef5"`).
+Prints the account the CLI acts as, as JSON: the Service Account, or the human with `--user`. Useful to verify that authentication is working. That account is also what JQL's `currentUser()` resolves to — so to filter issues by a person, look up their `accountId` with [`jira user search`](#jira-user-search---query-text) and use it explicitly (e.g. `--jql "assignee=5b10ac8d82e05b22cc7d4ef5"`).
 
 ```sh
 cargo run -p jira -- auth whoami
+cargo run -p jira -- auth whoami --user
 ```
 
 ### `jira issue get <KEY>`
@@ -206,7 +208,7 @@ cargo run -p jira -- issue get KAN-4 --select key,fields.summary,fields.status.n
 cargo run -p jira -- issue get KAN-4 --select fields.summary,fields.status.name,fields.assignee.displayName,browse_url
 ```
 
-On error (issue not found, not authenticated, etc.), prints a message to stderr and exits non-zero. If not authenticated, the hint points you to `jira auth login`.
+On error (issue not found, not authenticated, etc.), prints a message to stderr and exits non-zero. If not authenticated, the hint points you to `jira auth login` (or `jira auth login --user` when run with `--user`).
 
 ### `jira issue create`
 

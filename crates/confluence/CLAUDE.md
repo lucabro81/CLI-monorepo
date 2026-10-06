@@ -36,11 +36,13 @@ src/
                     update_page, delete_page, get_template, create_template,
                     update_template, delete_template, list_templates,
                     search_content, list_spaces]
-  cli.rs          — clap structs: Cli (--select global), Command, AuthCommand,
+  cli.rs          — clap structs: Cli (--select, --select-all, --user global), Command, AuthCommand,
                     PageCommand, SpaceCommand, TemplateCommand. No logic.
-  context.rs      — config_dir(), load_oauth_config(), authenticated_client(),
-                    print_json(value, select), client_error_to_cli(e). Shared
-                    by all command handlers.
+  context.rs      — config_dir(), load_app_config(), load_oauth_config(identity),
+                    authenticated_client(identity), login_command(identity),
+                    login_error_to_cli(e, identity), oauth_section(),
+                    app_config_error(), print_json(value, select),
+                    client_error_to_cli(e). Shared by all command handlers.
   endpoints.rs    — URL/path constants for the Confluence Cloud REST API
                     (both v1 and v2), used by client.rs. No logic. Atlassian
                     OAuth endpoints (used by auth.rs) live in
@@ -51,7 +53,8 @@ src/
                     file convention" below). No e2e_tests.rs yet — see
                     "Known gaps" below.
   main.rs         — pure dispatch: resolve --select/--select-all into a
-                    cli_fields::Select once, match Command, call commands::*.
+                    cli_fields::Select and --user into an Identity once, match
+                    Command, call commands::*.
 ```
 
 `--select` dot-notation projection itself (`filter_fields`, `describe_top_level_shape`, the `Select` enum, `render_json`) lives in the shared `crates/cli-fields` workspace crate, not in this crate — see root `CLAUDE.md`'s "Shared library: crates/cli-fields".
@@ -83,7 +86,9 @@ correct status-string logic, nothing pure enough to isolate.
 
 **Implementation lives in `atlassian-auth`** (workspace-local crate, `crates/atlassian-auth`), not in this crate — `auth.rs` here is a thin wrapper fixing the `confluence-cli` config dir name and this crate's `SCOPES` constant. `jira` uses the exact same underlying flows (same `auth.atlassian.com`/`api.atlassian.com` endpoints, same `cloud_id` resolution), just with its own scopes — see `jira`'s own CLAUDE.md for the two grant types (`client_credentials` default, 3LO+PKCE via `--user`) and the Service Account vs 3LO-app tradeoffs, which apply identically here.
 
-**`confluence init` is 3LO-app-only** (`commands/init.rs`), same as `jira init` — it always ends by launching the interactive browser consent flow, since that's what grants a 3LO app access to a site at all. A Service Account has no such step (access is assigned directly in admin.atlassian.com when the credential is created), so running `init` against one just hangs waiting for a browser flow that doesn't apply. Service Account setup skips `init` entirely: write `app.json` by hand, then `confluence auth login` directly. This is stated in `init`'s own `--help` text (`cli.rs`) and README Setup, not only here — it's the kind of thing worth surfacing at the point of use, not just in docs a caller has to already know to read.
+**Two identities, stored side by side (issue #164)** — identical to `jira` (see its CLAUDE.md and root `CLAUDE.md`'s "Two identities per CLI"): the global `--user` flag selects, per call, the Service Account (default, `app.json`'s `service` section, `credentials-service.json`) or the human (`user` section, a 3LO app, `credentials-user.json`). `context::authenticated_client(identity)` loads and renews only that identity; `LoginMode::identity()` decides which file a login writes; `--remote`/`--code` without `--user` fail in `LoginMode::from_flags` (`CliError::RemoteLoginNeedsUser`), since clap can't see a global `--user` placed before the subcommand.
+
+**`confluence init` sets up one identity** (`commands/init.rs`), same as `jira init`: without `--user` it writes the `service` section and runs `client_credentials` (no browser — a Service Account has no consent step, access is assigned in admin.atlassian.com); with `--user` it writes the `user` section and runs the 3LO browser consent, which is what grants a 3LO app access to a site at all. Both print the scopes to add (`SCOPES`). `write_app_config(config_dir, identity, ...)` keeps the other section, replaces a missing or legacy flat file, and refuses to overwrite invalid JSON.
 
 **Scopes: `SCOPES`'s five Confluence entries are confirmed grantable and sufficient for `doctor`'s `api` check** — verified 2026-08-03 against a real Service Account credential (`admin.atlassian.com` → Directory → Service accounts → the credential's OAuth 2.0 scopes → Confluence product): `read:confluence-user`, `search:confluence`, `read:page:confluence`, `write:page:confluence`, `read:space:confluence` all showed up in `doctor`'s `oauth_scopes.granted` and `GET /wiki/rest/api/user/current` (the `api` check) succeeded. **Not yet exercised**: the actual `page get`/`create`/`update`/`search` and `space list` endpoints themselves — only the identity/scopes checks have been run live so far, not the core commands. Confluence Cloud's OAuth scope model mixes two incompatible sets that must not be combined *within a single API call's authorization check* (a classic-scoped token and a granular-scoped token are checked differently), but a single 3LO app/Service Account *can* request scopes from both sets at once — this crate does exactly that, because its commands span both Confluence API generations:
 
@@ -96,17 +101,17 @@ correct status-string logic, nothing pure enough to isolate.
 
 The v2 endpoints have **no classic-scope equivalent at all** per Atlassian's own docs — a classic-only scope grant cannot authorize them, regardless of how broad. If `doctor`'s `oauth_scopes` check passes but a specific command still 403s, the first thing to check is whether that command's scope (table above) was actually granted — not just "some scopes were granted."
 
-**A Service Account credential shared with `jira`** (same `client_id`/`client_secret` in both `jira-cli/app.json` and `confluence-cli/app.json`, scoped to both products) works correctly — confirmed live. This exposed a real bug in the shared `atlassian-auth` crate, not specific to this setup: Atlassian's accessible-resources endpoint returns **multiple entries with the same site `id`** when a token's scopes span multiple products (one entry per product's scope subset, not their union), and `get_granted_scopes` originally only read the first matching entry. Fixed at the `atlassian-auth` level, so it's not something to work around per-crate.
+**A Service Account credential shared with `jira`** (same `client_id`/`client_secret` in the `service` section of both `jira-cli/app.json` and `confluence-cli/app.json`, scoped to both products) works correctly — confirmed live. This exposed a real bug in the shared `atlassian-auth` crate, not specific to this setup: Atlassian's accessible-resources endpoint returns **multiple entries with the same site `id`** when a token's scopes span multiple products (one entry per product's scope subset, not their union), and `get_granted_scopes` originally only read the first matching entry. Fixed at the `atlassian-auth` level, so it's not something to work around per-crate.
 
 ## Config layout (XDG-style)
 
-Both files live under `$XDG_CONFIG_HOME/confluence-cli/` (falling back to `~/.config/confluence-cli/`):
+All files live under `$XDG_CONFIG_HOME/confluence-cli/` (falling back to `~/.config/confluence-cli/`):
 
-- `app.json` — `{"client_id": "...", "client_secret": "..."}`. Static; written by `confluence init` (3LO app path) or by hand (either path). Never modified at runtime.
-- `credentials.json` — OAuth tokens. Fully managed by the CLI; never edit by hand.
+- `app.json` — `{"service": {"client_id": "...", "client_secret": "..."}, "user": {"client_id": "...", "client_secret": "..."}}`, either section optional (`atlassian_auth::AppConfig`). Static; written by `confluence init` (`service`) / `confluence init --user` (`user`) or by hand. Never modified at runtime. The pre-#164 flat shape is rejected with `CliError::AppConfigLegacy` naming both `init` commands; no automatic migration.
+- `credentials-service.json` / `credentials-user.json` — each identity's OAuth tokens. Fully managed by the CLI; never edit by hand. A leftover pre-#164 `credentials.json` is not read; `doctor`'s `identities.legacy_credentials_file` reports it.
 - `pending-login.json` — only between the two steps of `auth login --user --remote` (issue #146; state, PKCE verifier, redirect URI, expiry). Removed by step 2. The flow itself lives in `atlassian_auth` (`start_remote_login`/`complete_remote_login`) and is identical to jira's, where it was verified live end to end; not verified live here (no Confluence 3LO app yet). `doctor` reports it as `pending_login` (outside `all_ok`).
 
-Kept separate so automatic token writes never clobber the app identity — same reasoning as `jira`.
+Kept separate so automatic token writes never clobber the app identity, and one identity's login never touches the other's tokens — same reasoning as `jira`.
 
 ## API design notes
 

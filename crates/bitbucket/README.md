@@ -51,77 +51,74 @@ In your Bitbucket workspace, go to **Settings → Apps and features → OAuth cl
 
 After saving, note down the consumer's **Key** (`client_id`) and **Secret** (`client_secret`).
 
-### 2. Write the app credentials file
+### 2. Save it, log in and verify
 
-Create `$XDG_CONFIG_HOME/bitbucket-cli/app.json` (typically `~/.config/bitbucket-cli/app.json`):
+The CLI holds two identities side by side, and every command picks one per call: without `--user` it acts as the **OAuth app** (bot identity, `client_credentials`), with `--user` as **you** (the human who approved the consent page). Both live in `$XDG_CONFIG_HOME/bitbucket-cli/` (typically `~/.config/bitbucket-cli/`):
 
-```json
-{
-  "client_id": "your-consumer-key",
-  "client_secret": "your-consumer-secret"
-}
-```
-
-This file is static and hand-written — the CLI never modifies it. It's kept separate from `credentials.json` (the dynamic token store, see below) precisely so that automatic token writes never overwrite your app identity.
-
-### 3. Log in
+| File | Written by | Holds |
+|---|---|---|
+| `app.json` | `bitbucket init` / `bitbucket init --user` | `"service"` section (the consumer used as the app) and `"user"` section (the consumer used for the human login) — either may be missing; both may hold the same consumer |
+| `credentials-service.json` | `bitbucket auth login` | the app's token |
+| `credentials-user.json` | `bitbucket auth login --user` | the human's token and refresh token |
 
 ```sh
-cargo run -p bitbucket -- auth login
+cargo run -p bitbucket -- init --client-id <KEY> --client-secret <SECRET>          # the OAuth app, no browser
+cargo run -p bitbucket -- init --user --client-id <KEY> --client-secret <SECRET>   # you, via browser consent
 ```
 
-This exchanges the consumer's Key/Secret for an access token via `client_credentials` — no browser, no human interaction, every action attributed to the OAuth app. To act as yourself instead, run `auth login --user` (see below). Run this once per machine; tokens are renewed automatically after that.
+`init` prints the consumer-creation instructions, prompts for the Key/Secret when the flags are omitted, writes that identity's section of `app.json` (leaving the other alone), logs in as that identity, and prints a `doctor` JSON report for it. `app.json` is static — the CLI never modifies it at runtime — and kept separate from the credentials files so automatic token writes never overwrite your app identity. Each login touches only its own credentials file. An `app.json` in the old flat format (`client_id` at top level, before issue #164) is rejected with the commands to recreate it; a leftover `credentials.json` is ignored and reported by `doctor`.
 
-### `bitbucket init` does all of the above
-
-`bitbucket init` walks through steps 1–3 interactively: it prints the consumer-creation instructions, prompts for the Key/Secret (or accepts `--client-id`/`--client-secret` flags for non-interactive use), writes `app.json`, runs `auth login`, and prints a `doctor` JSON report as final confirmation.
+Day-to-day, neither identity needs a new login: tokens are renewed automatically. An agent picks the identity on every call:
 
 ```sh
-cargo run -p bitbucket -- init
-cargo run -p bitbucket -- init --client-id <KEY> --client-secret <SECRET>
+cargo run -p bitbucket -- repo get <workspace>/<repo_slug>          # as the OAuth app
+cargo run -p bitbucket -- repo get <workspace>/<repo_slug> --user   # as you
 ```
 
 ## How the OAuth flow works
 
 Bitbucket Cloud's native OAuth `client_credentials` grant is used — not the unified `developer.atlassian.com` OAuth used by `jira` (that app has no Bitbucket API permission to grant), and not Repository/Workspace Access Tokens (Premium-only).
 
-1. **Token request** — the CLI POSTs `grant_type=client_credentials` to `https://bitbucket.org/site/oauth2/access_token`, authenticated with HTTP Basic auth using `client_id`/`client_secret` from `app.json`. Receives an `access_token`, an expiry, and a `scopes` field listing the OAuth scopes granted to the consumer.
-2. **Persisting credentials** — `access_token`, `expires_at`, and `scopes` are written to `credentials.json`.
+1. **Token request** — the CLI POSTs `grant_type=client_credentials` to `https://bitbucket.org/site/oauth2/access_token`, authenticated with HTTP Basic auth using `client_id`/`client_secret` from `app.json`'s `"service"` section. Receives an `access_token`, an expiry, and a `scopes` field listing the OAuth scopes granted to the consumer.
+2. **Persisting credentials** — `access_token`, `expires_at`, and `scopes` are written to `credentials-service.json`.
 3. **API calls** — `https://api.bitbucket.org/2.0/...`, with the workspace slug used directly in paths. No `cloud_id` resolution step like `jira`.
 
 ### Automatic renewal
 
-Before each API call, the CLI checks whether the access token is expired (or about to expire within 60s). After `auth login` there is no `refresh_token`: the token is re-requested via the same `client_credentials` exchange. After `auth login --user` the stored `refresh_token` is used (Bitbucket rotates it on every use; an unused one expires after 3 months, then run `auth login --user` again). Either way `credentials.json` is overwritten with the new values.
+Before each API call, the CLI checks whether the selected identity's access token is expired (or about to expire within 60s). The app's credentials (`credentials-service.json`) have no `refresh_token`: the token is re-requested via the same `client_credentials` exchange. The human's (`credentials-user.json`) use the stored `refresh_token` (Bitbucket rotates it on every use; an unused one expires after 3 months, then run `auth login --user` again). Either way only that identity's file is overwritten with the new values.
 
 ## Usage
 
+Every command accepts the global `--user` flag: without it the command acts as the OAuth app, with it as the human (see [Setup](#setup)).
+
 ### `bitbucket init`
 
-Interactive onboarding. See [Setup](#setup) above.
+Onboarding for one identity. See [Setup](#setup) above.
 
 ```sh
-cargo run -p bitbucket -- init
 cargo run -p bitbucket -- init --client-id <KEY> --client-secret <SECRET>
+cargo run -p bitbucket -- init --user --client-id <KEY> --client-secret <SECRET>
 ```
 
 ### `bitbucket doctor`
 
-Runs four checks and prints a structured JSON report: `app_config` (app.json exists and is valid), `credentials` (tokens exist and are not expired, renewed if needed), `api` (live call to `/2.0/user` succeeds), `permissions` (the OAuth scopes granted to the consumer). Exits non-zero if any check fails.
+Runs four checks for the selected identity (the OAuth app, or the human with `--user`) and prints a structured JSON report: `app_config` (app.json has the identity's section), `credentials` (that identity's tokens exist and are not expired, renewed if needed), `api` (live call to `/2.0/user` succeeds), `permissions` (the OAuth scopes granted to the consumer). Exits non-zero if any check fails. Two informational keys never affect the exit code: `pending_login` and `identities` (which identity was checked, whether each identity has a credentials file, and whether a pre-#164 `credentials.json` is still there).
 
 ```sh
 cargo run -p bitbucket -- doctor
-cargo run -p bitbucket -- doctor --select app_config.status,credentials.status,api.status,permissions
+cargo run -p bitbucket -- doctor --user
+cargo run -p bitbucket -- doctor --select app_config.status,credentials.status,api.status,permissions,identities
 ```
 
 The `permissions` check reports `granted_scopes` as-is from the token response — `status` is `"ok"` if the list is non-empty, `"error"` only if it's empty (nothing will work). It's purely informational beyond that: which scopes a given command needs is documented per-command below, not enforced by `doctor`.
 
 ### `bitbucket auth login`
 
-Stores credentials locally. Two modes, same credentials file (the last login decides the identity every later command uses):
+Logs in one identity and stores its credentials, leaving the other identity's untouched:
 
-- default — non-interactive `client_credentials` flow, no browser. Every action is attributed to the **OAuth app** (bot identity): the mode for agents.
-- `--user` — interactive `authorization_code` flow: opens the browser on Bitbucket's consent page, receives the callback on `localhost:8080`, stores a refresh token. Every action is attributed to **your own account**. Requires the consumer's callback URL to be `http://localhost:8080/callback`.
-- `--user --remote`, then `--user --code <code> --state <state>` — the same `authorization_code` flow in two steps, for a person who is not at the CLI's machine (the CLI on a server, the person in a chat or a web page). Step 1 opens no browser and listens on no port: it stores a pending login (`state` only; `pending-login.json`, mode `0600`) and prints `{"authorize_url", "state", "expires_at"}`. The person opens `authorize_url` and grants access; Bitbucket redirects them to the consumer's callback URL with `code` and `state`. Step 2 checks the state and the expiry, exchanges the code, saves `credentials.json`, and prints what `auth whoami` prints. A pending login is valid for 10 minutes and its state is single-use.
+- default — non-interactive `client_credentials` flow with the `"service"` consumer, no browser, saved to `credentials-service.json`. Commands run without `--user` are attributed to the **OAuth app** (bot identity): the mode for agents.
+- `--user` — interactive `authorization_code` flow with the `"user"` consumer, saved to `credentials-user.json`: opens the browser on Bitbucket's consent page, receives the callback on `localhost:8080`, stores a refresh token. Commands run with `--user` are attributed to **your own account**. Requires the consumer's callback URL to be `http://localhost:8080/callback`.
+- `--user --remote`, then `--user --code <code> --state <state>` — the same `authorization_code` flow in two steps, for a person who is not at the CLI's machine (the CLI on a server, the person in a chat or a web page). Step 1 opens no browser and listens on no port: it stores a pending login (`state` only; `pending-login.json`, mode `0600`) and prints `{"authorize_url", "state", "expires_at"}`. The person opens `authorize_url` and grants access; Bitbucket redirects them to the consumer's callback URL with `code` and `state`. Step 2 checks the state and the expiry, exchanges the code, saves `credentials-user.json`, and prints what `auth whoami --user` prints. A pending login is valid for 10 minutes and its state is single-use. `--remote`, `--code` and `--state` always need `--user` (before or after `auth login`).
 
 ```sh
 cargo run -p bitbucket -- auth login
@@ -130,16 +127,17 @@ cargo run -p bitbucket -- auth login --user --remote                          # 
 cargo run -p bitbucket -- auth login --user --code <CODE> --state <STATE>     # step 2
 ```
 
-**Bitbucket has no `redirect_uri` parameter**: the person is always sent back to the consumer's single callback URL. So for remote logins through a service (e.g. one that receives the redirect at `https://service.example.com/oauth/callback`), use a separate OAuth consumer whose callback URL is that endpoint, with its own config folder (`XDG_CONFIG_HOME`) — the `localhost:8080` consumer stays for local `--user` logins. `doctor` shows a pending login under `pending_login`.
+**Bitbucket has no `redirect_uri` parameter**: the person is always sent back to the consumer's single callback URL. So for remote logins through a service (e.g. one that receives the redirect at `https://service.example.com/oauth/callback`), the `"user"` section must hold a consumer whose callback URL is that endpoint; a config folder (`XDG_CONFIG_HOME`) whose `"user"` consumer calls back to `localhost:8080` is the one for local `--user` logins. `doctor` shows a pending login under `pending_login`.
 
-Run this once per machine, again if `credentials.json` is lost or revoked, or to switch identity. `doctor` reports the active one as `credentials.identity` (`app` or `user`).
+Run each once per machine, or again if that identity's credentials file is lost or revoked. `doctor` reports the checked credentials' kind as `credentials.identity` (`app` or `user`).
 
 ### `bitbucket auth whoami`
 
-Prints the currently authenticated identity as JSON. With `client_credentials`, this is the OAuth app's identity, not a personal user; after `auth login --user`, it's your own account.
+Prints the account the CLI acts as, as JSON: without `--user` the OAuth app's identity (not a personal user), with `--user` your own account.
 
 ```sh
 cargo run -p bitbucket -- auth whoami
+cargo run -p bitbucket -- auth whoami --user
 cargo run -p bitbucket -- auth whoami --select uuid,display_name
 ```
 
