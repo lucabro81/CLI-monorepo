@@ -21,6 +21,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - *(bitbucket)* placeholder workspace in examples, document mandatory --select
 - *(bitbucket)* placeholder reviewer uuid in examples
 - Merge pull request #166 from lucabro81/issue164 ([#166](https://github.com/lucabro81/CLI-monorepo/pull/166))
+- Release
+- Merge pull request #169 from lucabro81/release/bitbucket ([#169](https://github.com/lucabro81/CLI-monorepo/pull/169))
+## [1.0.0](https://github.com/lucabro81/CLI-monorepo/compare/bitbucket-v0.11.0...bitbucket-v1.0.0) - 2026-10-06
+
+### Added
+- *(bitbucket)* keep app and human credentials side by side, pick one per call with --user
+
+### Fixed
+- *(bitbucket)* refuse credentials that don't match the identity they are loaded as
+- *(bitbucket)* say so when init replaces an old single-identity app.json
+
+### Other
+- document side-by-side service and user identities
+- fix stale references after the identity split
+- *(bitbucket)* remote login step 2 prints auth whoami --user
+- *(bitbucket)* document workspace members and complete README status list
+- *(bitbucket)* placeholder workspace in examples, document mandatory --select
+- *(bitbucket)* placeholder reviewer uuid in examples
+- Merge pull request #166 from lucabro81/issue164 ([#166](https://github.com/lucabro81/CLI-monorepo/pull/166))
 ## [0.11.0](https://github.com/lucabro81/CLI-monorepo/compare/bitbucket-v0.10.0...bitbucket-v0.11.0) - 2026-10-05
 
 ### Added
