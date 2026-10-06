@@ -181,9 +181,9 @@ pub enum LoginError {
     /// The credentials file doesn't hold the identity it is named after.
     #[error("{0}")]
     WrongIdentity(&'static str),
-    #[error("{0}: bitbucket auth login --user")]
+    #[error("{0}: bitbucket auth login --user <USER_ID>")]
     CallbackListener(oauth_user_login::ListenerError),
-    #[error("{0}: bitbucket auth login --user")]
+    #[error("{0}: bitbucket auth login --user <USER_ID>")]
     Callback(oauth_user_login::WaitError),
     #[error("{0}")]
     PendingLogin(oauth_user_login::PendingLoginError),
@@ -212,7 +212,7 @@ struct TokenResponse {
 }
 
 /// Dynamic session credentials persisted to the identity's credentials file
-/// (`credentials-service.json` / `credentials-user.json`).
+/// (`credentials-service.json` / `users/<id>/credentials.json`).
 /// Fully managed by the CLI — never edit by hand. Renewed transparently before expiry.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Credentials {

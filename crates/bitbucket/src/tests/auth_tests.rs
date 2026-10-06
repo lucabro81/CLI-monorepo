@@ -264,7 +264,7 @@ fn denied_consent_ends_with_the_retry_command() {
     assert_eq!(
         err.to_string(),
         "authorization denied: access_denied (User denied access). Approve the consent page to \
-        log in, then retry the login: bitbucket auth login --user"
+        log in, then retry the login: bitbucket auth login --user <USER_ID>"
     );
 }
 
@@ -272,7 +272,7 @@ fn denied_consent_ends_with_the_retry_command() {
 fn state_mismatch_ends_with_the_retry_command() {
     let err = LoginError::Callback(oauth_user_login::WaitError::StateMismatch);
 
-    assert!(err.to_string().ends_with("Login aborted: retry it: bitbucket auth login --user"), "got {err}");
+    assert!(err.to_string().ends_with("Login aborted: retry it: bitbucket auth login --user <USER_ID>"), "got {err}");
 }
 
 #[test]
@@ -282,7 +282,7 @@ fn a_busy_callback_port_names_the_port_and_the_retry_command() {
     let err = LoginError::CallbackListener(oauth_user_login::bind_listener(&address).unwrap_err());
 
     assert!(err.to_string().starts_with(&format!("cannot listen for the login callback on {address}")), "got {err}");
-    assert!(err.to_string().ends_with("and retry: bitbucket auth login --user"), "got {err}");
+    assert!(err.to_string().ends_with("and retry: bitbucket auth login --user <USER_ID>"), "got {err}");
 }
 
 #[test]
