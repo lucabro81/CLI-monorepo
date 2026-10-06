@@ -20,6 +20,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - fix stale references after the identity split
 - *(jira)* remote login step 2 prints auth whoami --user
 - Merge pull request #166 from lucabro81/issue164 ([#166](https://github.com/lucabro81/CLI-monorepo/pull/166))
+- Release
+- Merge pull request #170 from lucabro81/release/jira ([#170](https://github.com/lucabro81/CLI-monorepo/pull/170))
+## [1.0.0](https://github.com/lucabro81/CLI-monorepo/compare/jira-v0.9.0...jira-v1.0.0) - 2026-10-06
+
+### Added
+- *(atlassian-auth)* add Identity and sectioned AppConfig
+- *(jira)* keep service and human credentials side by side, pick one per call with --user
+
+### Fixed
+- *(atlassian-auth)* refuse credentials that don't match the identity they are loaded as
+- *(jira)* say so when init replaces an old single-identity app.json
+
+### Other
+- *(atlassian-auth)* drop the flat app.json API now that every caller uses AppConfig
+- document side-by-side service and user identities
+- fix stale references after the identity split
+- *(jira)* remote login step 2 prints auth whoami --user
+- Merge pull request #166 from lucabro81/issue164 ([#166](https://github.com/lucabro81/CLI-monorepo/pull/166))
 ## [0.9.0](https://github.com/lucabro81/CLI-monorepo/compare/jira-v0.8.2...jira-v0.9.0) - 2026-10-05
 
 ### Added
