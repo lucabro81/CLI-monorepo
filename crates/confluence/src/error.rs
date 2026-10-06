@@ -17,17 +17,38 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 pub enum CliError {
     #[error(
-        "app credentials file not found at {path}. \
-        Create it manually with your Atlassian OAuth 2.0 app credentials: \
-        {{\"client_id\": \"...\", \"client_secret\": \"...\"}}"
+        "app credentials file not found at {path}. Create it with: \
+        confluence init --client-id <ID> --client-secret <SECRET> (Service Account, the default identity) \
+        and/or confluence init --user --client-id <ID> --client-secret <SECRET> (3LO app, used with --user)"
     )]
     AppConfigNotFound { path: String },
 
     #[error(
-        "app credentials file at {path} is not valid JSON: {reason}. \
-        Expected format: {{\"client_id\": \"...\", \"client_secret\": \"...\"}}"
+        "app credentials file at {path} is not valid: {reason}. Expected format: \
+        {{\"service\": {{\"client_id\": \"...\", \"client_secret\": \"...\"}}, \
+        \"user\": {{\"client_id\": \"...\", \"client_secret\": \"...\"}}}} (either section may be omitted). \
+        Fix or delete the file, then run confluence init"
     )]
     AppConfigInvalid { path: String, reason: String },
+
+    #[error(
+        "app.json at {path} uses the old single-identity format (client_id at top level). \
+        Recreate it: confluence init --client-id <ID> --client-secret <SECRET> for the Service Account, \
+        and confluence init --user --client-id <ID> --client-secret <SECRET> for the 3LO app used with --user"
+    )]
+    AppConfigLegacy { path: String },
+
+    #[error(
+        "app.json at {path} has no \"service\" section (the Service Account credential used without --user). \
+        Run: confluence init --client-id <ID> --client-secret <SECRET>"
+    )]
+    ServiceAppMissing { path: String },
+
+    #[error(
+        "app.json at {path} has no \"user\" section (the 3LO app used with --user). \
+        Run: confluence init --user --client-id <ID> --client-secret <SECRET>"
+    )]
+    UserAppMissing { path: String },
 
     #[error(
         "no home directory found — cannot resolve config path. \
@@ -36,16 +57,21 @@ pub enum CliError {
     NoHomeDirectory,
 
     #[error(
-        "not authenticated. \
-        Run: confluence auth login"
+        "not logged in as the service account. Run: confluence auth login. \
+        To act as the human logged in with confluence auth login --user, pass --user instead"
     )]
-    NotAuthenticated,
+    NotAuthenticatedService,
+
+    #[error(
+        "not logged in as a human. Run: confluence auth login --user (a person must approve the login in a browser)"
+    )]
+    NotAuthenticatedUser,
 
     #[error(
         "failed to refresh authentication token: {reason}. \
-        The session may have been revoked. Run: confluence auth login"
+        The session may have been revoked. Run: {login}"
     )]
-    TokenRefreshFailed { reason: String },
+    TokenRefreshFailed { reason: String, login: &'static str },
 
     #[error("OAuth login failed: {reason}")]
     LoginFailed { reason: String },
@@ -55,6 +81,13 @@ pub enum CliError {
         --remote --redirect-uri <redirect-uri>"
     )]
     RemoteLoginFailed { reason: String },
+
+    #[error(
+        "a remote login (--remote, --code, --state) logs in the human identity and needs --user. \
+        Retry with --user: confluence auth login --user --remote --redirect-uri <redirect-uri>, \
+        then confluence auth login --user --code <CODE> --state <STATE>"
+    )]
+    RemoteLoginNeedsUser,
 
     #[error(
         "failed to save credentials to {path}: {reason}. \

@@ -1,7 +1,7 @@
 //! Binary entry point for the `confluence` CLI.
 //!
 //! Responsibilities are kept minimal: parse CLI arguments, resolve the
-//! `--select` flag once, then dispatch to the appropriate command handler in
+//! `--select` and `--user` flags once, then dispatch to the appropriate command handler in
 //! `commands/`. All business logic lives in those modules.
 //!
 //! Error handling boundary: `run()` returns `Result<(), CliError>`; `main()`
@@ -19,6 +19,7 @@ mod error;
 use std::process::ExitCode;
 
 use clap::Parser;
+use auth::Identity;
 use cli::{AuthCommand, Cli, Command};
 use error::CliError;
 
@@ -41,12 +42,15 @@ fn run() -> Result<(), CliError> {
         cli_fields::Select::Fields(&select_paths)
     };
 
+    // Global --user: act as the human instead of the service account.
+    let identity = Identity::from_user_flag(cli.user);
+
     match cli.command {
         Command::Init { client_id, client_secret } => {
-            commands::init::run_init(client_id, client_secret)
+            commands::init::run_init(identity, client_id, client_secret)
         }
         Command::Doctor => {
-            let (report, all_ok) = commands::doctor::run_doctor()?;
+            let (report, all_ok) = commands::doctor::run_doctor(identity)?;
             // Exempt from the mandatory --select requirement: the report is generated
             // internally (fixed, small shape, not an arbitrary external blob). An
             // explicit --select/--select-all is still honored if passed.
@@ -56,13 +60,13 @@ fn run() -> Result<(), CliError> {
             }
             Ok(())
         }
-        Command::Auth { command: AuthCommand::Login { user, remote: _, redirect_uri, code, state } } => {
-            commands::auth::run_login(commands::auth::LoginMode::from_flags(user, redirect_uri, code, state), select)
+        Command::Auth { command: AuthCommand::Login { remote: _, redirect_uri, code, state } } => {
+            commands::auth::run_login(commands::auth::LoginMode::from_flags(identity, redirect_uri, code, state)?, select)
         }
-        Command::Auth { command: AuthCommand::Whoami } => commands::auth::run_whoami(select),
-        Command::Page { command } => commands::page::run(command, select),
-        Command::Space { command } => commands::space::run(command, select),
-        Command::Template { command } => commands::template::run(command, select),
+        Command::Auth { command: AuthCommand::Whoami } => commands::auth::run_whoami(select, identity),
+        Command::Page { command } => commands::page::run(command, select, identity),
+        Command::Space { command } => commands::space::run(command, select, identity),
+        Command::Template { command } => commands::template::run(command, select, identity),
     }
 }
 

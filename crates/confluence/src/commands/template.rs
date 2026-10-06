@@ -18,10 +18,11 @@
 use serde_json::json;
 
 use crate::cli::TemplateCommand;
+use crate::auth::Identity;
 use crate::context::{authenticated_client, client_error_to_cli, print_json};
 use crate::error::CliError;
 
-pub fn run(command: TemplateCommand, select: cli_fields::Select<'_>) -> Result<(), CliError> {
+pub fn run(command: TemplateCommand, select: cli_fields::Select<'_>, identity: Identity) -> Result<(), CliError> {
     match command {
         TemplateCommand::Create {
             space_key,
@@ -29,9 +30,9 @@ pub fn run(command: TemplateCommand, select: cli_fields::Select<'_>) -> Result<(
             description,
             body,
             body_file,
-        } => run_create(space_key, &name, description, body, body_file, select),
+        } => run_create(space_key, &name, description, body, body_file, select, identity),
         TemplateCommand::List { space_key, limit, start } => {
-            let value = authenticated_client()?
+            let value = authenticated_client(identity)?
                 .list_templates(space_key.as_deref(), limit, start)
                 .map_err(client_error_to_cli)?;
             print_json(&value, select)
@@ -42,8 +43,8 @@ pub fn run(command: TemplateCommand, select: cli_fields::Select<'_>) -> Result<(
             description,
             body,
             body_file,
-        } => run_update(&id, name.as_deref(), description.as_deref(), body, body_file, select),
-        TemplateCommand::Delete { id, confirm } => run_delete(&id, confirm, select),
+        } => run_update(&id, name.as_deref(), description.as_deref(), body, body_file, select, identity),
+        TemplateCommand::Delete { id, confirm } => run_delete(&id, confirm, select, identity),
     }
 }
 
@@ -72,6 +73,7 @@ fn run_create(
     body: Option<String>,
     body_file: Option<String>,
     select: cli_fields::Select<'_>,
+    identity: Identity,
 ) -> Result<(), CliError> {
     let body_text = resolve_body(body, body_file)?;
 
@@ -87,7 +89,7 @@ fn run_create(
         request_body["space"] = json!({"key": space_key});
     }
 
-    let value = authenticated_client()?
+    let value = authenticated_client(identity)?
         .create_template(&request_body)
         .map_err(client_error_to_cli)?;
     print_json(&value, select)
@@ -124,6 +126,7 @@ fn run_update(
     body: Option<String>,
     body_file: Option<String>,
     select: cli_fields::Select<'_>,
+    identity: Identity,
 ) -> Result<(), CliError> {
     let body_override = resolve_optional_body(body, body_file)?;
 
@@ -131,7 +134,7 @@ fn run_update(
         return Err(CliError::TemplateUpdateMissingTarget);
     }
 
-    let client = authenticated_client()?;
+    let client = authenticated_client(identity)?;
     let current = client.get_template(id).map_err(client_error_to_cli)?;
 
     let current_name = current["name"].as_str().unwrap_or_default();
@@ -165,12 +168,12 @@ fn run_update(
 /// `authenticated_client()` — free and local, so a caller who forgot
 /// `--confirm` sees the actionable error immediately rather than after a
 /// network round-trip a token refresh might require.
-fn run_delete(id: &str, confirm: bool, select: cli_fields::Select<'_>) -> Result<(), CliError> {
+fn run_delete(id: &str, confirm: bool, select: cli_fields::Select<'_>, identity: Identity) -> Result<(), CliError> {
     if !confirm {
         return Err(CliError::TemplateDeleteNotConfirmed { id: id.to_string() });
     }
 
-    authenticated_client()?
+    authenticated_client(identity)?
         .delete_template(id)
         .map_err(client_error_to_cli)?;
 
