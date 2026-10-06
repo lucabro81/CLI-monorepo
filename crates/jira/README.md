@@ -43,7 +43,7 @@ All of them live in one config folder, `$XDG_CONFIG_HOME/jira-cli/` (typically `
 | `users/<USER_ID>/credentials.json` | `jira auth login --user <USER_ID>` | that person's token and refresh token |
 | `users/<USER_ID>/pending-login.json` | `jira auth login --user <USER_ID> --remote` | that person's [remote login](#remote-login-in-two-steps--jira-auth-login---user-user_id---remote) waiting for its code |
 
-Every file is written with mode `0600` (owner only): they hold client secrets and tokens.
+Every file is written with mode `0600` (owner only): they hold client secrets and tokens. An empty `<credentials file>.lock` (mode `0600`) appears next to a credentials file after its first renewal: it keeps parallel commands from renewing the same token twice. Leave it in place.
 
 ```json
 {
