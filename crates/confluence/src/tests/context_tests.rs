@@ -39,8 +39,13 @@ fn non_empty_fields_still_succeeds() {
 use std::path::Path;
 
 use atlassian_auth::{AppConfig, Identity, LoginError, OAuthConfig, OAuthConfigError};
+use oauth_user_login::UserId;
 
 use super::{app_config_error, login_command, login_error_to_cli, oauth_section};
+
+fn alice() -> Identity {
+    Identity::User(UserId::parse("alice").unwrap())
+}
 
 fn app(service: bool, user: bool) -> AppConfig {
     let config = || OAuthConfig {
@@ -56,21 +61,21 @@ fn app(service: bool, user: bool) -> AppConfig {
 
 #[test]
 fn login_command_names_the_identity() {
-    assert_eq!(login_command(Identity::Service), "confluence auth login");
-    assert_eq!(login_command(Identity::User), "confluence auth login --user");
+    assert_eq!(login_command(&Identity::Service), "confluence auth login");
+    assert_eq!(login_command(&alice()), "confluence auth login --user alice");
 }
 
 #[test]
 fn oauth_section_returns_the_section_of_the_requested_identity() {
     let path = Path::new("/cfg/confluence-cli/app.json");
 
-    assert!(oauth_section(app(true, false), Identity::Service, path).is_ok());
-    assert!(oauth_section(app(false, true), Identity::User, path).is_ok());
+    assert!(oauth_section(app(true, false), &Identity::Service, path).is_ok());
+    assert!(oauth_section(app(false, true), &alice(), path).is_ok());
 }
 
 #[test]
 fn a_missing_service_section_says_to_run_init_for_the_service_account() {
-    let err = oauth_section(app(false, true), Identity::Service, Path::new("/cfg/confluence-cli/app.json"))
+    let err = oauth_section(app(false, true), &Identity::Service, Path::new("/cfg/confluence-cli/app.json"))
         .unwrap_err()
         .to_string();
 
@@ -83,14 +88,14 @@ fn a_missing_service_section_says_to_run_init_for_the_service_account() {
 
 #[test]
 fn a_missing_user_section_says_to_run_init_for_the_3lo_app() {
-    let err = oauth_section(app(true, false), Identity::User, Path::new("/cfg/confluence-cli/app.json"))
+    let err = oauth_section(app(true, false), &alice(), Path::new("/cfg/confluence-cli/app.json"))
         .unwrap_err()
         .to_string();
 
     assert_eq!(
         err,
-        "app.json at /cfg/confluence-cli/app.json has no \"user\" section (the 3LO app used with --user). \
-        Run: confluence init --user --client-id <ID> --client-secret <SECRET>"
+        "app.json at /cfg/confluence-cli/app.json has no \"user\" section (the 3LO app every person logs in \
+        with). Run: confluence init --user alice --client-id <ID> --client-secret <SECRET>"
     );
 }
 
@@ -102,7 +107,7 @@ fn a_legacy_app_config_names_both_init_commands() {
         err,
         "app.json at /cfg/confluence-cli/app.json uses the old single-identity format (client_id at top level). \
         Recreate it: confluence init --client-id <ID> --client-secret <SECRET> for the Service Account, \
-        and confluence init --user --client-id <ID> --client-secret <SECRET> for the 3LO app used with --user"
+        and confluence init --user <USER_ID> --client-id <ID> --client-secret <SECRET> for the 3LO app used with --user"
     );
 }
 
@@ -113,36 +118,37 @@ fn a_missing_app_config_names_both_init_commands() {
 
     assert!(err.starts_with("app credentials file not found at /cfg/confluence-cli/app.json."), "{err}");
     assert!(err.contains("confluence init --client-id <ID> --client-secret <SECRET>"), "{err}");
-    assert!(err.contains("confluence init --user --client-id <ID> --client-secret <SECRET>"), "{err}");
+    assert!(err.contains("confluence init --user <USER_ID> --client-id <ID> --client-secret <SECRET>"), "{err}");
 }
 
 #[test]
 fn missing_service_credentials_suggest_login_or_the_user_flag() {
-    let err = login_error_to_cli(LoginError::Io(std::io::ErrorKind::NotFound.into()), Identity::Service).to_string();
+    let err = login_error_to_cli(LoginError::Io(std::io::ErrorKind::NotFound.into()), &Identity::Service).to_string();
 
     assert_eq!(
         err,
         "not logged in as the service account. Run: confluence auth login. \
-        To act as the human logged in with confluence auth login --user, pass --user instead"
+        To act as a person logged in with confluence auth login --user <USER_ID>, pass --user <USER_ID> instead"
     );
 }
 
 #[test]
-fn missing_user_credentials_say_a_human_must_log_in() {
-    let err = login_error_to_cli(LoginError::Io(std::io::ErrorKind::NotFound.into()), Identity::User).to_string();
+fn missing_user_credentials_name_the_person_and_their_login() {
+    let err = login_error_to_cli(LoginError::Io(std::io::ErrorKind::NotFound.into()), &alice()).to_string();
 
     assert_eq!(
         err,
-        "not logged in as a human. Run: confluence auth login --user (a person must approve the login in a browser)"
+        "user alice is not logged in. Run: confluence auth login --user alice \
+        (the person must approve the login in a browser)"
     );
 }
 
 #[test]
 fn a_failed_renewal_names_the_login_of_the_same_identity() {
-    let user = login_error_to_cli(LoginError::TokenExchange("invalid_grant".to_string()), Identity::User);
-    let service = login_error_to_cli(LoginError::TokenExchange("invalid_grant".to_string()), Identity::Service);
+    let user = login_error_to_cli(LoginError::TokenExchange("invalid_grant".to_string()), &alice());
+    let service = login_error_to_cli(LoginError::TokenExchange("invalid_grant".to_string()), &Identity::Service);
 
-    assert!(user.to_string().ends_with("Run: confluence auth login --user"), "{user}");
+    assert!(user.to_string().ends_with("Run: confluence auth login --user alice"), "{user}");
     assert!(service.to_string().ends_with("Run: confluence auth login"), "{service}");
 }
 
@@ -150,7 +156,7 @@ fn a_failed_renewal_names_the_login_of_the_same_identity() {
 fn credentials_of_the_wrong_identity_mean_that_identity_is_not_logged_in() {
     // Regression guard (issue #164 review): a human slot without a refresh
     // token must not be renewed as the app.
-    let err = login_error_to_cli(LoginError::WrongIdentity("x"), Identity::User).to_string();
+    let err = login_error_to_cli(LoginError::WrongIdentity("x"), &alice()).to_string();
 
-    assert!(err.starts_with("not logged in as a human. Run: confluence auth login --user"), "{err}");
+    assert!(err.starts_with("user alice is not logged in. Run: confluence auth login --user alice"), "{err}");
 }

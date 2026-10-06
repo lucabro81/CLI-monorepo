@@ -3,11 +3,16 @@
 use std::path::PathBuf;
 
 use atlassian_auth::Identity;
+use oauth_user_login::UserId;
 use serde_json::json;
 use tempfile::TempDir;
 
 use super::write_app_config;
 use crate::error::CliError;
+
+fn alice() -> Identity {
+    Identity::User(UserId::parse("alice").unwrap())
+}
 
 fn temp_config_dir() -> (TempDir, PathBuf) {
     let dir = TempDir::new().expect("tempdir");
@@ -24,7 +29,7 @@ fn read_app_json(config_dir: &std::path::Path) -> serde_json::Value {
 fn write_app_config_writes_only_the_section_of_the_identity() {
     let (_dir, config_dir) = temp_config_dir();
 
-    write_app_config(&config_dir, Identity::Service, "svc-id", "svc-secret").expect("should write");
+    write_app_config(&config_dir, &Identity::Service, "svc-id", "svc-secret").expect("should write");
 
     assert_eq!(
         read_app_json(&config_dir),
@@ -37,8 +42,8 @@ fn write_app_config_keeps_the_other_identity_section() {
     // Configuring the 3LO app must not erase the Service Account, and vice versa.
     let (_dir, config_dir) = temp_config_dir();
 
-    write_app_config(&config_dir, Identity::Service, "svc-id", "svc-secret").expect("first write");
-    write_app_config(&config_dir, Identity::User, "usr-id", "usr-secret").expect("second write");
+    write_app_config(&config_dir, &Identity::Service, "svc-id", "svc-secret").expect("first write");
+    write_app_config(&config_dir, &alice(), "usr-id", "usr-secret").expect("second write");
 
     assert_eq!(
         read_app_json(&config_dir),
@@ -53,8 +58,8 @@ fn write_app_config_keeps_the_other_identity_section() {
 fn write_app_config_replaces_the_same_section() {
     let (_dir, config_dir) = temp_config_dir();
 
-    write_app_config(&config_dir, Identity::User, "old-id", "old-secret").expect("first write");
-    write_app_config(&config_dir, Identity::User, "new-id", "new-secret").expect("second write");
+    write_app_config(&config_dir, &alice(), "old-id", "old-secret").expect("first write");
+    write_app_config(&config_dir, &alice(), "new-id", "new-secret").expect("second write");
 
     assert_eq!(
         read_app_json(&config_dir),
@@ -74,7 +79,7 @@ fn write_app_config_replaces_a_legacy_flat_file() {
     )
     .unwrap();
 
-    write_app_config(&config_dir, Identity::Service, "svc-id", "svc-secret").expect("should write");
+    write_app_config(&config_dir, &Identity::Service, "svc-id", "svc-secret").expect("should write");
 
     assert_eq!(
         read_app_json(&config_dir),
@@ -89,7 +94,7 @@ fn write_app_config_refuses_to_overwrite_an_unreadable_file() {
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     std::fs::write(&path, "not json").unwrap();
 
-    let result = write_app_config(&config_dir, Identity::Service, "svc-id", "svc-secret");
+    let result = write_app_config(&config_dir, &Identity::Service, "svc-id", "svc-secret");
 
     assert!(matches!(result, Err(CliError::AppConfigInvalid { .. })), "{result:?}");
     assert_eq!(std::fs::read_to_string(&path).unwrap(), "not json");
@@ -101,7 +106,21 @@ fn write_app_config_creates_parent_directories() {
     let (_dir, config_dir) = temp_config_dir();
     let nested = config_dir.join("does").join("not").join("exist");
 
-    write_app_config(&nested, Identity::User, "id", "secret").expect("should create dirs and write");
+    write_app_config(&nested, &alice(), "id", "secret").expect("should create dirs and write");
 
     assert!(nested.join("confluence-cli").join("app.json").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn app_config_is_readable_only_by_the_owner() {
+    // Regression for #165: app.json holds the client secrets and was written
+    // with the umask's 0644.
+    use std::os::unix::fs::PermissionsExt;
+    let (_dir, config_dir) = temp_config_dir();
+
+    write_app_config(&config_dir, &Identity::Service, "svc-id", "svc-secret").unwrap();
+
+    let mode = std::fs::metadata(config_dir.join("confluence-cli/app.json")).unwrap().permissions().mode();
+    assert_eq!(mode & 0o777, 0o600);
 }

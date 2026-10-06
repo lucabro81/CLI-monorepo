@@ -4,11 +4,15 @@ use clap::Parser;
 
 use super::{AuthCommand, Cli, Command, PageCommand, SpaceCommand, TemplateCommand};
 
+fn user(cli: &Cli) -> Option<&str> {
+    cli.user.as_ref().map(oauth_user_login::UserId::as_str)
+}
+
 #[test]
 fn parses_auth_login() {
     let cli = Cli::try_parse_from(["confluence", "auth", "login"]).expect("should parse");
 
-    assert!(!cli.user, "default should be service account (client_credentials)");
+    assert_eq!(cli.user, None, "default should be service account (client_credentials)");
     match cli.command {
         Command::Auth {
             command: AuthCommand::Login { remote, redirect_uri, code, state },
@@ -22,9 +26,9 @@ fn parses_auth_login() {
 
 #[test]
 fn parses_auth_login_with_user_flag() {
-    let cli = Cli::try_parse_from(["confluence", "auth", "login", "--user"]).expect("should parse");
+    let cli = Cli::try_parse_from(["confluence", "auth", "login", "--user", "alice"]).expect("should parse");
 
-    assert!(cli.user, "--user should select the interactive 3LO flow");
+    assert_eq!(user(&cli), Some("alice"), "--user should select the interactive 3LO flow");
     match cli.command {
         Command::Auth {
             command: AuthCommand::Login { remote, .. },
@@ -40,11 +44,11 @@ fn login_error_kind(args: &[&str]) -> clap::error::ErrorKind {
 #[test]
 fn parses_auth_login_remote_start() {
     let cli = Cli::try_parse_from([
-        "confluence", "auth", "login", "--user", "--remote", "--redirect-uri", "https://m.example/cb",
+        "confluence", "auth", "login", "--user", "alice", "--remote", "--redirect-uri", "https://m.example/cb",
     ])
     .expect("should parse");
 
-    assert!(cli.user);
+    assert_eq!(user(&cli), Some("alice"));
     match cli.command {
         Command::Auth { command: AuthCommand::Login { remote, redirect_uri, code, state } } => {
             assert!(remote);
@@ -57,10 +61,10 @@ fn parses_auth_login_remote_start() {
 
 #[test]
 fn parses_auth_login_remote_complete() {
-    let cli = Cli::try_parse_from(["confluence", "auth", "login", "--user", "--code", "c1", "--state", "s1"])
+    let cli = Cli::try_parse_from(["confluence", "auth", "login", "--user", "alice", "--code", "c1", "--state", "s1"])
         .expect("should parse");
 
-    assert!(cli.user);
+    assert_eq!(user(&cli), Some("alice"));
     match cli.command {
         Command::Auth { command: AuthCommand::Login { remote, redirect_uri, code, state } } => {
             assert!(!remote);
@@ -76,12 +80,12 @@ fn auth_login_remote_flag_combinations_are_enforced() {
     use clap::error::ErrorKind::{ArgumentConflict, MissingRequiredArgument};
     // "--remote/--code need --user" is checked by LoginMode::from_flags, not clap:
     // clap cannot see a global --user written before the subcommand.
-    assert_eq!(login_error_kind(&["--user", "--remote"]), MissingRequiredArgument);
-    assert_eq!(login_error_kind(&["--user", "--redirect-uri", "https://m/cb"]), MissingRequiredArgument);
-    assert_eq!(login_error_kind(&["--user", "--code", "c"]), MissingRequiredArgument);
-    assert_eq!(login_error_kind(&["--user", "--state", "s"]), MissingRequiredArgument);
+    assert_eq!(login_error_kind(&["--user", "alice", "--remote"]), MissingRequiredArgument);
+    assert_eq!(login_error_kind(&["--user", "alice", "--redirect-uri", "https://m/cb"]), MissingRequiredArgument);
+    assert_eq!(login_error_kind(&["--user", "alice", "--code", "c"]), MissingRequiredArgument);
+    assert_eq!(login_error_kind(&["--user", "alice", "--state", "s"]), MissingRequiredArgument);
     assert_eq!(
-        login_error_kind(&["--user", "--remote", "--redirect-uri", "https://m/cb", "--code", "c", "--state", "s"]),
+        login_error_kind(&["--user", "alice", "--remote", "--redirect-uri", "https://m/cb", "--code", "c", "--state", "s"]),
         ArgumentConflict
     );
 }
@@ -98,44 +102,71 @@ fn parses_auth_whoami() {
     }
 }
 
-// --- global --user (issue #164) ---
+// --- global --user <id> (issues #164, #175) ---
 
 #[test]
 fn user_flag_defaults_to_the_service_identity() {
     let cli = Cli::try_parse_from(["confluence", "page", "get", "123456"]).expect("should parse");
 
-    assert!(!cli.user);
+    assert_eq!(cli.user, None);
 }
 
 #[test]
 fn user_flag_is_accepted_after_any_subcommand() {
     for args in [
-        &["confluence", "page", "get", "123456", "--user"][..],
-        &["confluence", "space", "list", "--user"],
-        &["confluence", "template", "list", "--user"],
-        &["confluence", "auth", "whoami", "--user"],
-        &["confluence", "doctor", "--user"],
-        &["confluence", "init", "--user"],
+        &["confluence", "page", "get", "123456", "--user", "alice"][..],
+        &["confluence", "space", "list", "--user", "alice"],
+        &["confluence", "template", "list", "--user", "alice"],
+        &["confluence", "auth", "whoami", "--user", "alice"],
+        &["confluence", "doctor", "--user", "alice"],
+        &["confluence", "init", "--user", "alice"],
     ] {
         let cli = Cli::try_parse_from(args).unwrap_or_else(|e| panic!("{args:?}: {e}"));
-        assert!(cli.user, "{args:?} should select the human identity");
+        assert_eq!(user(&cli), Some("alice"), "{args:?} should select that person");
     }
 }
 
 #[test]
 fn user_flag_is_accepted_before_the_subcommand() {
-    let cli = Cli::try_parse_from(["confluence", "--user", "page", "get", "123456"]).expect("should parse");
+    let cli = Cli::try_parse_from(["confluence", "--user", "alice", "page", "get", "123456"]).expect("should parse");
 
-    assert!(cli.user);
+    assert_eq!(user(&cli), Some("alice"));
 }
 
 #[test]
 fn remote_login_flags_accept_a_user_flag_placed_before_the_subcommand() {
-    // --remote/--code require the global --user wherever it is written.
-    let cli = Cli::try_parse_from(["confluence", "--user", "auth", "login", "--code", "c", "--state", "s"])
+    // --remote/--code work with the global --user <id> wherever it is written.
+    let cli = Cli::try_parse_from(["confluence", "--user", "alice", "auth", "login", "--code", "c", "--state", "s"])
         .expect("should parse");
 
-    assert!(cli.user);
+    assert_eq!(user(&cli), Some("alice"));
+}
+
+#[test]
+fn user_flag_needs_the_persons_id() {
+    // Issue #175: --user names the person; a bare --user would silently pick
+    // whoever logged in last.
+    let err = Cli::try_parse_from(["confluence", "page", "get", "123456", "--user"]).unwrap_err();
+    assert_eq!(err.kind(), clap::error::ErrorKind::InvalidValue);
+}
+
+#[test]
+fn user_flag_rejects_an_id_that_is_not_a_slug() {
+    for id in ["Jane", "../etc", "a/b", ".hidden", "jane doe"] {
+        let err = Cli::try_parse_from(["confluence", "auth", "whoami", "--user", id]).unwrap_err();
+        assert_eq!(err.kind(), clap::error::ErrorKind::ValueValidation, "{id}");
+        assert!(err.to_string().contains("lowercase slug"), "{id}: {err}");
+    }
+}
+
+#[test]
+fn parses_auth_logout() {
+    let cli = Cli::try_parse_from(["confluence", "auth", "logout", "--user", "alice"]).expect("should parse");
+
+    assert_eq!(user(&cli), Some("alice"));
+    assert!(matches!(cli.command, Command::Auth { command: AuthCommand::Logout }));
+    let service = Cli::try_parse_from(["confluence", "auth", "logout"]).expect("should parse");
+    assert_eq!(service.user, None);
 }
 
 #[test]
