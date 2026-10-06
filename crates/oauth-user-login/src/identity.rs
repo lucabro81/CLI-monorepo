@@ -22,7 +22,7 @@ impl UserId {
         } else {
             Err(format!(
                 "\"{value}\" is not a valid user id: it must be a lowercase slug of 1-64 characters \
-                (a-z, 0-9, '.', '_', '-') starting with a letter or digit (example: mario.rossi)"
+                (a-z, 0-9, '.', '_', '-') starting with a letter or digit (example: jane.doe)"
             ))
         }
     }
