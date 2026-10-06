@@ -1,6 +1,8 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use super::{check_pending_login, check_permissions, identity};
+use super::{check_identities, check_pending_login, check_permissions, identity};
+use oauth_user_login::Identity;
+use serde_json::json;
 use crate::auth::Credentials;
 
 fn credentials_with_scopes(scopes: Vec<&str>) -> Credentials {
@@ -87,4 +89,45 @@ fn an_unreadable_pending_login_is_reported_with_the_fix() {
         check["message"].as_str().unwrap().ends_with("Start a new remote login with: bitbucket auth login --user --remote"),
         "got {check}"
     );
+}
+
+fn touch(dir: &std::path::Path, file: &str) {
+    let path = dir.join("bitbucket-cli").join(file);
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(path, "{}").unwrap();
+}
+
+#[test]
+fn identities_reports_the_selected_identity_and_which_credentials_exist() {
+    let dir = tempfile::tempdir().unwrap();
+    touch(dir.path(), "credentials-user.json");
+
+    assert_eq!(
+        check_identities(dir.path(), Identity::User),
+        json!({"selected": "user", "service": "missing", "user": "present", "legacy_credentials_file": false})
+    );
+}
+
+#[test]
+fn identities_reports_both_identities_when_both_logged_in() {
+    let dir = tempfile::tempdir().unwrap();
+    touch(dir.path(), "credentials-service.json");
+    touch(dir.path(), "credentials-user.json");
+
+    assert_eq!(
+        check_identities(dir.path(), Identity::Service),
+        json!({"selected": "service", "service": "present", "user": "present", "legacy_credentials_file": false})
+    );
+}
+
+#[test]
+fn identities_flags_a_leftover_pre_164_credentials_file() {
+    // credentials.json is no longer read; doctor surfaces it so it can be deleted.
+    let dir = tempfile::tempdir().unwrap();
+    touch(dir.path(), "credentials.json");
+
+    let check = check_identities(dir.path(), Identity::Service);
+
+    assert_eq!(check["service"], "missing");
+    assert_eq!(check["legacy_credentials_file"], true);
 }

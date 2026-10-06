@@ -28,29 +28,48 @@ pub struct Cli {
     #[arg(long, global = true, conflicts_with = "select")]
     pub select_all: bool,
 
+    /// Act as the human who logged in with `bitbucket auth login --user` instead of
+    /// the OAuth app. Without it every command acts as the OAuth app (`bitbucket auth
+    /// login`). Both identities are stored side by side and renewed automatically,
+    /// so switching between them needs no new login. On `init`, `auth login`,
+    /// `auth whoami` and `doctor` it selects which identity to set up, log in or
+    /// check.
+    #[arg(long, global = true)]
+    pub user: bool,
+
     #[command(subcommand)]
     pub command: Command,
 }
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
-    /// Guided onboarding: create app.json and run the first login
-    #[command(after_help = "Example:\n  bitbucket init\n  bitbucket init --client-id ABC123 --client-secret xyz")]
+    /// Onboarding: save an identity's OAuth consumer to app.json, log in, verify with doctor
+    ///
+    /// Without --user: writes app.json's "service" section and runs the
+    /// `client_credentials` login (acting as the OAuth app, no browser). With
+    /// --user: writes the "user" section and runs the browser login (acting as
+    /// the human). The same consumer may be used for both. The other section of
+    /// app.json is left untouched. Then prints a doctor JSON report for that
+    /// identity. Pass --client-id and --client-secret to skip interactive prompts.
+    #[command(after_help = "Examples:\n  bitbucket init --client-id <KEY> --client-secret <SECRET>          # the OAuth app\n  bitbucket init --user --client-id <KEY> --client-secret <SECRET>   # the human, browser consent\n  bitbucket init                                                     # interactive prompts")]
     Init {
-        /// Bitbucket OAuth consumer Key (skips interactive prompt if provided)
+        /// Bitbucket OAuth consumer Key of the identity being set up (skips interactive prompt if provided)
         #[arg(long)]
         client_id: Option<String>,
-        /// Bitbucket OAuth consumer Secret (skips interactive prompt if provided)
+        /// Bitbucket OAuth consumer Secret of the identity being set up (skips interactive prompt if provided)
         #[arg(long)]
         client_secret: Option<String>,
     },
     /// Check that the CLI is correctly configured and can reach the Bitbucket API
     ///
-    /// Also reports `pending_login` (a two-step `auth login --user --remote`
-    /// waiting for its code): informational, never counted in the exit code.
+    /// Checks the OAuth app, or the human with --user. Also reports
+    /// `pending_login` (a two-step `auth login --user --remote` waiting for its
+    /// code) and `identities` (which of the two identities are logged in, and a
+    /// leftover pre-#164 credentials.json): informational, never counted in the
+    /// exit code.
     /// Always prints its full result regardless of --select — the report is
     /// generated internally and is always small and fixed-shape.
-    #[command(after_help = "Example:\n  bitbucket doctor")]
+    #[command(after_help = "Examples:\n  bitbucket doctor\n  bitbucket doctor --user")]
     Doctor,
     /// Manage authentication with Bitbucket
     Auth {
@@ -84,11 +103,12 @@ pub enum AuthCommand {
     /// Run the OAuth 2.0 login flow and store credentials locally
     ///
     /// By default runs the `client_credentials` flow: exchanges the OAuth consumer's
-    /// `client_id`/`client_secret` (from app.json) for an access token. No browser,
+    /// `client_id`/`client_secret` (app.json's "service" section) for an access token. No browser,
     /// no user interaction. Every action is attributed to the OAuth app (bot
     /// identity) — the expected mode for agent-driven usage.
     ///
-    /// Pass --user for the interactive `authorization_code` flow: opens the browser
+    /// Pass --user for the interactive `authorization_code` flow, with app.json's
+    /// "user" section: opens the browser
     /// on Bitbucket's consent page, receives the callback on localhost:8080, and
     /// stores a `refresh_token` for automatic renewal. Every action is attributed
     /// to the human Bitbucket account that approved the consent page. Requires the
@@ -99,36 +119,35 @@ pub enum AuthCommand {
     /// prints JSON `{authorize_url, state, expires_at}` for the caller to hand to
     /// the person. Bitbucket has no redirect URI parameter: it always redirects
     /// to the OAuth consumer's callback URL, so remote logins need a consumer
-    /// whose callback URL is the caller's own endpoint (a different consumer, and
-    /// config folder, from the localhost one). Step 2 (--code --state) exchanges
+    /// whose callback URL is the caller's own endpoint, in the "user" section (a
+    /// browser login on this machine instead needs the localhost callback). Step 2 (--code --state) exchanges
     /// the code, saves the credentials, then prints what `auth whoami` prints.
     /// The pending login expires after 10 minutes, its state is single-use, and
     /// it lives in this config folder (`XDG_CONFIG_HOME`).
     ///
-    /// All modes write the same credentials file: the last login decides which
-    /// identity every later command uses. Run this once per machine (or per
-    /// identity switch); tokens are renewed automatically after that.
-    #[command(after_help = "Examples:\n  bitbucket auth login           # act as the OAuth app (bot)\n  bitbucket auth login --user    # act as yourself, via browser consent\n  bitbucket auth login --user --remote                           # step 1: prints the consent URL\n  bitbucket auth login --user --code <CODE> --state <STATE>      # step 2\n\nRequires app.json to exist at ~/.config/bitbucket-cli/app.json with the OAuth\nconsumer's Key/Secret: {\"client_id\": \"...\", \"client_secret\": \"...\"}")]
+    /// Each login replaces only its own identity's credentials
+    /// (credentials-service.json / credentials-user.json): afterwards every command
+    /// acts as the OAuth app, or as the human when it is given --user. Run this once
+    /// per identity; tokens are renewed automatically after that.
+    #[command(after_help = "Examples:\n  bitbucket auth login           # act as the OAuth app (bot)\n  bitbucket auth login --user    # act as yourself, via browser consent\n  bitbucket auth login --user --remote                           # step 1: prints the consent URL\n  bitbucket auth login --user --code <CODE> --state <STATE>      # step 2\n\nRequires app.json at ~/.config/bitbucket-cli/app.json with the identity's section.\nRun `bitbucket init` (or `bitbucket init --user`) first if it is missing.")]
     Login {
-        /// Log in as a human Bitbucket account via browser consent (`authorization_code`)
-        /// instead of as the OAuth app (`client_credentials`)
-        #[arg(long)]
-        user: bool,
         /// Step 1 of a two-step login for someone not at this machine: print the consent URL instead of opening a browser
-        #[arg(long, requires = "user", conflicts_with_all = ["code", "state"])]
+        // "needs --user" is checked in LoginMode::from_flags: clap's `requires`
+        // cannot see a global --user written before the subcommand.
+        #[arg(long, conflicts_with_all = ["code", "state"])]
         remote: bool,
         /// Step 2: the `code` query parameter Bitbucket appended to the consumer's callback URL
-        #[arg(long, requires_all = ["user", "state"])]
+        #[arg(long, requires = "state")]
         code: Option<String>,
         /// Step 2: the `state` query parameter Bitbucket appended to the consumer's callback URL
         #[arg(long, requires = "code")]
         state: Option<String>,
     },
-    /// Print the currently authenticated account as JSON
+    /// Print the account the CLI acts as, as JSON: the OAuth app, or the human with --user
     ///
     /// Always prints its full result regardless of --select — an identity check,
     /// small and fixed-shape.
-    #[command(after_help = "Examples:\n  bitbucket auth whoami\n  bitbucket auth whoami --select uuid,display_name")]
+    #[command(after_help = "Examples:\n  bitbucket auth whoami\n  bitbucket auth whoami --user\n  bitbucket auth whoami --select uuid,display_name")]
     Whoami,
 }
 

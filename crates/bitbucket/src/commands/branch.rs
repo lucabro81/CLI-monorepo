@@ -1,15 +1,16 @@
 //! Handler for the `branch` command group.
 
 use crate::cli::BranchCommand;
+use crate::auth::Identity;
 use crate::context::{authenticated_client, print_json, split_repository};
 use crate::error::CliError;
 
 /// Dispatches a `BranchCommand` variant to the appropriate Bitbucket API call.
-pub fn run(command: BranchCommand, select: cli_fields::Select<'_>) -> Result<(), CliError> {
+pub fn run(command: BranchCommand, select: cli_fields::Select<'_>, identity: Identity) -> Result<(), CliError> {
     match command {
         BranchCommand::List { repository, page } => {
             let (workspace, repo_slug) = split_repository(&repository)?;
-            let value = authenticated_client()?
+            let value = authenticated_client(identity)?
                 .list_branches(workspace, repo_slug, page)
                 .map_err(|e| CliError::ApiRequestFailed {
                     reason: e.to_string(),
@@ -22,7 +23,7 @@ pub fn run(command: BranchCommand, select: cli_fields::Select<'_>) -> Result<(),
                 "name": name,
                 "target": { "hash": target }
             });
-            let value = authenticated_client()?
+            let value = authenticated_client(identity)?
                 .create_branch(workspace, repo_slug, &body)
                 .map_err(|e| CliError::ApiRequestFailed {
                     reason: e.to_string(),
@@ -36,7 +37,7 @@ pub fn run(command: BranchCommand, select: cli_fields::Select<'_>) -> Result<(),
                 (prefix, "override")
             } else if let Some(repository) = repository {
                 let (workspace, repo_slug) = split_repository(&repository)?;
-                let model = authenticated_client()?
+                let model = authenticated_client(identity)?
                     .get_branching_model(workspace, repo_slug)
                     .map_err(|e| CliError::ApiRequestFailed {
                         reason: e.to_string(),

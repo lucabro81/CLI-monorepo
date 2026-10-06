@@ -1,23 +1,28 @@
 //! Handlers for the `auth` command group (`auth login`, `auth whoami`).
 //!
-//! `run_login` saves credentials to `credentials.json`, in one of these modes:
+//! `run_login` runs one of these modes. Each belongs to one identity
+//! (`LoginMode::identity`) and saves only to that identity's credentials file
+//! (`credentials-service.json` / `credentials-user.json`), so the other
+//! identity stays logged in:
 //!
 //! - default — OAuth 2.0 `client_credentials`: exchanges the OAuth consumer's
-//!   `client_id`/`client_secret` from `app.json` directly for an access token.
+//!   `client_id`/`client_secret` from `app.json`'s `service` section directly
+//!   for an access token.
 //!   No browser, no user interaction. Acts as the OAuth app.
-//! - `--user` — OAuth 2.0 `authorization_code`: opens the browser, waits for
+//! - `--user` — OAuth 2.0 `authorization_code`, with `app.json`'s `user`
+//!   section: opens the browser, waits for
 //!   the local callback, exchanges the code for tokens. Acts as the human who
 //!   approved the consent page.
 //! - `--user --remote` — the same grant in two steps, for a person not at this
 //!   machine: step 1 prints the consent URL and stores a pending login (state
 //!   only), step 2 (`--code --state`) completes it and prints the identity.
 //!
-//! `run_whoami` makes a single API call to `/2.0/user` and prints the
-//! authenticated account as JSON. It is the quickest sanity-check after login.
+//! `run_whoami` makes a single API call to `/2.0/user` as the selected
+//! identity and prints that account as JSON. It is the quickest sanity-check after login.
 
 use serde_json::{json, Value};
 
-use crate::auth::{self, LoginError};
+use crate::auth::{self, Identity, LoginError};
 use crate::context::{authenticated_client, config_dir, load_oauth_config, print_json};
 use crate::error::CliError;
 
@@ -32,19 +37,40 @@ pub enum LoginMode {
 }
 
 impl LoginMode {
-    pub fn from_flags(user: bool, remote: bool, code: Option<String>, state: Option<String>) -> Self {
-        match (user, remote, code, state) {
-            (_, true, _, _) => LoginMode::RemoteStart,
-            (_, false, Some(code), Some(state)) => LoginMode::RemoteComplete { code, state },
-            (true, ..) => LoginMode::UserBrowser,
-            (false, ..) => LoginMode::App,
+    /// Clap enforces every flag combination except "remote needs --user": a
+    /// global --user written before the subcommand is invisible to clap's
+    /// `requires`, so that one is checked here.
+    pub fn from_flags(
+        identity: Identity,
+        remote: bool,
+        code: Option<String>,
+        state: Option<String>,
+    ) -> Result<Self, CliError> {
+        match (identity, remote, code, state) {
+            (Identity::Service, true, ..) | (Identity::Service, false, Some(_), _) => {
+                Err(CliError::RemoteLoginNeedsUser)
+            }
+            (_, true, _, _) => Ok(LoginMode::RemoteStart),
+            (_, false, Some(code), Some(state)) => Ok(LoginMode::RemoteComplete { code, state }),
+            (Identity::User, ..) => Ok(LoginMode::UserBrowser),
+            (Identity::Service, ..) => Ok(LoginMode::App),
+        }
+    }
+
+    /// The identity this login sets up: its app.json section and credentials file.
+    pub fn identity(&self) -> Identity {
+        match self {
+            LoginMode::App => Identity::Service,
+            LoginMode::UserBrowser | LoginMode::RemoteStart | LoginMode::RemoteComplete { .. } => Identity::User,
         }
     }
 }
 
-/// Runs the login selected by `mode` and saves credentials to disk.
+/// Runs the login selected by `mode` and saves credentials to that identity's file,
+/// leaving the other identity's credentials untouched.
 pub fn run_login(mode: LoginMode, select: cli_fields::Select<'_>) -> Result<(), CliError> {
-    let oauth_config = load_oauth_config()?;
+    let identity = mode.identity();
+    let oauth_config = load_oauth_config(identity)?;
     let dir = config_dir()?;
     let pending_path = auth::pending_login_path(&dir);
     let login_failed = |e: LoginError| CliError::LoginFailed { reason: e.to_string() };
@@ -64,14 +90,14 @@ pub fn run_login(mode: LoginMode, select: cli_fields::Select<'_>) -> Result<(), 
             (credentials, true)
         }
     };
-    let path = auth::credentials_path(&dir);
+    let path = auth::credentials_path(&dir, identity);
     auth::save_credentials(&path, &credentials).map_err(|e| CliError::SaveCredentialsFailed {
         path: path.display().to_string(),
         reason: e.to_string(),
     })?;
     if remote {
         // The caller (e.g. an agent) learns who just logged in.
-        return run_whoami(select);
+        return run_whoami(select, identity);
     }
     println!("Logged in. Credentials saved to {}", path.display());
     Ok(())
@@ -101,10 +127,10 @@ pub(crate) fn remote_login_error(error: LoginError) -> CliError {
     }
 }
 
-/// Prints the currently authenticated account as JSON.
+/// Prints the account `identity` acts as, as JSON.
 /// Exempt from the mandatory --select requirement: an identity check, small fixed shape.
-pub fn run_whoami(select: cli_fields::Select<'_>) -> Result<(), CliError> {
-    let value = authenticated_client()?
+pub fn run_whoami(select: cli_fields::Select<'_>, identity: Identity) -> Result<(), CliError> {
+    let value = authenticated_client(identity)?
         .get_current_user()
         .map_err(|e| CliError::ApiRequestFailed {
             reason: e.to_string(),

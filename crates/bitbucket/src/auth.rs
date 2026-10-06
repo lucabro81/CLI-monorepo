@@ -12,48 +12,103 @@
 //!   and no `redirect_uri` parameter for this grant; `state` guards against CSRF.
 //!   `state` and the callback listener come from `crates/oauth-user-login`.
 //!
-//! - **App identity** (`OAuthConfig`) — the static OAuth consumer credentials
-//!   loaded from `app.json`.
+//! Both identities are stored side by side (issue #164), selected per call by
+//! the global `--user` flag ([`Identity`]):
+//!
+//! - **App identity** (`AppConfig`, one `OAuthConfig` per section) — the static
+//!   OAuth consumer credentials loaded from `app.json`'s `service` and `user`
+//!   sections.
 //! - **Session credentials** (`Credentials`) — the access token, its expiry and,
-//!   for `--user` logins, the refresh token, persisted to `credentials.json`.
+//!   for `--user` logins, the refresh token, persisted to
+//!   `credentials-service.json` / `credentials-user.json`.
 
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
 use crate::endpoints;
 
-/// Static OAuth consumer identity loaded from `app.json`.
-/// Written once by hand; never modified by the CLI at runtime.
+pub use oauth_user_login::Identity;
+
+/// One OAuth consumer: a section of `app.json` (see [`AppConfig`]).
+/// Written by `init` (or by hand); never modified by the CLI at runtime.
 #[derive(Debug, PartialEq, Eq)]
 pub struct OAuthConfig {
     pub client_id: String,
     pub client_secret: String,
 }
 
-impl OAuthConfig {
-    /// Parses app credentials (`client_id`, `client_secret`) from the contents of `app.json`.
-    pub fn from_json(json: &str) -> Result<Self, OAuthConfigError> {
-        let app: AppCredentials =
-            serde_json::from_str(json).map_err(|e| OAuthConfigError::InvalidJson(e.to_string()))?;
+/// `app.json`: one optional OAuth consumer per identity (issue #164).
+///
+/// ```json
+/// { "service": { "client_id": "...", "client_secret": "..." },
+///   "user":    { "client_id": "...", "client_secret": "..." } }
+/// ```
+///
+/// `service` is used with `client_credentials` (acting as the app), `user`
+/// with `authorization_code` (acting as a human); both may hold the same
+/// consumer. The pre-#164 flat shape is rejected with
+/// [`OAuthConfigError::LegacyFormat`].
+#[derive(Debug, PartialEq, Eq)]
+pub struct AppConfig {
+    pub service: Option<OAuthConfig>,
+    pub user: Option<OAuthConfig>,
+}
 
-        Ok(OAuthConfig {
+#[derive(Debug, Deserialize, Serialize)]
+struct AppCredentials {
+    client_id: String,
+    client_secret: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct AppConfigFile {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    service: Option<AppCredentials>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    user: Option<AppCredentials>,
+    /// Only read to recognise the legacy flat shape.
+    #[serde(default, skip_serializing)]
+    client_id: Option<serde_json::Value>,
+}
+
+impl AppConfig {
+    /// Parses the contents of `app.json`.
+    pub fn from_json(json: &str) -> Result<Self, OAuthConfigError> {
+        let file: AppConfigFile =
+            serde_json::from_str(json).map_err(|e| OAuthConfigError::InvalidJson(e.to_string()))?;
+        if file.client_id.is_some() {
+            return Err(OAuthConfigError::LegacyFormat);
+        }
+        let to_config = |app: AppCredentials| OAuthConfig {
             client_id: app.client_id,
             client_secret: app.client_secret,
+        };
+        Ok(AppConfig {
+            service: file.service.map(to_config),
+            user: file.user.map(to_config),
         })
     }
 
-    /// Loads app credentials from `<config_dir>/bitbucket-cli/app.json`.
+    /// Loads `<config_dir>/bitbucket-cli/app.json`.
     pub fn load(path: &Path) -> Result<Self, OAuthConfigError> {
         let raw = std::fs::read_to_string(path)
             .map_err(|_| OAuthConfigError::NotFound(path.to_path_buf()))?;
         Self::from_json(&raw)
     }
-}
 
-#[derive(Debug, Deserialize)]
-struct AppCredentials {
-    client_id: String,
-    client_secret: String,
+    /// Serialises back to the `app.json` shape (absent sections omitted).
+    pub fn to_json(&self) -> Result<String, OAuthConfigError> {
+        let to_file = |config: &OAuthConfig| AppCredentials {
+            client_id: config.client_id.clone(),
+            client_secret: config.client_secret.clone(),
+        };
+        let file = AppConfigFile {
+            service: self.service.as_ref().map(to_file),
+            user: self.user.as_ref().map(to_file),
+            client_id: None,
+        };
+        serde_json::to_string_pretty(&file).map_err(|e| OAuthConfigError::InvalidJson(e.to_string()))
+    }
 }
 
 /// Path to the app credentials file: `<config_dir>/bitbucket-cli/app.json`.
@@ -61,8 +116,15 @@ pub fn app_config_path(config_dir: &Path) -> PathBuf {
     config_dir.join("bitbucket-cli").join("app.json")
 }
 
-/// Path to the local credentials file: `<config_dir>/bitbucket-cli/credentials.json`.
-pub fn credentials_path(config_dir: &Path) -> PathBuf {
+/// Path to `identity`'s credentials file:
+/// `<config_dir>/bitbucket-cli/credentials-service.json` or `credentials-user.json`.
+pub fn credentials_path(config_dir: &Path, identity: Identity) -> PathBuf {
+    identity.credentials_path(config_dir, "bitbucket-cli")
+}
+
+/// The single credentials file used before issue #164
+/// (`<config_dir>/bitbucket-cli/credentials.json`); no longer read, only reported by `doctor`.
+pub fn legacy_credentials_path(config_dir: &Path) -> PathBuf {
     config_dir.join("bitbucket-cli").join("credentials.json")
 }
 
@@ -75,6 +137,9 @@ pub fn pending_login_path(config_dir: &Path) -> PathBuf {
 pub enum OAuthConfigError {
     NotFound(PathBuf),
     InvalidJson(String),
+    /// `app.json` still has the pre-#164 flat `client_id`/`client_secret`
+    /// shape instead of `service`/`user` sections.
+    LegacyFormat,
 }
 
 impl std::fmt::Display for OAuthConfigError {
@@ -86,6 +151,11 @@ impl std::fmt::Display for OAuthConfigError {
             OAuthConfigError::InvalidJson(msg) => {
                 write!(f, "invalid app credentials file: {msg}")
             }
+            OAuthConfigError::LegacyFormat => write!(
+                f,
+                "app credentials file uses the old single-identity format (client_id at top level) \
+                 instead of \"service\"/\"user\" sections"
+            ),
         }
     }
 }

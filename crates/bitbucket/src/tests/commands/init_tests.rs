@@ -1,9 +1,13 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use std::path::PathBuf;
+
+use crate::auth::Identity;
+use serde_json::json;
 use tempfile::TempDir;
 
 use super::write_app_config;
+use crate::error::CliError;
 
 fn temp_config_dir() -> (TempDir, PathBuf) {
     let dir = TempDir::new().expect("tempdir");
@@ -11,20 +15,84 @@ fn temp_config_dir() -> (TempDir, PathBuf) {
     (dir, path)
 }
 
+fn read_app_json(config_dir: &std::path::Path) -> serde_json::Value {
+    let content = std::fs::read_to_string(config_dir.join("bitbucket-cli").join("app.json")).expect("read");
+    serde_json::from_str(&content).expect("valid JSON")
+}
+
 #[test]
-fn write_app_config_creates_file_with_correct_json() {
+fn write_app_config_writes_only_the_section_of_the_identity() {
     let (_dir, config_dir) = temp_config_dir();
 
-    write_app_config(&config_dir, "my-client-id", "my-client-secret").expect("should write");
+    write_app_config(&config_dir, Identity::Service, "svc-id", "svc-secret").expect("should write");
 
-    let app_json_path = config_dir.join("bitbucket-cli").join("app.json");
-    assert!(app_json_path.exists(), "app.json must exist");
+    assert_eq!(
+        read_app_json(&config_dir),
+        json!({"service": {"client_id": "svc-id", "client_secret": "svc-secret"}})
+    );
+}
 
-    let content = std::fs::read_to_string(&app_json_path).expect("read");
-    let parsed: serde_json::Value = serde_json::from_str(&content).expect("valid JSON");
+#[test]
+fn write_app_config_keeps_the_other_identity_section() {
+    // Configuring the 3LO app must not erase the Service Account, and vice versa.
+    let (_dir, config_dir) = temp_config_dir();
 
-    assert_eq!(parsed["client_id"], "my-client-id");
-    assert_eq!(parsed["client_secret"], "my-client-secret");
+    write_app_config(&config_dir, Identity::Service, "svc-id", "svc-secret").expect("first write");
+    write_app_config(&config_dir, Identity::User, "usr-id", "usr-secret").expect("second write");
+
+    assert_eq!(
+        read_app_json(&config_dir),
+        json!({
+            "service": {"client_id": "svc-id", "client_secret": "svc-secret"},
+            "user": {"client_id": "usr-id", "client_secret": "usr-secret"}
+        })
+    );
+}
+
+#[test]
+fn write_app_config_replaces_the_same_section() {
+    let (_dir, config_dir) = temp_config_dir();
+
+    write_app_config(&config_dir, Identity::User, "old-id", "old-secret").expect("first write");
+    write_app_config(&config_dir, Identity::User, "new-id", "new-secret").expect("second write");
+
+    assert_eq!(
+        read_app_json(&config_dir),
+        json!({"user": {"client_id": "new-id", "client_secret": "new-secret"}})
+    );
+}
+
+#[test]
+fn write_app_config_replaces_a_legacy_flat_file() {
+    // The legacy-format error tells the caller to re-run init, so init must
+    // accept that file and replace it rather than failing on it again.
+    let (_dir, config_dir) = temp_config_dir();
+    std::fs::create_dir_all(config_dir.join("bitbucket-cli")).unwrap();
+    std::fs::write(
+        config_dir.join("bitbucket-cli").join("app.json"),
+        r#"{"client_id": "old", "client_secret": "old"}"#,
+    )
+    .unwrap();
+
+    write_app_config(&config_dir, Identity::Service, "svc-id", "svc-secret").expect("should write");
+
+    assert_eq!(
+        read_app_json(&config_dir),
+        json!({"service": {"client_id": "svc-id", "client_secret": "svc-secret"}})
+    );
+}
+
+#[test]
+fn write_app_config_refuses_to_overwrite_an_unreadable_file() {
+    let (_dir, config_dir) = temp_config_dir();
+    let path = config_dir.join("bitbucket-cli").join("app.json");
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(&path, "not json").unwrap();
+
+    let result = write_app_config(&config_dir, Identity::Service, "svc-id", "svc-secret");
+
+    assert!(matches!(result, Err(CliError::AppConfigInvalid { .. })), "{result:?}");
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "not json");
 }
 
 #[test]
@@ -33,39 +101,7 @@ fn write_app_config_creates_parent_directories() {
     let (_dir, config_dir) = temp_config_dir();
     let nested = config_dir.join("does").join("not").join("exist");
 
-    write_app_config(&nested, "id", "secret").expect("should create dirs and write");
+    write_app_config(&nested, Identity::User, "id", "secret").expect("should create dirs and write");
 
-    let app_json_path = nested.join("bitbucket-cli").join("app.json");
-    assert!(app_json_path.exists());
-}
-
-#[test]
-fn write_app_config_overwrites_existing_file() {
-    let (_dir, config_dir) = temp_config_dir();
-
-    write_app_config(&config_dir, "old-id", "old-secret").expect("first write");
-    write_app_config(&config_dir, "new-id", "new-secret").expect("second write");
-
-    let app_json_path = config_dir.join("bitbucket-cli").join("app.json");
-    let content = std::fs::read_to_string(&app_json_path).expect("read");
-    let parsed: serde_json::Value = serde_json::from_str(&content).expect("valid JSON");
-
-    assert_eq!(parsed["client_id"], "new-id");
-    assert_eq!(parsed["client_secret"], "new-secret");
-}
-
-#[test]
-fn write_app_config_written_json_has_only_expected_keys() {
-    let (_dir, config_dir) = temp_config_dir();
-
-    write_app_config(&config_dir, "cid", "csec").expect("write");
-
-    let app_json_path = config_dir.join("bitbucket-cli").join("app.json");
-    let content = std::fs::read_to_string(&app_json_path).expect("read");
-    let parsed: serde_json::Value = serde_json::from_str(&content).expect("valid JSON");
-    let obj = parsed.as_object().expect("should be object");
-
-    assert_eq!(obj.len(), 2, "app.json must contain exactly client_id and client_secret");
-    assert!(obj.contains_key("client_id"));
-    assert!(obj.contains_key("client_secret"));
+    assert!(nested.join("bitbucket-cli").join("app.json").exists());
 }
