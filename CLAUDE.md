@@ -37,9 +37,9 @@ Every feature-sized piece of work (a new crate, a new command, or comparable sco
    ```
    Branch name is always `issue<issue-number>` — no separate slug. The number is what ties branch, issue, and PR together.
 4. Implement on that branch as usual (TDD, incremental commits, per the rest of this file).
-5. **Independent review, at the end of every plan** — after the last implementation commit and before opening the PR, run the two project subagents in `.claude/agents/`, each given only the issue number and the branch name (no conversation context), in parallel:
+5. **Independent review, at the end of every plan** — after the last implementation commit and before opening the PR, run the two project subagents in `.claude/agents/` in parallel. Launch them by their own subagent type (never as a fork of the session) and give each **only** the issue number and the branch name — no summary of the work, no hints: their value is a view of the work that doesn't share the session's context.
    - `cold-reviewer` — adversarial code review against the issue: spec match, dead code, edge-case test coverage, correctness bugs, this file's rules; it runs the crate's tests and clippy itself. Fix minor and medium findings yourself and re-run until it approves; stop and ask the user only for severe bugs or findings that need a decision you aren't confident taking alone.
-   - `docs-auditor` — documentation vs code in both directions (everything documented is implemented as stated, everything implemented is documented, including `--help`). Fix every finding yourself and re-run until it approves.
+   - `docs-auditor` — documentation vs code in both directions (everything documented is implemented as stated, everything implemented is documented, including `--help`). It assumes neither side is complete or correct and uses the issue as the reference, so a finding may say the **code** is wrong. Fix documentation findings yourself; code findings follow the `cold-reviewer` rules; re-run until it approves.
 
    Every plan for a new crate or a new command lists this as its last step, and the final report lists each finding with its outcome.
 6. **Reference the issue in the PR** — include `Closes #<issue-number>` in the PR body so merging it closes the issue automatically.

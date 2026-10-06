@@ -102,3 +102,7 @@ it; you can still be wrong.
   decision.
 - Never drop a finding silently: the final report lists every finding with
   its outcome (fixed, rejected and why, or waiting for the user).
+- Launch this reviewer by its own subagent type (`cold-reviewer`), never as a
+  fork of the calling session, and give it only the issue number and the
+  branch name — no summary of the work, no hints about what changed or where.
+  Its value depends on not sharing your view of the work.

@@ -169,8 +169,9 @@ same as adding any command to an existing crate.
 
 Once the crate and its core commands are committed, and before pushing and
 opening the PR, run `add-cli-command`'s step 10 on the whole branch: launch
-`cold-reviewer` and `docs-auditor` (`.claude/agents/`) in parallel with only
-the issue number from step 0 and the branch name, fix and re-run per their
+`cold-reviewer` and `docs-auditor` (`.claude/agents/`) in parallel, by their
+own subagent types (never as a fork of this session), with only the issue
+number from step 0 and the branch name and no summary of the work, fix and re-run per their
 "For the caller" sections until both approve. The `docs-auditor` round must
 also confirm the new crate is in the root `README.md` table and in root
 `CLAUDE.md`'s crate and scope-label lists. Each `add-cli-command` run inside
