@@ -122,7 +122,7 @@ Logs in one of the two identities and saves its credentials file, leaving the ot
 
 - default — the service user from `app.json` (private key JWT, see [above](#service-user-login-default-private-key-jwt)), into `credentials-service.json`. No browser: the mode for agents.
 - `--user` — yourself, through the browser (see [above](#human-login-authorization-code--pkce--auth-login---user)), into `credentials-user.json`. Needs the Native app's client id in `app.json` (`zitadel init --user --client-id <id>`).
-- `--user --remote --redirect-uri <url>`, then `--user --code <code> --state <state>` — someone who is not at this machine, in two steps (see [above](#remote-login-in-two-steps--auth-login---user---remote)). Step 1 prints `{authorize_url, state, expires_at}`; step 2 prints the `auth whoami` output.
+- `--user --remote --redirect-uri <url>`, then `--user --code <code> --state <state>` — someone who is not at this machine, in two steps (see [above](#remote-login-in-two-steps--auth-login---user---remote)). Step 1 prints `{authorize_url, state, expires_at}`; step 2 prints the `auth whoami --user` output.
 
 ```sh
 zitadel auth login          # service user

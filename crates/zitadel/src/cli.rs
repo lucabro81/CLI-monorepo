@@ -123,7 +123,7 @@ pub enum AuthCommand {
     /// to the person. The provider then redirects the person to --redirect-uri (it
     /// must be registered on the Native app) with `code` and `state`. Step 2
     /// (--code --state) exchanges the code and saves the credentials, then prints
-    /// what `auth whoami` prints. The pending login expires after 10 minutes, its
+    /// what `auth whoami --user` prints. The pending login expires after 10 minutes, its
     /// state is single-use, and it lives in this config folder (`XDG_CONFIG_HOME`).
     #[command(after_help = "Examples:\n  zitadel auth login          # service user (agents)\n  zitadel auth login --user   # yourself, via the browser\n  zitadel auth login --user --remote --redirect-uri https://app.example.com/oauth/callback   # step 1\n  zitadel auth login --user --code <CODE> --state <STATE>                                   # step 2")]
     Login {
