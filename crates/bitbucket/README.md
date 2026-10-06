@@ -32,7 +32,7 @@ CLI for Bitbucket Cloud, designed to be driven by an LLM agent (output is JSON, 
   - [`bitbucket branch create <workspace>/<repo_slug> <name>`](#bitbucket-branch-create-workspacerepo_slug-name)
   - [`bitbucket branch suggest-name --issue-key <KEY> --issue-type <TYPE> --issue-summary <SUMMARY>`](#bitbucket-branch-suggest-name---issue-key-key---issue-type-type---issue-summary-summary)
   - [`bitbucket workspace members <workspace>`](#bitbucket-workspace-members-workspace)
-  - [`--select <PATHS>` (global flag)](#--select-paths-global-flag)
+  - [`--select <PATHS>` / `--select-all` (global flags)](#--select-paths----select-all-global-flags)
 - [Testing](#testing)
 - [Error design](#error-design)
 
@@ -147,8 +147,8 @@ cargo run -p bitbucket -- auth whoami --select uuid,display_name
 Fetches a single repository and prints the full Bitbucket API response as pretty-printed JSON.
 
 ```sh
-cargo run -p bitbucket -- repo get lucabrognaracode/my-repo
-cargo run -p bitbucket -- repo get lucabrognaracode/my-repo --select description,language
+cargo run -p bitbucket -- repo get <workspace>/my-repo
+cargo run -p bitbucket -- repo get <workspace>/my-repo --select description,language
 ```
 
 Requires the `repository` (read) scope.
@@ -158,9 +158,9 @@ Requires the `repository` (read) scope.
 Lists repositories in a workspace, paginated.
 
 ```sh
-cargo run -p bitbucket -- repo list lucabrognaracode
-cargo run -p bitbucket -- repo list lucabrognaracode --page 2
-cargo run -p bitbucket -- repo list lucabrognaracode --select values.full_name
+cargo run -p bitbucket -- repo list <workspace> --select values.full_name
+cargo run -p bitbucket -- repo list <workspace> --page 2 --select values.full_name
+cargo run -p bitbucket -- repo list <workspace> --select-all
 ```
 
 **Flags:**
@@ -173,9 +173,9 @@ Requires the `repository` (read) scope.
 Creates a new repository. `scm` is always `git`. All flags are optional.
 
 ```sh
-cargo run -p bitbucket -- repo create lucabrognaracode/my-new-repo
-cargo run -p bitbucket -- repo create lucabrognaracode/my-new-repo --description "My new repo" --private
-cargo run -p bitbucket -- repo create lucabrognaracode/my-new-repo --project PROJ
+cargo run -p bitbucket -- repo create <workspace>/my-new-repo
+cargo run -p bitbucket -- repo create <workspace>/my-new-repo --description "My new repo" --private
+cargo run -p bitbucket -- repo create <workspace>/my-new-repo --project PROJ
 ```
 
 **Flags:**
@@ -190,7 +190,7 @@ Requires the `repository:write` scope. Note: some workspaces reject public repos
 Deletes a repository. **Destructive**: permanent and cannot be undone — requires `--confirm`.
 
 ```sh
-cargo run -p bitbucket -- repo delete lucabrognaracode/my-repo --confirm
+cargo run -p bitbucket -- repo delete <workspace>/my-repo --confirm
 ```
 
 Returns `{"deleted": true, "repository": "<workspace>/<repo_slug>"}`. Requires the `repository:admin` scope.
@@ -200,11 +200,11 @@ Returns `{"deleted": true, "repository": "<workspace>/<repo_slug>"}`. Requires t
 Creates a new pull request.
 
 ```sh
-cargo run -p bitbucket -- pr create lucabrognaracode/my-repo --title "My PR" --source feature-branch
-cargo run -p bitbucket -- pr create lucabrognaracode/my-repo --title "My PR" --source feature-branch --destination main --description "does things"
-cargo run -p bitbucket -- pr create lucabrognaracode/my-repo --title "My PR" --source feature-branch --close-source-branch
-cargo run -p bitbucket -- pr create lucabrognaracode/my-repo --title "My PR" --source feature-branch --reviewers "{504c3b62-8120-4f0c-a7bc-87800b9d6f70}"
-cargo run -p bitbucket -- pr create lucabrognaracode/my-repo --title "WIP: My PR" --source feature-branch --draft
+cargo run -p bitbucket -- pr create <workspace>/my-repo --title "My PR" --source feature-branch
+cargo run -p bitbucket -- pr create <workspace>/my-repo --title "My PR" --source feature-branch --destination main --description "does things"
+cargo run -p bitbucket -- pr create <workspace>/my-repo --title "My PR" --source feature-branch --close-source-branch
+cargo run -p bitbucket -- pr create <workspace>/my-repo --title "My PR" --source feature-branch --reviewers "{504c3b62-8120-4f0c-a7bc-87800b9d6f70}"
+cargo run -p bitbucket -- pr create <workspace>/my-repo --title "WIP: My PR" --source feature-branch --draft
 ```
 
 **Flags:**
@@ -223,12 +223,12 @@ Requires the `pullrequest:write` scope.
 Updates an open pull request's title, description, destination branch, reviewers, or draft status. Only the fields you pass are changed, with one exception: `--reviewers` replaces the entire reviewer list rather than adding to it.
 
 ```sh
-cargo run -p bitbucket -- pr update lucabrognaracode/my-repo 42 --title "New title"
-cargo run -p bitbucket -- pr update lucabrognaracode/my-repo 42 --description "Updated description"
-cargo run -p bitbucket -- pr update lucabrognaracode/my-repo 42 --destination develop
-cargo run -p bitbucket -- pr update lucabrognaracode/my-repo 42 --reviewers "{504c3b62-8120-4f0c-a7bc-87800b9d6f70}"
-cargo run -p bitbucket -- pr update lucabrognaracode/my-repo 42 --draft
-cargo run -p bitbucket -- pr update lucabrognaracode/my-repo 42 --ready-for-review
+cargo run -p bitbucket -- pr update <workspace>/my-repo 42 --title "New title"
+cargo run -p bitbucket -- pr update <workspace>/my-repo 42 --description "Updated description"
+cargo run -p bitbucket -- pr update <workspace>/my-repo 42 --destination develop
+cargo run -p bitbucket -- pr update <workspace>/my-repo 42 --reviewers "{504c3b62-8120-4f0c-a7bc-87800b9d6f70}"
+cargo run -p bitbucket -- pr update <workspace>/my-repo 42 --draft
+cargo run -p bitbucket -- pr update <workspace>/my-repo 42 --ready-for-review
 ```
 
 **Flags** (at least one required):
@@ -246,7 +246,7 @@ Requires the `pullrequest:write` scope.
 Approves a pull request as the authenticated account.
 
 ```sh
-cargo run -p bitbucket -- pr approve lucabrognaracode/my-repo 42
+cargo run -p bitbucket -- pr approve <workspace>/my-repo 42
 ```
 
 Requires the `pullrequest:write` scope.
@@ -256,7 +256,7 @@ Requires the `pullrequest:write` scope.
 Removes the authenticated account's approval from a pull request.
 
 ```sh
-cargo run -p bitbucket -- pr unapprove lucabrognaracode/my-repo 42
+cargo run -p bitbucket -- pr unapprove <workspace>/my-repo 42
 ```
 
 Requires the `pullrequest:write` scope.
@@ -266,7 +266,7 @@ Requires the `pullrequest:write` scope.
 Declines a pull request. **Destructive**: changes the pull request's state and cannot be undone by this CLI — requires `--confirm`.
 
 ```sh
-cargo run -p bitbucket -- pr decline lucabrognaracode/my-repo 42 --confirm
+cargo run -p bitbucket -- pr decline <workspace>/my-repo 42 --confirm
 ```
 
 Requires the `pullrequest:write` scope.
@@ -276,8 +276,8 @@ Requires the `pullrequest:write` scope.
 Merges a pull request. **Destructive**: permanent and cannot be undone — requires `--confirm`.
 
 ```sh
-cargo run -p bitbucket -- pr merge lucabrognaracode/my-repo 42 --confirm
-cargo run -p bitbucket -- pr merge lucabrognaracode/my-repo 42 --merge-strategy squash --close-source-branch --confirm
+cargo run -p bitbucket -- pr merge <workspace>/my-repo 42 --confirm
+cargo run -p bitbucket -- pr merge <workspace>/my-repo 42 --merge-strategy squash --close-source-branch --confirm
 ```
 
 **Flags:**
@@ -292,9 +292,9 @@ Requires the `pullrequest:write` scope.
 Prints the raw unified diff for a pull request as plain text (not JSON — `--select` has no effect).
 
 ```sh
-cargo run -p bitbucket -- pr diff lucabrognaracode/my-repo 42
-cargo run -p bitbucket -- pr diff lucabrognaracode/my-repo 42 --context 5
-cargo run -p bitbucket -- pr diff lucabrognaracode/my-repo 42 --path src/main.rs
+cargo run -p bitbucket -- pr diff <workspace>/my-repo 42
+cargo run -p bitbucket -- pr diff <workspace>/my-repo 42 --context 5
+cargo run -p bitbucket -- pr diff <workspace>/my-repo 42 --path src/main.rs
 ```
 
 **Flags:**
@@ -308,9 +308,9 @@ Requires the `pullrequest` (read) scope.
 Adds a comment to a pull request — general, inline (attached to a file/line), or a reply to an existing comment.
 
 ```sh
-cargo run -p bitbucket -- pr comment lucabrognaracode/my-repo 42 --content "Looks good to me"
-cargo run -p bitbucket -- pr comment lucabrognaracode/my-repo 42 --content "Fix this" --path src/main.rs --line 10
-cargo run -p bitbucket -- pr comment lucabrognaracode/my-repo 42 --content "Done, fixed" --parent 123456
+cargo run -p bitbucket -- pr comment <workspace>/my-repo 42 --content "Looks good to me"
+cargo run -p bitbucket -- pr comment <workspace>/my-repo 42 --content "Fix this" --path src/main.rs --line 10
+cargo run -p bitbucket -- pr comment <workspace>/my-repo 42 --content "Done, fixed" --parent 123456
 ```
 
 **Flags:**
@@ -325,8 +325,8 @@ Requires the `pullrequest:write` scope.
 Lists every comment on a pull request, oldest first: general comments, inline comments and replies. Deleted comments are included too, marked with `deleted: true`, so no filtering happens on the client side. Replies carry `parent.id`, and inline comments carry `inline.path` and `inline.to`. `--select` is required because the list is paginated and unbounded.
 
 ```sh
-cargo run -p bitbucket -- pr list-comments lucabrognaracode/my-repo 42 --select values.id,values.content.raw,values.user.display_name,values.deleted,values.inline.path
-cargo run -p bitbucket -- pr list-comments lucabrognaracode/my-repo 42 --page 2 --select values.id,values.content.raw
+cargo run -p bitbucket -- pr list-comments <workspace>/my-repo 42 --select values.id,values.content.raw,values.user.display_name,values.deleted,values.inline.path
+cargo run -p bitbucket -- pr list-comments <workspace>/my-repo 42 --page 2 --select values.id,values.content.raw
 ```
 
 **Flags:**
@@ -339,7 +339,7 @@ Requires the `pullrequest` (read) scope.
 Replaces the text of an existing pull request comment. Only the text changes: an inline comment keeps its file and line. Bitbucket normally lets only the comment's author edit it. Use `pr list-comments` to find comment IDs.
 
 ```sh
-cargo run -p bitbucket -- pr update-comment lucabrognaracode/my-repo 42 123456 --content "Updated: looks good to me"
+cargo run -p bitbucket -- pr update-comment <workspace>/my-repo 42 123456 --content "Updated: looks good to me"
 ```
 
 **Flags:**
@@ -352,8 +352,8 @@ Requires the `pullrequest:write` scope.
 Fetches a single pull request and prints the full Bitbucket API response as pretty-printed JSON.
 
 ```sh
-cargo run -p bitbucket -- pr get lucabrognaracode/my-repo 42
-cargo run -p bitbucket -- pr get lucabrognaracode/my-repo 42 --select title,state,source.branch.name
+cargo run -p bitbucket -- pr get <workspace>/my-repo 42
+cargo run -p bitbucket -- pr get <workspace>/my-repo 42 --select title,state,source.branch.name
 ```
 
 Requires the `pullrequest` (read) scope.
@@ -363,10 +363,10 @@ Requires the `pullrequest` (read) scope.
 Lists pull requests in a repository, paginated.
 
 ```sh
-cargo run -p bitbucket -- pr list lucabrognaracode/my-repo
-cargo run -p bitbucket -- pr list lucabrognaracode/my-repo --state MERGED
-cargo run -p bitbucket -- pr list lucabrognaracode/my-repo --page 2
-cargo run -p bitbucket -- pr list lucabrognaracode/my-repo --select values.title,values.state
+cargo run -p bitbucket -- pr list <workspace>/my-repo --select values.id,values.title,values.state
+cargo run -p bitbucket -- pr list <workspace>/my-repo --state MERGED --select values.id,values.title
+cargo run -p bitbucket -- pr list <workspace>/my-repo --page 2 --select values.id,values.title
+cargo run -p bitbucket -- pr list <workspace>/my-repo --select-all
 ```
 
 **Flags:**
@@ -380,9 +380,9 @@ Requires the `pullrequest` (read) scope.
 Lists branches in a repository, paginated.
 
 ```sh
-cargo run -p bitbucket -- branch list lucabrognaracode/my-repo
-cargo run -p bitbucket -- branch list lucabrognaracode/my-repo --page 2
-cargo run -p bitbucket -- branch list lucabrognaracode/my-repo --select values.name
+cargo run -p bitbucket -- branch list <workspace>/my-repo --select values.name
+cargo run -p bitbucket -- branch list <workspace>/my-repo --page 2 --select values.name
+cargo run -p bitbucket -- branch list <workspace>/my-repo --select-all
 ```
 
 **Flags:**
@@ -395,7 +395,7 @@ Requires the `repository` (read) scope.
 Creates a new branch in a repository.
 
 ```sh
-cargo run -p bitbucket -- branch create lucabrognaracode/my-repo feature/my-branch --target main
+cargo run -p bitbucket -- branch create <workspace>/my-repo feature/my-branch --target main
 ```
 
 **Flags:**
@@ -428,7 +428,7 @@ The response's `prefix_source` field (`"override"` / `"branching_model"` /
 cargo run -p bitbucket -- branch suggest-name --issue-key SBF-19 --issue-type Task --issue-summary "Costruire griglia Smartlocker v2"
 
 # real lookup against a repo's branching model
-cargo run -p bitbucket -- branch suggest-name --issue-key SBF-19 --issue-type Task --issue-summary "..." --repository lucabrognaracode/my-repo
+cargo run -p bitbucket -- branch suggest-name --issue-key SBF-19 --issue-type Task --issue-summary "..." --repository <workspace>/my-repo
 
 # explicit override
 cargo run -p bitbucket -- branch suggest-name --issue-key SBF-19 --issue-type Task --issue-summary "..." --prefix hotfix
@@ -457,16 +457,23 @@ cargo run -p bitbucket -- workspace members <workspace> --select-all
 
 Requires the `account` scope.
 
-### `--select <PATHS>` (global flag)
+### `--select <PATHS>` / `--select-all` (global flags)
 
-All commands that return JSON support a `--select` flag for client-side field projection. Pass a comma-separated list of dot-notation paths; only those paths are included in the output. If omitted, the full response from Bitbucket is printed.
+All commands that return JSON support a `--select` flag for client-side field projection. Pass a comma-separated list of dot-notation paths; only those paths are included in the output.
+
+**`--select` is mandatory on list commands** (`repo list`, `pr list`, `pr list-comments`, `branch list`, `workspace members`): their responses are paginated collections that can be large. Omitting both `--select` and `--select-all` fails with an error giving the response's byte size and top-level field names, instead of printing it. `--select-all` is the explicit opt-out that prints the whole response, but a response over 30000 bytes (pretty-printed) is still refused, so narrow it with `--select` instead.
+
+Every other JSON command (`doctor`, `auth whoami`, `repo get`/`create`/`delete`, `pr get`/`create`/`update`/`comment`/`update-comment`/`approve`/`unapprove`/`decline`/`merge`, `branch create`, `branch suggest-name`) returns a single object that stays small. It prints in full when `--select` is omitted, and `--select` still narrows it. The same 30000-byte cap applies. `pr diff` prints raw diff text, not JSON, so `--select` has no effect on it.
 
 ```sh
 # only the fields you care about from a repo
-cargo run -p bitbucket -- repo get lucabrognaracode/my-repo --select description,language,is_private
+cargo run -p bitbucket -- repo get <workspace>/my-repo --select description,language,is_private
 
-# just the full names from a repo list
-cargo run -p bitbucket -- repo list lucabrognaracode --select values.full_name
+# just the full names from a repo list (mandatory: list command)
+cargo run -p bitbucket -- repo list <workspace> --select values.full_name
+
+# a whole page of a list, explicitly
+cargo run -p bitbucket -- repo list <workspace> --select-all
 
 # just your account details
 cargo run -p bitbucket -- auth whoami --select uuid,display_name
