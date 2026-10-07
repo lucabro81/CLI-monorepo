@@ -11,6 +11,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Other
 - Merge pull request #185 from lucabro81/issue184 ([#185](https://github.com/lucabro81/CLI-monorepo/pull/185))
+- Release
+- Merge pull request #189 from lucabro81/release/zitadel ([#189](https://github.com/lucabro81/CLI-monorepo/pull/189))
+## [2.1.0](https://github.com/lucabro81/CLI-monorepo/compare/zitadel-v2.0.0...zitadel-v2.1.0) - 2026-10-07
+
+### Added
+- *(zitadel)* accept ':' in --user ids
+
+### Other
+- Merge pull request #185 from lucabro81/issue184 ([#185](https://github.com/lucabro81/CLI-monorepo/pull/185))
 ## [2.0.0](https://github.com/lucabro81/CLI-monorepo/compare/zitadel-v1.0.0...zitadel-v2.0.0) - 2026-10-06
 
 ### Added
