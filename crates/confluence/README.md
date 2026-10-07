@@ -269,3 +269,10 @@ not logged in as the service account. Run: confluence auth login. To act as a pe
 ```
 
 Errors are typed with `thiserror` (`CliError` in `error.rs`). Internal module errors (`LoginError`, `ClientError`) are mapped to `CliError` at the top-level `run()` function and never surface directly to the user.
+
+### Exit codes
+
+- `0` — success.
+- `3` — the selected identity needs a new login: nothing stored for it (`not logged in ...` / `user <id> is not logged in ...`), or the person's refresh token was refused (`the login of user <id> is no longer valid ...`). Run the login command the message names. A caller (e.g. an agent acting for many people) can rely on this code instead of the message text.
+- `2` — invalid arguments (reported by clap).
+- `1` — every other failure, including a renewal that failed for a transient reason (network, 429, 5xx: retry), a refused renewal of the Service Account (its grant is its client id/secret in app.json, so a new login would not help), a credentials file that exists but can't be read, and `doctor` with a failing check.
