@@ -17,6 +17,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Merge pull request #207 from lucabro81/issue195 ([#207](https://github.com/lucabro81/CLI-monorepo/pull/207))
 - *(bitbucket)* the client secret prompt is hidden on a terminal
 - Merge pull request #212 from lucabro81/issue196 ([#212](https://github.com/lucabro81/CLI-monorepo/pull/212))
+- Release
+- Merge pull request #210 from lucabro81/release/bitbucket ([#210](https://github.com/lucabro81/CLI-monorepo/pull/210))
+## [2.3.0](https://github.com/lucabro81/CLI-monorepo/compare/bitbucket-v2.2.0...bitbucket-v2.3.0) - 2026-10-07
+
+### Added
+- *(bitbucket)* init --user-app sets up the people's app without logging anyone in
+- *(bitbucket)* read the client secret hidden on a terminal
+
+### Other
+- *(bitbucket)* init --user-app
+- init --user-app in CLAUDE.md files (#195)
+- --user-app review fixes (#195)
+- Merge pull request #207 from lucabro81/issue195 ([#207](https://github.com/lucabro81/CLI-monorepo/pull/207))
+- *(bitbucket)* the client secret prompt is hidden on a terminal
+- Merge pull request #212 from lucabro81/issue196 ([#212](https://github.com/lucabro81/CLI-monorepo/pull/212))
 ## [2.2.0](https://github.com/lucabro81/CLI-monorepo/compare/bitbucket-v2.1.0...bitbucket-v2.2.0) - 2026-10-07
 
 ### Added
