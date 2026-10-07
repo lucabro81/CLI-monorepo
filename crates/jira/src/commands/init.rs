@@ -25,7 +25,7 @@
 //! `write_app_config` is kept as a separate public function so it can be unit-tested
 //! in isolation without going through the interactive flow.
 
-use std::io::{self, BufRead, Write};
+use std::io::{self, BufRead, IsTerminal, Write};
 use std::path::Path;
 
 use serde_json::{Value, json};
@@ -143,6 +143,28 @@ fn prompt(label: &str) -> Result<String, CliError> {
     Ok(line.trim().to_string())
 }
 
+/// Prompts for a secret: hidden (no echo) when stdin is a terminal, so a typed
+/// secret never lands in scrollback (issue #196); a plain line otherwise, so
+/// piped input keeps working.
+fn prompt_secret(label: &str) -> Result<String, CliError> {
+    read_secret_with(label, io::stdin().is_terminal(), rpassword::prompt_password, prompt)
+}
+
+/// [`prompt_secret`] with the terminal check and both readers injected, for tests.
+pub(crate) fn read_secret_with(
+    label: &str,
+    is_terminal: bool,
+    hidden: impl FnOnce(String) -> io::Result<String>,
+    line: impl FnOnce(&str) -> Result<String, CliError>,
+) -> Result<String, CliError> {
+    if !is_terminal {
+        return line(label);
+    }
+    let value = hidden(format!("{label}: "))
+        .map_err(|e| CliError::IoError { reason: format!("could not read {label}: {e}") })?;
+    Ok(value.trim().to_string())
+}
+
 /// Runs the init onboarding flow for `identity`.
 pub fn run_init(identity: &Identity, client_id: Option<String>, client_secret: Option<String>) -> Result<(), CliError> {
     match identity {
@@ -156,7 +178,7 @@ pub fn run_init(identity: &Identity, client_id: Option<String>, client_secret: O
     };
     let client_secret = match client_secret {
         Some(s) => s,
-        None => prompt("Enter Client Secret")?,
+        None => prompt_secret("Enter Client Secret")?,
     };
 
     let cfg_dir = config_dir()?;
@@ -244,7 +266,7 @@ pub fn run_init_user_app(
     };
     let client_secret = match client_secret {
         Some(s) => s,
-        None => prompt("Enter Client Secret")?,
+        None => prompt_secret("Enter Client Secret")?,
     };
 
     let cfg_dir = config_dir()?;
