@@ -440,7 +440,7 @@ fn request_token_at(url: &str, body: &serde_json::Value) -> Result<TokenResponse
         let status = response.status();
         let text = response.text().unwrap_or_default();
         let detail = format!("{status}: {text}");
-        return Err(if oauth_user_login::token_request_rejected(status.as_u16()) {
+        return Err(if oauth_user_login::token_request_rejected(status.as_u16(), &text) {
             LoginError::TokenRejected(detail)
         } else {
             LoginError::TokenExchange(detail)

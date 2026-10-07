@@ -498,6 +498,18 @@ fn a_transient_token_request_failure_stays_a_token_exchange_error() {
 }
 
 #[test]
+fn a_refused_client_stays_a_token_exchange_error() {
+    // Regression guard (#194 live check): a wrong client id/secret in app.json
+    // is 400 invalid_client; a new login through the same app would fail too.
+    let body = r#"{"error":"invalid_client","error_description":"failed to retrieve client"}"#;
+    let (url, server) = mock_server(vec![("400 Bad Request", body.to_string())]);
+    let err = request_token_at(&format!("{url}/token"), &serde_json::json!({})).unwrap_err();
+    server.join().unwrap();
+
+    assert!(matches!(err, LoginError::TokenExchange(_)), "got {err:?}");
+}
+
+#[test]
 fn an_unreachable_token_endpoint_stays_a_token_exchange_error() {
     // Nothing listens on a port just released.
     let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
