@@ -12,6 +12,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Other
 - review fixes for #218 (help texts, oauth-user-login users, error wording)
 - Merge pull request #219 from lucabro81/issue218 ([#219](https://github.com/lucabro81/CLI-monorepo/pull/219))
+- Release
+- Merge pull request #220 from lucabro81/release/confluence ([#220](https://github.com/lucabro81/CLI-monorepo/pull/220))
+## [2.3.1](https://github.com/lucabro81/CLI-monorepo/compare/confluence-v2.3.0...confluence-v2.3.1) - 2026-10-07
+
+### Fixed
+- *(confluence)* an empty init prompt answer writes nothing
+
+### Other
+- review fixes for #218 (help texts, oauth-user-login users, error wording)
+- Merge pull request #219 from lucabro81/issue218 ([#219](https://github.com/lucabro81/CLI-monorepo/pull/219))
 ## [2.3.0](https://github.com/lucabro81/CLI-monorepo/compare/confluence-v2.2.0...confluence-v2.3.0) - 2026-10-07
 
 ### Added
