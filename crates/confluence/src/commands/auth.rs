@@ -124,7 +124,7 @@ pub(crate) fn remote_start_output(authorize_url: &str, pending: &oauth_user_logi
 pub(crate) fn remote_login_error(error: LoginError, id: &UserId) -> CliError {
     let reason = match error {
         LoginError::PendingLogin(e) => e.to_string(),
-        LoginError::TokenExchange(detail) => format!(
+        LoginError::TokenExchange(detail) | LoginError::TokenRejected(detail) => format!(
             "Atlassian refused the code ({detail}). A code is valid once and only for a short time, \
             and the pending login is now used up"
         ),

@@ -74,6 +74,12 @@ pub enum CliError {
     )]
     TokenRefreshFailed { reason: String, login: String },
 
+    #[error(
+        "the login of user {id} is no longer valid ({reason}): the refresh token expired or was revoked. \
+        Run: confluence auth login --user {id} (the person must approve the login in a browser)"
+    )]
+    UserLoginExpired { reason: String, id: String },
+
     #[error("OAuth login failed: {reason}")]
     LoginFailed { reason: String },
 
@@ -165,4 +171,17 @@ pub enum CliError {
     /// indicates a bug in the CLI itself.
     #[error("internal error: {0}")]
     Internal(String),
+}
+
+impl CliError {
+    /// The process exit code: `oauth_user_login::NOT_LOGGED_IN_EXIT_CODE` (3)
+    /// when the selected identity needs a new login (issue #194), 1 otherwise.
+    pub fn exit_code(&self) -> u8 {
+        match self {
+            CliError::NotAuthenticatedService | CliError::NotAuthenticatedUser { .. } | CliError::UserLoginExpired { .. } => {
+                oauth_user_login::NOT_LOGGED_IN_EXIT_CODE
+            }
+            _ => 1,
+        }
+    }
 }

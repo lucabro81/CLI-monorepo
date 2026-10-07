@@ -177,3 +177,85 @@ fn an_unwritable_credentials_file_names_the_file_not_a_relogin() {
         "got {err:?}"
     );
 }
+
+// ── issue #194: exit code 3 only when the identity needs a new login ──────
+
+#[test]
+fn a_refused_refresh_of_a_person_asks_for_their_login_and_exits_3() {
+    let err = login_error_to_cli(
+        LoginError::TokenRejected("403 Forbidden: {\"error\":\"invalid_grant\"}".to_string()),
+        Path::new("/c/credentials.json"),
+        &alice(),
+    );
+
+    assert_eq!(
+        err.to_string(),
+        "the login of user alice is no longer valid (403 Forbidden: {\"error\":\"invalid_grant\"}): \
+        the refresh token expired or was revoked. Run: confluence auth login --user alice \
+        (the person must approve the login in a browser)"
+    );
+    assert_eq!(err.exit_code(), 3);
+}
+
+#[test]
+fn a_refused_service_renewal_is_not_a_missing_login() {
+    // The Service Account's grant is the app's own credentials: a refusal means
+    // app.json is wrong, and logging in again with it would not help.
+    let err = login_error_to_cli(
+        LoginError::TokenRejected("401 Unauthorized: invalid_client".to_string()),
+        Path::new("/c/credentials.json"),
+        &Identity::Service,
+    );
+
+    assert!(matches!(err, CliError::TokenRefreshFailed { .. }), "{err:?}");
+    assert_eq!(err.exit_code(), 1);
+}
+
+#[test]
+fn a_transient_renewal_failure_exits_1() {
+    // Network errors, 429, 5xx: retrying may work, a new login is not needed.
+    let err = login_error_to_cli(LoginError::TokenExchange("503 Service Unavailable".to_string()), Path::new("/c/credentials.json"), &alice());
+
+    assert!(matches!(err, CliError::TokenRefreshFailed { .. }), "{err:?}");
+    assert_eq!(err.exit_code(), 1);
+}
+
+#[test]
+fn a_missing_or_mismatched_login_exits_3() {
+    let missing = || LoginError::Io(std::io::ErrorKind::NotFound.into());
+    for (error, identity) in [
+        (missing(), Identity::Service),
+        (missing(), alice()),
+        (LoginError::WrongIdentity("x"), Identity::Service),
+        (LoginError::WrongIdentity("x"), alice()),
+    ] {
+        let err = login_error_to_cli(error, Path::new("/c/credentials.json"), &identity);
+        assert_eq!(err.exit_code(), 3, "{err}");
+    }
+}
+
+#[test]
+fn an_unreadable_credentials_file_is_an_io_error_not_a_missing_login() {
+    // It exists but can't be read (permissions): a new login would hit the same wall.
+    let err = login_error_to_cli(
+        LoginError::Io(std::io::Error::new(std::io::ErrorKind::PermissionDenied, "permission denied")),
+        Path::new("/c/credentials.json"),
+        &alice(),
+    );
+
+    assert_eq!(err.to_string(), "I/O error: could not read /c/credentials.json: permission denied");
+    assert_eq!(err.exit_code(), 1);
+}
+
+#[test]
+fn every_other_error_exits_1() {
+    for err in [
+        CliError::ApiError { status: 401, body: "unauthorized".to_string() },
+        CliError::SaveCredentialsFailed { path: "/c".to_string(), reason: "x".to_string() },
+        CliError::NothingToLogOut { label: "user:alice".to_string(), login: "confluence auth login --user alice".to_string() },
+        CliError::UserAppMissing { path: "/c".to_string(), id: "alice".to_string() },
+        CliError::DoctorCheckFailed,
+    ] {
+        assert_eq!(err.exit_code(), 1, "{err}");
+    }
+}
