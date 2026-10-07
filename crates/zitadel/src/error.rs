@@ -79,6 +79,12 @@ pub enum CliError {
     TokenRefreshFailedUser { reason: String, id: String },
 
     #[error(
+        "the login of user {id} is no longer valid ({reason}): the refresh token expired or was revoked. \
+        Run: zitadel auth login --user {id} (the person must approve the login in a browser)"
+    )]
+    UserLoginExpired { reason: String, id: String },
+
+    #[error(
         "a remote login (--remote, --code, --state) logs in a person and needs --user <USER_ID>. \
         Retry with: zitadel auth login --user <USER_ID> --remote --redirect-uri <redirect-uri>, \
         then zitadel auth login --user <USER_ID> --code <CODE> --state <STATE>"
@@ -153,4 +159,17 @@ pub enum CliError {
     /// typed fields) — never expected to fire.
     #[error("internal error: {reason}. This is a bug in the zitadel CLI.")]
     Internal { reason: String },
+}
+
+impl CliError {
+    /// The process exit code: `oauth_user_login::NOT_LOGGED_IN_EXIT_CODE` (3)
+    /// when the selected identity needs a new login (issue #194), 1 otherwise.
+    pub fn exit_code(&self) -> u8 {
+        match self {
+            CliError::NotAuthenticatedService { .. }
+            | CliError::NotAuthenticatedUser { .. }
+            | CliError::UserLoginExpired { .. } => oauth_user_login::NOT_LOGGED_IN_EXIT_CODE,
+            _ => 1,
+        }
+    }
 }

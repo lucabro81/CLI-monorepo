@@ -172,6 +172,35 @@ fn refresh_keeps_the_old_refresh_token_when_none_is_returned() {
     assert_eq!(creds.refresh_token.as_deref(), Some("rt-old"));
 }
 
+// Issue #194: a refused refresh token (ZITADEL answers 400 invalid_grant) needs
+// a new login and is told apart from a transient failure, where retrying may work.
+#[test]
+fn a_refused_refresh_is_token_rejected_with_status_and_body() {
+    for status in ["400 Bad Request", "401 Unauthorized", "403 Forbidden"] {
+        let (url, server) = one_shot_server(status, r#"{"error":"invalid_grant"}"#);
+        let err = refresh(&native_config(&url), &user_credentials()).unwrap_err();
+        server.join().unwrap();
+
+        match err {
+            LoginError::TokenRejected(detail) => {
+                assert_eq!(detail, format!(r#"{status}: {{"error":"invalid_grant"}}"#));
+            }
+            other => panic!("{status}: expected TokenRejected, got {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn a_transient_refresh_failure_stays_a_token_exchange_error() {
+    for status in ["429 Too Many Requests", "500 Internal Server Error", "503 Service Unavailable"] {
+        let (url, server) = one_shot_server(status, "busy");
+        let err = refresh(&native_config(&url), &user_credentials()).unwrap_err();
+        server.join().unwrap();
+
+        assert!(matches!(&err, LoginError::TokenExchange(d) if d == &format!("{status}: busy")), "{status}: {err:?}");
+    }
+}
+
 #[test]
 fn expired_user_session_is_renewed_with_its_refresh_token_not_the_service_user() {
     // Regression: renew() used to always re-sign the service-user JWT, which
@@ -303,6 +332,6 @@ fn remote_complete_consumes_the_state_even_when_the_provider_refuses_the_code() 
     let err = complete_remote_login(&native_config(&url), &path, "used", &pending.state, NOW).unwrap_err();
     server.join().unwrap();
 
-    assert!(matches!(err, LoginError::TokenExchange(_)), "got {err:?}");
+    assert!(matches!(err, LoginError::TokenRejected(_)), "got {err:?}");
     assert!(!path.exists());
 }

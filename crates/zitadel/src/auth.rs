@@ -174,6 +174,11 @@ pub enum LoginError {
     Io(#[from] std::io::Error),
     #[error("token exchange failed: {0}")]
     TokenExchange(String),
+    /// The token endpoint refused the grant (HTTP 400/401/403, e.g. an expired
+    /// or revoked refresh token): only a new login helps (issue #194).
+    /// `TokenExchange` covers transient failures, where retrying may work.
+    #[error("token request rejected: {0}")]
+    TokenRejected(String),
     #[error(
         "no service user configured: app.json has no \"service_user\" key. \
         Download a JSON key for a ZITADEL service user from the console and run: \
@@ -310,7 +315,12 @@ fn request_token(instance_url: &str, pairs: &[(&str, &str)]) -> Result<TokenResp
     if !response.status().is_success() {
         let status = response.status();
         let text = response.text().unwrap_or_default();
-        return Err(LoginError::TokenExchange(format!("{status}: {text}")));
+        let detail = format!("{status}: {text}");
+        return Err(if oauth_user_login::token_request_rejected(status.as_u16()) {
+            LoginError::TokenRejected(detail)
+        } else {
+            LoginError::TokenExchange(detail)
+        });
     }
 
     response

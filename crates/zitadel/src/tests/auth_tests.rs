@@ -351,11 +351,11 @@ fn login_service_user_surfaces_zitadel_error_body() {
     server.join().unwrap();
 
     match err {
-        LoginError::TokenExchange(msg) => assert_eq!(
+        LoginError::TokenRejected(msg) => assert_eq!(
             msg,
             r#"400 Bad Request: {"error":"invalid_grant","error_description":"assertion invalid"}"#
         ),
-        other => panic!("expected TokenExchange, got {other:?}"),
+        other => panic!("expected TokenRejected, got {other:?}"),
     }
 }
 
