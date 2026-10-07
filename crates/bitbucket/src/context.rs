@@ -78,6 +78,16 @@ pub(crate) fn login_error_to_cli(error: LoginError, credentials_path: &Path, ide
                 reason: error.to_string(),
             };
         }
+        // The file exists but can't be read: a new login would not fix it.
+        LoginError::Io(e) if e.kind() != std::io::ErrorKind::NotFound => {
+            return CliError::IoError { reason: format!("could not read {}: {e}", credentials_path.display()) };
+        }
+        // A person's refresh token refused: only their new login helps. For the
+        // OAuth app the refused grant is app.json's own Key/Secret.
+        LoginError::TokenRejected(reason) => match identity {
+            Identity::Service => reason,
+            Identity::User(id) => return CliError::UserLoginExpired { reason, id: id.to_string() },
+        },
         LoginError::Io(_) | LoginError::WrongIdentity(_) => {
             return match identity {
                 Identity::Service => CliError::NotAuthenticatedService,

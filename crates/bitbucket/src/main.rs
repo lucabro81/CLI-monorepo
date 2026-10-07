@@ -5,7 +5,8 @@
 //! `commands/`. All business logic lives in those modules.
 //!
 //! Error handling boundary: `run()` returns `Result<(), CliError>`; `main()`
-//! prints any error to stderr and maps it to a non-zero `ExitCode`. No
+//! prints any error to stderr and exits with `CliError::exit_code` (3 when the
+//! selected identity needs a new login, 1 otherwise). No
 //! `process::exit` is used anywhere in the codebase.
 
 mod auth;
@@ -80,7 +81,7 @@ fn main() -> ExitCode {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => {
             eprintln!("{err}");
-            ExitCode::FAILURE
+            ExitCode::from(err.exit_code())
         }
     }
 }
