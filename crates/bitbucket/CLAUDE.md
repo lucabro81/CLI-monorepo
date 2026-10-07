@@ -104,7 +104,7 @@ consumer**, with two grants (one consumer per identity, possibly the same one):
   `http://localhost:8080/callback`), stores a `refresh_token`. Every action is
   attributed to the person who consented. For an agent acting as the person it works for.
 
-**The app and any number of people are stored side by side (issues #164, #175)** — see
+**The app and any number of people are stored side by side (issues #164, #175)** — see Exit code (issue #194): `CliError::exit_code()` returns 3 for `NotAuthenticatedService`, `NotAuthenticatedUser` and `UserLoginExpired` (a person's refresh token refused, `LoginError::TokenRejected`), 1 for everything else; `context::login_error_to_cli` keeps a refused service renewal, a transient `TokenExchange` and an unreadable (not missing) credentials file (`IoError`) out of code 3 — see root `CLAUDE.md`.
 root `CLAUDE.md`'s "Service and per-person identities". The global `--user <USER_ID>`
 flag selects, per call, the app (default: `app.json`'s `service` consumer,
 `credentials-service.json`) or that person (`user` consumer, shared by every person,
