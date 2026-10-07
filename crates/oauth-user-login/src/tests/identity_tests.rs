@@ -170,3 +170,20 @@ fn a_rejected_client_is_not_a_refused_grant() {
         assert!(!super::token_request_rejected(status, r#"{"error":"invalid_client","error_description":"x"}"#), "{status}");
     }
 }
+
+#[test]
+fn an_id_with_a_colon_works_as_a_folder_name() {
+    // Issue #184: ids may be namespaced (`chat:u123`); the id is used verbatim
+    // as the person's folder, so it must round-trip through the filesystem.
+    let dir = tempfile::tempdir().unwrap();
+    let person = Identity::User(id("chat:u123"));
+    let path = person.credentials_path(dir.path(), "some-cli");
+    assert_eq!(path, dir.path().join("some-cli/users/chat:u123/credentials.json"));
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(&path, "{}").unwrap();
+    std::fs::write(super::pending_login_path(dir.path(), "some-cli", &id("chat:u123")), "{}").unwrap();
+
+    assert_eq!(list_users(dir.path(), "some-cli").unwrap(), vec![id("chat:u123")]);
+    assert!(remove_identity(dir.path(), "some-cli", &person).unwrap());
+    assert!(list_users(dir.path(), "some-cli").unwrap().is_empty());
+}
