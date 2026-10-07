@@ -32,7 +32,7 @@ CLI for Jira Cloud, designed to be driven by an LLM agent (output is JSON, error
 The CLI holds the Service Account and any number of people side by side, and every command picks one per call:
 
 - **Service Account (the default identity)** — what every command acts as without `--user`. Generated in Atlassian's admin console, with site access assigned by an org admin at generation time; no human ever needs to authorize anything — verified end-to-end against a real org: `jira auth login` and `jira doctor` (all six checks) succeed immediately with no browser step.
-- **A person (`--user <USER_ID>`)** — what a command acts as when given `--user <USER_ID>`. `<USER_ID>` is your own name for that person, a lowercase slug (`a-z`, `0-9`, `.`, `_`, `-`, e.g. `jane.doe`); an agent working for many people uses its own id for each. Needs a 3LO app registered in the developer console (one app for everybody), plus each person completing a browser consent once. Only needed if commands must act as people in addition to the agent identity.
+- **A person (`--user <USER_ID>`)** — what a command acts as when given `--user <USER_ID>`. `<USER_ID>` is your own name for that person, a lowercase slug (`a-z`, `0-9`, `.`, `_`, `-`, `:`, e.g. `jane.doe` or `chat:u123`); an agent working for many people uses its own id for each. Needs a 3LO app registered in the developer console (one app for everybody), plus each person completing a browser consent once. Only needed if commands must act as people in addition to the agent identity.
 
 All of them live in one config folder, `$XDG_CONFIG_HOME/jira-cli/` (typically `~/.config/jira-cli/`):
 
