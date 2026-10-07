@@ -234,3 +234,22 @@ fn a_failed_hidden_read_is_an_io_error() {
 
     assert_eq!(err.to_string(), "I/O error: could not read Enter Client Secret: no tty");
 }
+
+// ── empty prompt answers (issue #218, aligning with atlassian-admin) ──────
+
+#[test]
+fn a_typed_answer_is_kept() {
+    assert_eq!(super::non_empty("abc".to_string(), "Client Secret", "--client-secret").unwrap(), "abc");
+}
+
+#[test]
+fn an_empty_answer_writes_nothing() {
+    // Regression guard: Enter alone at a prompt wrote an empty value into app.json.
+    let err = super::non_empty(String::new(), "Client Secret", "--client-secret").unwrap_err();
+
+    assert_eq!(
+        err.to_string(),
+        "Client Secret is empty: nothing was written. Run confluence init again and type it, or pass it with --client-secret"
+    );
+}
+
