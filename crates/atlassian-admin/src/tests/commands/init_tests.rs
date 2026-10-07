@@ -189,3 +189,37 @@ fn a_failed_hidden_read_says_how_to_retry() {
     );
 }
 
+// ── owner-only app.json (issue #218, aligning with #165) ──────────────────
+
+#[cfg(unix)]
+fn mode(path: &std::path::Path) -> u32 {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::metadata(path).unwrap().permissions().mode() & 0o777
+}
+
+#[cfg(unix)]
+#[test]
+fn app_config_is_readable_only_by_the_owner() {
+    // Regression guard: app.json holds the org-wide API key and was written
+    // with plain fs::write, readable by every local user (umask 0644).
+    let (_dir, config_dir) = temp_config_dir();
+
+    write_app_config(&config_dir, "key", "org").unwrap();
+
+    assert_eq!(mode(&config_dir.join("atlassian-admin-cli/app.json")), 0o600);
+}
+
+#[cfg(unix)]
+#[test]
+fn an_existing_world_readable_app_config_ends_up_owner_only() {
+    use std::os::unix::fs::PermissionsExt;
+    let (_dir, config_dir) = temp_config_dir();
+    let path = config_dir.join("atlassian-admin-cli/app.json");
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(&path, "{}").unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+
+    write_app_config(&config_dir, "key", "org").unwrap();
+
+    assert_eq!(mode(&path), 0o600);
+}

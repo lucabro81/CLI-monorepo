@@ -141,6 +141,14 @@ fn prompt(label: &str) -> Result<String, CliError> {
     Ok(line.trim().to_string())
 }
 
+/// An empty answer (Enter alone) must not be written into app.json (issue #218).
+pub(crate) fn non_empty(value: String, field: &'static str, flag: &'static str) -> Result<String, CliError> {
+    if value.is_empty() {
+        return Err(CliError::EmptyInput { field, flag });
+    }
+    Ok(value)
+}
+
 /// Prompts for a secret: hidden (no echo) when stdin is a terminal, so a typed
 /// secret never lands in scrollback (issue #196); a plain line otherwise, so
 /// piped input keeps working.
@@ -173,11 +181,11 @@ pub fn run_init(identity: &Identity, client_id: Option<String>, client_secret: O
 
     let client_id = match client_id {
         Some(id) => id,
-        None => prompt("Enter Client ID")?,
+        None => non_empty(prompt("Enter Client ID")?, "Client ID", "--client-id")?,
     };
     let client_secret = match client_secret {
         Some(s) => s,
-        None => prompt_secret("Enter Client Secret")?,
+        None => non_empty(prompt_secret("Enter Client Secret")?, "Client Secret", "--client-secret")?,
     };
 
     let cfg_dir = config_dir()?;
@@ -262,11 +270,11 @@ pub fn run_init_user_app(
 
     let client_id = match client_id {
         Some(id) => id,
-        None => prompt("Enter Client ID")?,
+        None => non_empty(prompt("Enter Client ID")?, "Client ID", "--client-id")?,
     };
     let client_secret = match client_secret {
         Some(s) => s,
-        None => prompt_secret("Enter Client Secret")?,
+        None => non_empty(prompt_secret("Enter Client Secret")?, "Client Secret", "--client-secret")?,
     };
 
     let cfg_dir = config_dir()?;

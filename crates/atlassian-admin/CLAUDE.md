@@ -73,7 +73,7 @@ consumer, no client_id/secret pair, no expiry/refresh cycle to manage.
 
 Config layout, mirroring other crates (`$XDG_CONFIG_HOME/atlassian-admin-cli/`, falling back to `~/.config/atlassian-admin-cli/`):
 
-- `app.json` — `{"api_key": "...", "org_id": "..."}`. Static, hand-written or written by `init`. The CLI never modifies it at runtime.
+- `app.json` — `{"api_key": "...", "org_id": "..."}`. Static, hand-written or written by `init` (owner-only, mode 0600, through `oauth_user_login::write_secret_file`, issue #218). The CLI never modifies it at runtime.
 - No `credentials.json` — there is no dynamic token to persist; `app.json` alone is sufficient to authenticate every call.
 
 ### `init` and the API key (issue #196)

@@ -45,7 +45,7 @@ Create `$XDG_CONFIG_HOME/atlassian-admin-cli/app.json` (typically `~/.config/atl
 }
 ```
 
-This file is static — the CLI never modifies it. There is no separate credentials/token file: this API key is a finished, long-lived credential, not something exchanged for a short-lived access token.
+This file is static — the CLI never modifies it. Keep it owner-only (`chmod 600`): it holds the org-wide key; `init` writes it with mode `0600`. There is no separate credentials/token file: this API key is a finished, long-lived credential, not something exchanged for a short-lived access token.
 
 ### `atlassian-admin init` does the above for you
 

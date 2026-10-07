@@ -65,7 +65,7 @@ pub enum Command {
         /// Bitbucket OAuth consumer Key of the identity being set up (skips interactive prompt if provided)
         #[arg(long)]
         client_id: Option<String>,
-        /// Bitbucket OAuth consumer Secret of the identity being set up (skips the interactive prompt, which reads it hidden on a terminal, if provided)
+        /// Bitbucket OAuth consumer Secret of the identity being set up (skips the interactive prompt, which reads it hidden on a terminal, if provided; an empty answer at the prompt writes nothing)
         #[arg(long)]
         client_secret: Option<String>,
         /// Set up only the OAuth consumer every person logs in through (app.json's "user"

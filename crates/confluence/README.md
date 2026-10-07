@@ -76,7 +76,7 @@ Every command accepts the global `--user <USER_ID>` flag: without it the command
 
 ### `confluence init`
 
-Onboarding for one identity. Prints setup instructions and the scopes to add, prompts for Client ID/Secret — the secret hidden (no echo) on a terminal, a plain line when stdin is piped — (or accepts `--client-id`/`--client-secret` flags), writes that identity's section of `app.json` (leaving the other section alone), logs in, and prints a `confluence doctor` JSON report for that identity.
+Onboarding for one identity. Prints setup instructions and the scopes to add, prompts for Client ID/Secret — the secret hidden (no echo) on a terminal, a plain line when stdin is piped; an empty answer writes nothing — (or accepts `--client-id`/`--client-secret` flags), writes that identity's section of `app.json` (leaving the other section alone), logs in, and prints a `confluence doctor` JSON report for that identity.
 
 - `confluence init` — the Service Account: writes `"service"`, runs the non-interactive `client_credentials` login.
 - `confluence init --user <USER_ID>` — the 3LO app every person uses: writes `"user"`, runs the browser consent flow for that person.

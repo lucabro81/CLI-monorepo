@@ -40,7 +40,8 @@ pub enum Command {
     /// in clear, the API key hidden (no echo, so it never lands in scrollback or
     /// session logs), then the same write and doctor. Without a terminal, passing
     /// neither (or only one) creates an empty skeleton file and prints its path
-    /// for you to fill in by hand.
+    /// for you to fill in by hand. An empty answer at a prompt writes nothing.
+    /// app.json is written owner-only (mode 0600).
     #[command(after_help = "Examples:\n  atlassian-admin init\n  atlassian-admin init --api-key <KEY> --org-id <ORG_ID>")]
     Init {
         /// Organization API key from admin.atlassian.com (skips the skeleton-file
