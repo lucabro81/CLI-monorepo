@@ -151,10 +151,22 @@ fn token_request_rejected_only_for_a_refused_grant() {
     // 400/401/403: the token endpoint refused the grant (RFC 6749 errors;
     // Atlassian answers 403 invalid_grant), so only a new login helps.
     for status in [400, 401, 403] {
-        assert!(super::token_request_rejected(status), "{status}");
+        assert!(super::token_request_rejected(status, r#"{"error":"invalid_grant"}"#), "{status}");
+        // Not every provider sends a JSON body.
+        assert!(super::token_request_rejected(status, "Forbidden"), "{status}");
     }
     // Transient or not about the grant: retrying may work, a login would not help.
     for status in [404, 408, 429, 500, 502, 503] {
-        assert!(!super::token_request_rejected(status), "{status}");
+        assert!(!super::token_request_rejected(status, r#"{"error":"invalid_grant"}"#), "{status}");
+    }
+}
+
+#[test]
+fn a_rejected_client_is_not_a_refused_grant() {
+    // Regression guard (#194 live check): Atlassian answers a wrong client id or
+    // secret in app.json with 400 invalid_client; a new login would fail the
+    // same way, so it must not read "log in again".
+    for status in [400, 401] {
+        assert!(!super::token_request_rejected(status, r#"{"error":"invalid_client","error_description":"x"}"#), "{status}");
     }
 }
