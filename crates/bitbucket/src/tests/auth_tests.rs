@@ -560,6 +560,17 @@ fn a_transient_token_request_failure_stays_a_token_exchange_error() {
     }
 }
 
+#[test]
+fn a_refused_client_stays_a_token_exchange_error() {
+    // Regression guard (#194 live check): a wrong consumer Key/Secret is
+    // invalid_client; a new login through the same consumer would fail too.
+    let (url, server) = token_server("401 Unauthorized", r#"{"error":"invalid_client"}"#);
+    let err = request_token_at(&url, &test_config(), &[("grant_type", "refresh_token".to_string())]).unwrap_err();
+    server.join().unwrap();
+
+    assert!(matches!(err, LoginError::TokenExchange(_)), "got {err:?}");
+}
+
 fn unexpired(refresh_token: Option<&str>) -> Credentials {
     Credentials {
         access_token: "at".to_string(),

@@ -309,7 +309,7 @@ fn request_token_at(
 
     if !status.is_success() {
         let detail = format!("{status}: {text}");
-        return Err(if oauth_user_login::token_request_rejected(status.as_u16()) {
+        return Err(if oauth_user_login::token_request_rejected(status.as_u16(), &text) {
             LoginError::TokenRejected(detail)
         } else {
             LoginError::TokenExchange(detail)
