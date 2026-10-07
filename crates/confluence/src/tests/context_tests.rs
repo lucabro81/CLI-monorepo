@@ -95,7 +95,8 @@ fn a_missing_user_section_says_to_run_init_for_the_3lo_app() {
     assert_eq!(
         err,
         "app.json at /cfg/confluence-cli/app.json has no \"user\" section (the 3LO app every person logs in \
-        with). Run: confluence init --user alice --client-id <ID> --client-secret <SECRET>"
+        with). Run: confluence init --user alice --client-id <ID> --client-secret <SECRET>, \
+        or confluence init --user-app --client-id <ID> --client-secret <SECRET> to set it up without logging anyone in"
     );
 }
 
