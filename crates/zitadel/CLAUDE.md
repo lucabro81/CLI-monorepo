@@ -71,6 +71,12 @@ app `client_id` shared by every person), so its shape is unchanged.
 (`CliError::RemoteLoginNeedsUser`), since clap can't see a global `--user` placed
 before the subcommand. `init --user <id>` logs that person in through the browser; a
 changed instance URL removes every stored login (`discard_instance_credentials`).
+Exit code (issue #194): `CliError::exit_code()` returns 3 for
+`NotAuthenticatedService`, `NotAuthenticatedUser` (missing, mismatched or corrupted
+credentials file) and `UserLoginExpired` (a person's refresh token refused,
+`LoginError::TokenRejected`), 1 for everything else; `context::login_error_to_cli` keeps
+a refused service user renewal, a transient `TokenExchange`, an unreadable (not missing)
+credentials file (`IoError`) and an API `401` (`ApiUnauthorized`) out of code 3.
 
 - **`auth login` (default) — service user, private key JWT** (Zitadel's
   recommended service-account method; no human step, intended for agents).
