@@ -30,7 +30,7 @@ CLI for Confluence Cloud, designed to be driven by an LLM agent (output is JSON,
 
 This crate authenticates against the exact same Atlassian OAuth platform as `jira` (see root `CLAUDE.md`'s "Shared library: crates/atlassian-auth") — if you've already set up `jira`, the process here is identical, just under `confluence-cli/` instead of `jira-cli/`, with Confluence-specific scopes. See `jira`'s README "Setup" for the full walkthrough.
 
-The CLI holds the Service Account and any number of people side by side, and every command picks one per call: without `--user` it acts as the **Service Account**, with `--user <USER_ID>` as the **person** who logged in with `confluence auth login --user <USER_ID>`. `<USER_ID>` is your own name for that person, a lowercase slug (`a-z`, `0-9`, `.`, `_`, `-`, e.g. `jane.doe`). All of them live in `$XDG_CONFIG_HOME/confluence-cli/` (typically `~/.config/confluence-cli/`), every file with mode `0600`:
+The CLI holds the Service Account and any number of people side by side, and every command picks one per call: without `--user` it acts as the **Service Account**, with `--user <USER_ID>` as the **person** who logged in with `confluence auth login --user <USER_ID>`. `<USER_ID>` is your own name for that person, a lowercase slug (`a-z`, `0-9`, `.`, `_`, `-`, `:`, e.g. `jane.doe` or `chat:u123`). All of them live in `$XDG_CONFIG_HOME/confluence-cli/` (typically `~/.config/confluence-cli/`), every file with mode `0600`:
 
 | File | Written by | Holds |
 |---|---|---|

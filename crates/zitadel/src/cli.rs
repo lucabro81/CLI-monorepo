@@ -27,7 +27,7 @@ pub struct Cli {
 
     /// Act as the person with this id instead of the service user: the human who
     /// logged in with `zitadel auth login --user <USER_ID>`. The id is your own name
-    /// for that person, a lowercase slug (a-z, 0-9, '.', '_', '-', e.g. jane.doe).
+    /// for that person, a lowercase slug (a-z, 0-9, '.', '_', '-', ':', e.g. jane.doe or chat:u123).
     /// Without it every command acts as the service user (`zitadel auth login`). The
     /// service user and every person are stored side by side and renewed
     /// automatically, so switching between them needs no new login. On `init`,

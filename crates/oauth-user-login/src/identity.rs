@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 /// The caller's name for a human, given with `--user <id>`. It names the
 /// person's folder under `users/`, so it is a lowercase slug: 1-64 characters
-/// out of `a-z`, `0-9`, `.`, `_`, `-`, starting with a letter or digit (no
+/// out of `a-z`, `0-9`, `.`, `_`, `-`, `:`, starting with a letter or digit (no
 /// `..`, no `/`, no hidden folders, no case collisions).
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct UserId(String);
@@ -16,13 +16,13 @@ impl UserId {
         let mut chars = value.chars();
         let first_ok = chars.next().is_some_and(|c| c.is_ascii_lowercase() || c.is_ascii_digit());
         let rest_ok =
-            chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '.' | '_' | '-'));
+            chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '.' | '_' | '-' | ':'));
         if first_ok && rest_ok && value.len() <= 64 {
             Ok(UserId(value.to_string()))
         } else {
             Err(format!(
                 "\"{value}\" is not a valid user id: it must be a lowercase slug of 1-64 characters \
-                (a-z, 0-9, '.', '_', '-') starting with a letter or digit (example: jane.doe)"
+                (a-z, 0-9, '.', '_', '-', ':') starting with a letter or digit (examples: jane.doe, chat:u123)"
             ))
         }
     }

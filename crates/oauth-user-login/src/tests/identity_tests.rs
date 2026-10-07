@@ -10,7 +10,7 @@ fn id(s: &str) -> UserId {
 
 #[test]
 fn user_id_accepts_lowercase_slugs() {
-    for valid in ["a", "0", "jane.doe", "m_rossi-2", "x".repeat(64).as_str()] {
+    for valid in ["a", "0", "jane.doe", "m_rossi-2", "chat:u123", "a:b:c", "x".repeat(64).as_str()] {
         assert_eq!(UserId::parse(valid).unwrap().as_str(), valid, "{valid}");
     }
 }
@@ -20,10 +20,10 @@ fn user_id_rejects_anything_that_is_not_a_plain_folder_name() {
     // The id becomes a folder name under users/: anything that could escape
     // it (`..`, `/`), hide it (leading `.`) or collide by case is refused.
     let too_long = "x".repeat(65);
-    for invalid in ["", ".", "..", ".hidden", "-a", "_a", "a/b", "../a", "Jane", "a b", "a@b.c", too_long.as_str()] {
+    for invalid in ["", ".", "..", ".hidden", "-a", "_a", "a/b", "../a", "Jane", "a b", "a@b.c", ":a", "Chat:u1", too_long.as_str()] {
         let err = UserId::parse(invalid).unwrap_err();
         assert!(err.contains("lowercase slug"), "{invalid}: {err}");
-        assert!(err.contains("example: jane.doe"), "{invalid}: {err}");
+        assert!(err.contains("examples: jane.doe, chat:u123"), "{invalid}: {err}");
     }
 }
 
