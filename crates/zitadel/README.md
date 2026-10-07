@@ -93,13 +93,15 @@ Writes `app.json`, logs in and prints the [`doctor`](#zitadel-doctor) report for
 | `--instance-url <URL>` | Instance base URL (Cloud or self-hosted). Required on the first run. Trailing `/` is stripped. |
 | `--key-file <PATH>` | Service user JSON key from the console. Validated (JSON, `"type": "serviceaccount"`, RSA PEM) before anything is written. |
 | `--client-id <ID>` | Native app client id, only needed for people (`--user <USER_ID>`), shared by all of them. |
+| `--user-app` | Log nobody in (not even the service user) and print only `{"app_config": ...}` instead of the doctor report: sets up what people log in with where nobody can open a browser; they log in later with `zitadel auth login --user <USER_ID> --remote`. Exits 1 if no Native app client id is configured. Takes no `--user`. |
 
 ```sh
 zitadel init --instance-url https://acme.zitadel.cloud --key-file ~/Downloads/123456789.json
 zitadel init --user jane.doe --client-id 123456789@zitadel-cli    # later: add the Native app and log jane.doe in
+zitadel init --user-app --instance-url https://acme.zitadel.cloud --client-id 123456789@zitadel-cli   # Native app only, nobody logged in
 ```
 
-Progress lines go to stderr; stdout carries only the doctor report. Exits non-zero if any doctor check fails.
+Progress lines go to stderr; stdout carries only the doctor report (with `--user-app`, the `app_config` check). Exits non-zero if any doctor check fails.
 
 ### `zitadel doctor`
 
