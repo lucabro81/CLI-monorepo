@@ -14,6 +14,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - init --user-app in CLAUDE.md files (#195)
 - --user-app review fixes (#195)
 - Merge pull request #207 from lucabro81/issue195 ([#207](https://github.com/lucabro81/CLI-monorepo/pull/207))
+- Release
+- Merge pull request #209 from lucabro81/release/zitadel ([#209](https://github.com/lucabro81/CLI-monorepo/pull/209))
+## [2.3.0](https://github.com/lucabro81/CLI-monorepo/compare/zitadel-v2.2.0...zitadel-v2.3.0) - 2026-10-07
+
+### Added
+- *(zitadel)* init --user-app sets up the Native app without logging anyone in
+
+### Other
+- *(zitadel)* init --user-app
+- init --user-app in CLAUDE.md files (#195)
+- --user-app review fixes (#195)
+- Merge pull request #207 from lucabro81/issue195 ([#207](https://github.com/lucabro81/CLI-monorepo/pull/207))
 ## [2.2.0](https://github.com/lucabro81/CLI-monorepo/compare/zitadel-v2.1.0...zitadel-v2.2.0) - 2026-10-07
 
 ### Added
