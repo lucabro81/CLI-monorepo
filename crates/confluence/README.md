@@ -34,7 +34,7 @@ The CLI holds the Service Account and any number of people side by side, and eve
 
 | File | Written by | Holds |
 |---|---|---|
-| `app.json` | `confluence init` / `confluence init --user <USER_ID>` | `"service"` section (Service Account Client ID/Secret) and `"user"` section (3LO app Client ID/Secret, shared by every person) — either may be missing |
+| `app.json` | `confluence init` / `confluence init --user <USER_ID>` / `confluence init --user-app` | `"service"` section (Service Account Client ID/Secret) and `"user"` section (3LO app Client ID/Secret, shared by every person) — either may be missing |
 | `credentials-service.json` | `confluence auth login` | the Service Account's token |
 | `users/<USER_ID>/credentials.json` | `confluence auth login --user <USER_ID>` | that person's token and refresh token |
 | `users/<USER_ID>/pending-login.json` | `confluence auth login --user <USER_ID> --remote` | that person's remote login waiting for its code |
@@ -80,10 +80,12 @@ Onboarding for one identity. Prints setup instructions and the scopes to add, pr
 
 - `confluence init` — the Service Account: writes `"service"`, runs the non-interactive `client_credentials` login.
 - `confluence init --user <USER_ID>` — the 3LO app every person uses: writes `"user"`, runs the browser consent flow for that person.
+- `confluence init --user-app` — the same 3LO app, logging nobody in (e.g. in a container nobody sits at): writes `"user"` and prints only `{"app_config": ...}` for that section, then the commands that log people in (`confluence auth login --user <USER_ID>`, or `--remote` for a person elsewhere). Takes no `--user`; exits 1 if the section can't be read back.
 
 ```sh
 cargo run -p confluence -- init --client-id <ID> --client-secret <SECRET>          # Service Account
 cargo run -p confluence -- init --user jane.doe --client-id <ID> --client-secret <SECRET>   # 3LO app, jane.doe logs in
+cargo run -p confluence -- init --user-app --client-id <ID> --client-secret <SECRET>   # 3LO app only, nobody logged in
 ```
 
 ### `confluence doctor`
