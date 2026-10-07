@@ -14,7 +14,8 @@ src/
     mod.rs        — pub mod declarations for all command handlers
     auth.rs       — run_login(), run_whoami(), run_logout() [implemented]
     doctor.rs     — run_doctor(); also called by init as final verification [implemented]
-    init.rs       — run_init(), write_app_config(); human onboarding flow [implemented]
+    init.rs       — run_init(), run_init_user_app(), write_app_config(AppSection),
+                    user_app_check(), check_user_app_flag(); human onboarding flow [implemented]
     repo.rs       — run(RepoCommand); dispatches all repo subcommands   [get, list, create, delete implemented]
     pr.rs         — run(PrCommand); dispatches all pr subcommands       [get, list, create, update, comment,
                     list-comments, update-comment, approve, unapprove, decline, merge, diff implemented]
@@ -155,7 +156,7 @@ Config layout, mirroring jira (`$XDG_CONFIG_HOME/bitbucket-cli/`, falling back t
 
 - `app.json` — `{"service": {"client_id": "...", "client_secret": "..."}, "user":
   {"client_id": "...", "client_secret": "..."}}` (each identity's OAuth consumer
-  Key/Secret, either section optional). Static, written by `init` / `init --user <id>` or by
+  Key/Secret, either section optional). Static, written by `init` / `init --user <id>` / `init --user-app` (`user` only) or by
   hand, mode 0600. The pre-#164 flat shape is rejected with `CliError::AppConfigLegacy`, naming
   both `init` commands; no automatic migration.
 - `credentials-service.json` / `users/<id>/credentials.json` — `access_token`, `expires_at`,
@@ -171,6 +172,7 @@ Config layout, mirroring jira (`$XDG_CONFIG_HOME/bitbucket-cli/`, falling back t
 | Command | Notes |
 |---------|-------|
 | `init [--user <id>] [--client-id --client-secret]` | Onboarding of one identity (`service` section + `client_credentials`, or `user` section + browser consent for that person); only command with narrative output |
+| `init --user-app [--client-id --client-secret]` | Writes only the `user` section, logs nobody in, prints `{"app_config": ...}` for it plus the next login commands; refuses `--user` (issue #195) |
 | `doctor [--user <id>]` | Cascading JSON health check for the selected identity (app_config, credentials, api, permissions); `credentials.identity` is `user` or `app`; informational `pending_login` and `identities`; exit non-zero on any failure |
 | `auth login [--user <id>]` | default: `client_credentials` exchange (the app) into `credentials-service.json`; `--user <id>`: browser `authorization_code` flow (that person) into `users/<id>/credentials.json` |
 | `auth login --user <id> --remote` / `--code --state` | two-step `authorization_code` for someone elsewhere: step 1 prints the consent URL (exempt from `--select`), step 2 exchanges the code and prints `auth whoami` |

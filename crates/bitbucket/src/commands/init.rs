@@ -17,7 +17,7 @@
 //! 5. Call `doctor::run_doctor` for that identity and print its JSON report.
 //!
 //! `init --user-app` (issue #195) stops after step 3 for the OAuth consumer: it writes
-//! the "user" section, logs nobody in, and prints `{{"app_config": ...}}` for that
+//! the "user" section, logs nobody in, and prints `{"app_config": ...}` for that
 //! section (`user_app_check`), so it can be set up where nobody can open a
 //! browser and people log in later with `auth login --user <id> --remote`.
 //!

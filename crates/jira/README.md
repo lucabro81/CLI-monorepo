@@ -163,7 +163,7 @@ Onboarding for one identity. Prints setup instructions, prompts for Client ID an
 
 - `jira init` — the Service Account: writes `"service"`, runs the non-interactive `client_credentials` login.
 - `jira init --user <USER_ID>` — the 3LO app every person uses: writes `"user"`, runs the browser consent flow for that person.
-- `jira init --user-app` — the same 3LO app, logging nobody in (e.g. in a container nobody sits at): writes `"user"` and prints only `{"app_config": ...}` for that section, then the commands that log people in (`jira auth login --user <USER_ID>`, or `--remote` for a person elsewhere). Takes no `--user`; exits 1 if the section can't be read back.
+- `jira init --user-app` — the same 3LO app, logging nobody in (e.g. in a container nobody sits at): writes `"user"` and prints only `{"app_config": ...}` for that section, after the same setup instructions, then a "Nobody is logged in yet" hint with the commands that log people in (`jira auth login --user <USER_ID>` in the browser here, or `jira auth login --user <USER_ID> --remote --redirect-uri <URL>` for a person elsewhere). Takes no `--user`; exits 1 if the section can't be read back.
 
 ```sh
 cargo run -p jira -- init --client-id <ID> --client-secret <SECRET>          # Service Account
