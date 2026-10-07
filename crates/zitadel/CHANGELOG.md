@@ -17,6 +17,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - *(zitadel)* exit code 3 in crate CLAUDE.md
 - exit code docs fixes from review (#194)
 - Merge pull request #197 from lucabro81/issue194 ([#197](https://github.com/lucabro81/CLI-monorepo/pull/197))
+- Release
+- Merge pull request #198 from lucabro81/release/zitadel ([#198](https://github.com/lucabro81/CLI-monorepo/pull/198))
+## [2.2.0](https://github.com/lucabro81/CLI-monorepo/compare/zitadel-v2.1.0...zitadel-v2.2.0) - 2026-10-07
+
+### Added
+- *(zitadel)* exit code 3 when the selected identity needs a new login
+
+### Fixed
+- *(zitadel)* invalid_client is not a refused grant
+
+### Other
+- *(zitadel)* document exit code 3 for a missing or expired login
+- *(zitadel)* exit code 3 in crate CLAUDE.md
+- exit code docs fixes from review (#194)
+- Merge pull request #197 from lucabro81/issue194 ([#197](https://github.com/lucabro81/CLI-monorepo/pull/197))
 ## [2.1.0](https://github.com/lucabro81/CLI-monorepo/compare/zitadel-v2.0.0...zitadel-v2.1.0) - 2026-10-07
 
 ### Added
