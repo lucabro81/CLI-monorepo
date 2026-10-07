@@ -7,7 +7,7 @@ use oauth_user_login::{CallbackError, WaitError};
 use super::{
     app_config_path, authorization_code_body, authorization_url, complete_remote_login,
     complete_remote_login_at,
-    load_credentials, load_credentials_with, merge_scopes_for_cloud_id, refresh,
+    load_credentials, load_credentials_with, merge_scopes_for_cloud_id, refresh, request_token_at,
     save_credentials, start_remote_login,
     AccessibleResource, AppConfig, Credentials, Identity, LoginError, OAuthConfig, OAuthConfigError,
 };
@@ -452,7 +452,7 @@ fn remote_complete_sends_the_stored_verifier_and_redirect_then_resolves_the_site
 }
 
 #[test]
-fn remote_complete_with_a_refused_code_is_a_token_exchange_error_and_consumes_the_state() {
+fn remote_complete_with_a_refused_code_is_a_token_rejected_error_and_consumes_the_state() {
     let (url, server) = mock_server(vec![("403 Forbidden", r#"{"error":"invalid_grant"}"#.to_string())]);
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("pending-login.json");
@@ -464,8 +464,58 @@ fn remote_complete_with_a_refused_code_is_a_token_exchange_error_and_consumes_th
     .unwrap_err();
     server.join().unwrap();
 
-    assert!(matches!(err, LoginError::TokenExchange(_)), "got {err:?}");
+    assert!(matches!(err, LoginError::TokenRejected(_)), "got {err:?}");
     assert!(!path.exists());
+}
+
+// Issue #194: a refused grant (Atlassian answers 403 invalid_grant) needs a
+// new login and is told apart from a transient failure, where retrying may work.
+#[test]
+fn a_refused_token_request_is_token_rejected_with_status_and_body() {
+    for status in ["400 Bad Request", "401 Unauthorized", "403 Forbidden"] {
+        let (url, server) = mock_server(vec![(status, r#"{"error":"invalid_grant"}"#.to_string())]);
+        let err = request_token_at(&format!("{url}/token"), &serde_json::json!({})).unwrap_err();
+        server.join().unwrap();
+
+        match err {
+            LoginError::TokenRejected(detail) => {
+                assert_eq!(detail, format!(r#"{status}: {{"error":"invalid_grant"}}"#));
+            }
+            other => panic!("{status}: expected TokenRejected, got {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn a_transient_token_request_failure_stays_a_token_exchange_error() {
+    for status in ["429 Too Many Requests", "500 Internal Server Error", "503 Service Unavailable"] {
+        let (url, server) = mock_server(vec![(status, "busy".to_string())]);
+        let err = request_token_at(&format!("{url}/token"), &serde_json::json!({})).unwrap_err();
+        server.join().unwrap();
+
+        assert!(matches!(&err, LoginError::TokenExchange(d) if d == &format!("{status}: busy")), "{status}: {err:?}");
+    }
+}
+
+#[test]
+fn a_refused_client_stays_a_token_exchange_error() {
+    // Regression guard (#194 live check): a wrong client id/secret in app.json
+    // is 400 invalid_client; a new login through the same app would fail too.
+    let body = r#"{"error":"invalid_client","error_description":"failed to retrieve client"}"#;
+    let (url, server) = mock_server(vec![("400 Bad Request", body.to_string())]);
+    let err = request_token_at(&format!("{url}/token"), &serde_json::json!({})).unwrap_err();
+    server.join().unwrap();
+
+    assert!(matches!(err, LoginError::TokenExchange(_)), "got {err:?}");
+}
+
+#[test]
+fn an_unreachable_token_endpoint_stays_a_token_exchange_error() {
+    // Nothing listens on a port just released.
+    let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+    let err = request_token_at(&format!("http://127.0.0.1:{port}/token"), &serde_json::json!({})).unwrap_err();
+
+    assert!(matches!(err, LoginError::TokenExchange(_)), "got {err:?}");
 }
 
 // Regression: a failure listing the accessible sites, after the code had been

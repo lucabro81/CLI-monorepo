@@ -79,9 +79,19 @@ pub(crate) fn login_error_to_cli(error: LoginError, credentials_path: &Path, ide
             path: credentials_path.display().to_string(),
             reason: error.to_string(),
         },
+        // A person's refresh token refused: only their new login helps. For the
+        // service identity the refused grant is app.json's own credentials.
+        LoginError::TokenRejected(reason) => match identity {
+            Identity::Service => CliError::TokenRefreshFailed { reason, login },
+            Identity::User(id) => CliError::UserLoginExpired { reason, id: id.to_string() },
+        },
         LoginError::TokenExchange(reason) | LoginError::AccessibleResources(reason) => {
             CliError::TokenRefreshFailed { reason, login }
         }
+        // The file exists but can't be read: a new login would not fix it.
+        LoginError::Io(e) if e.kind() != std::io::ErrorKind::NotFound => CliError::IoError {
+            reason: format!("could not read {}: {e}", credentials_path.display()),
+        },
         LoginError::NoAccessibleResources => CliError::TokenRefreshFailed {
             reason: "no accessible Jira sites found for this account".to_string(),
             login,

@@ -37,6 +37,9 @@ pub struct Cli {
     /// automatically, so switching between them needs no new login. On `init`,
     /// `auth login`, `auth whoami`, `auth logout` and `doctor` it selects which
     /// identity to set up, log in, check or remove.
+    /// A command that fails because this identity needs a new login (nothing
+    /// stored, or the person's refresh token refused) exits with code 3; any
+    /// other error exits with 1.
     #[arg(long, global = true, value_name = "USER_ID", value_parser = UserId::parse)]
     pub user: Option<UserId>,
 

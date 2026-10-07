@@ -112,6 +112,20 @@ fn a_state_mismatch_points_to_the_latest_link() {
 }
 
 #[test]
+fn a_refused_code_explains_codes_are_single_use_whatever_the_status() {
+    // Issue #194: a 400/401/403 answer is now TokenRejected; the message stays.
+    let err = remote_login_error(LoginError::TokenRejected("400 Bad Request: {\"error\":\"invalid_grant\"}".to_string()), &alice());
+
+    assert_eq!(
+        err.to_string(),
+        format!(
+            "remote login failed: ZITADEL refused the code (400 Bad Request: {{\"error\":\"invalid_grant\"}}). \
+            A code is valid once and only for a short time, and the pending login is now used up. {RESTART}"
+        )
+    );
+}
+
+#[test]
 fn a_refused_code_explains_codes_are_single_use() {
     let err = remote_login_error(LoginError::TokenExchange("400 Bad Request: {\"error\":\"invalid_grant\"}".to_string()), &alice());
 

@@ -237,3 +237,10 @@ Every error is a single plain-text sentence: what went wrong and what to run or 
 - `401` from the API → `zitadel auth login`;
 - a failed `auth login --user <USER_ID>` → what to check on the Native app (client id, redirect URI, PKCE, refresh token);
 - `403` from the API → the identity lacks an administrator role for that operation; run `zitadel doctor` to see its roles and grant the missing one in the console.
+
+### Exit codes
+
+- `0` — success.
+- `3` — the selected identity needs a new login: nothing stored for it, or its credentials file holds the other identity's login, or is corrupted (`not logged in ...` / `user <id> is not logged in ...`), or the person's refresh token was refused (`the login of user <id> is no longer valid ...`). Run the login command the message names. A caller (e.g. an agent acting for many people) can rely on this code instead of the message text.
+- `2` — invalid arguments (reported by clap).
+- `1` — every other failure, including a renewal that failed for a transient reason (network, 429, 5xx: retry), a refused renewal of the service user (its grant is its key in app.json, so a new login would not help), an app refused by the token endpoint (`invalid_client`: fix app.json, a new login through the same app would fail too), a credentials file that exists but can't be read, a `401` from the API with a stored token (the message still names `zitadel auth login`), and `doctor` with a failing check.

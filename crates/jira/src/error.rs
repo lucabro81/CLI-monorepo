@@ -74,6 +74,12 @@ pub enum CliError {
     )]
     TokenRefreshFailed { reason: String, login: String },
 
+    #[error(
+        "the login of user {id} is no longer valid ({reason}): the refresh token expired or was revoked. \
+        Run: jira auth login --user {id} (the person must approve the login in a browser)"
+    )]
+    UserLoginExpired { reason: String, id: String },
+
     #[error("OAuth login failed: {reason}")]
     LoginFailed { reason: String },
 
@@ -135,4 +141,17 @@ pub enum CliError {
 
     #[error("nothing to log out: identity \"{label}\" has no stored login on this machine. To log in: {login}")]
     NothingToLogOut { label: String, login: String },
+}
+
+impl CliError {
+    /// The process exit code: `oauth_user_login::NOT_LOGGED_IN_EXIT_CODE` (3)
+    /// when the selected identity needs a new login (issue #194), 1 otherwise.
+    pub fn exit_code(&self) -> u8 {
+        match self {
+            CliError::NotAuthenticatedService | CliError::NotAuthenticatedUser { .. } | CliError::UserLoginExpired { .. } => {
+                oauth_user_login::NOT_LOGGED_IN_EXIT_CODE
+            }
+            _ => 1,
+        }
+    }
 }

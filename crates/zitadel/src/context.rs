@@ -56,6 +56,15 @@ pub fn authenticated_client(identity: &Identity) -> Result<ZitadelClient, CliErr
 pub fn login_error_to_cli(error: LoginError, credentials_path: &std::path::Path, identity: &Identity) -> CliError {
     let reason = error.to_string();
     match (error, identity) {
+        // The file exists but can't be read: a new login would not fix it.
+        (LoginError::Io(e), _) if e.kind() != std::io::ErrorKind::NotFound => CliError::IoError {
+            reason: format!("could not read {}: {e}", credentials_path.display()),
+        },
+        // A person's refresh token refused: only their new login helps. For the
+        // service user the refused grant is its own key in app.json (below).
+        (LoginError::TokenRejected(detail), Identity::User(id)) => {
+            CliError::UserLoginExpired { reason: detail, id: id.to_string() }
+        }
         (LoginError::Io(_) | LoginError::InvalidCredentialsFile(_) | LoginError::WrongIdentity(_), Identity::Service) => {
             CliError::NotAuthenticatedService { reason }
         }

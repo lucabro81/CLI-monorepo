@@ -25,7 +25,8 @@ pub use callback::{
     parse_callback_request_line, wait_for_callback,
 };
 pub use identity::{
-    Identity, UserId, legacy_credentials_files, list_users, pending_login_path, remove_identity,
+    Identity, NOT_LOGGED_IN_EXIT_CODE, UserId, legacy_credentials_files, list_users, pending_login_path,
+    remove_identity, token_request_rejected,
 };
 pub use pending::{
     PENDING_LOGIN_TTL_SECS, PendingLogin, PendingLoginError, PendingLoginStatus, pending_login_status,

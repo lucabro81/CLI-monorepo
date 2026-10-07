@@ -2,7 +2,8 @@
 //!
 //! Parses CLI arguments and dispatches to the command handlers in `commands/`.
 //! `run()` returns `Result<(), CliError>`; `main()` prints any error to stderr
-//! and maps it to a non-zero `ExitCode`. No `process::exit` anywhere.
+//! and exits with `CliError::exit_code` (3 when the selected identity needs a
+//! new login, 1 otherwise). No `process::exit` anywhere.
 
 mod auth;
 mod cli;
@@ -93,7 +94,7 @@ fn main() -> ExitCode {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => {
             eprintln!("{err}");
-            ExitCode::FAILURE
+            ExitCode::from(err.exit_code())
         }
     }
 }

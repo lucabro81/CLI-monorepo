@@ -529,3 +529,10 @@ not logged in as the OAuth app. Run: bitbucket auth login. To act as a person lo
 ```
 
 Errors are typed with `thiserror` (`CliError` in `error.rs`). Internal module errors (`ClientError`, `OAuthConfigError`) are mapped to `CliError` at the top-level `run()` function and never surface directly to the user.
+
+### Exit codes
+
+- `0` — success.
+- `3` — the selected identity needs a new login: nothing stored for it, or its credentials file holds the other identity's login (`not logged in ...` / `user <id> is not logged in ...`), or the person's refresh token was refused (`the login of user <id> is no longer valid ...`). Run the login command the message names. A caller (e.g. an agent acting for many people) can rely on this code instead of the message text.
+- `2` — invalid arguments (reported by clap).
+- `1` — every other failure, including a renewal that failed for a transient reason (network, 429, 5xx: retry), a refused renewal of the OAuth app (its grant is the consumer Key/Secret in app.json, so a new login would not help), an app refused by the token endpoint (`invalid_client`: fix app.json, a new login through the same app would fail too), a credentials file that exists but can't be read or is corrupted, and `doctor` with a failing check.

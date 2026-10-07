@@ -116,6 +116,7 @@ one identity's login. `--remote`/`--code` without `--user` fail in
 can't see a global `--user` placed before the subcommand. `init` / `init --user <id>`
 write only their own section (`client_credentials` for the app, the browser consent
 for that person).
+Exit code (issue #194): `CliError::exit_code()` returns 3 for `NotAuthenticatedService`, `NotAuthenticatedUser` and `UserLoginExpired` (a person's refresh token refused, `LoginError::TokenRejected`), 1 for everything else; `context::login_error_to_cli` keeps a refused service renewal, a transient `TokenExchange` and an unreadable (not missing) credentials file (`IoError`) out of code 3 — see root `CLAUDE.md`.
 
 - **OAuth consumer**: created in the Bitbucket workspace (Settings → OAuth consumers →
   Add consumer). Callback URL `http://localhost:8080/callback` is needed only for

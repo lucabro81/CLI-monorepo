@@ -80,6 +80,12 @@ pub enum CliError {
     )]
     TokenRefreshFailedUser { reason: String, id: String },
 
+    #[error(
+        "the login of user {id} is no longer valid ({reason}): the refresh token expired (unused for 3 months) \
+        or was revoked. Run: bitbucket auth login --user {id} (the person must approve the login in a browser)"
+    )]
+    UserLoginExpired { reason: String, id: String },
+
     #[error("OAuth login failed: {reason}")]
     LoginFailed { reason: String },
 
@@ -143,4 +149,17 @@ pub enum CliError {
         Pass --confirm to execute: bitbucket repo delete {repository} --confirm"
     )]
     RepoDeleteNotConfirmed { repository: String },
+}
+
+impl CliError {
+    /// The process exit code: `oauth_user_login::NOT_LOGGED_IN_EXIT_CODE` (3)
+    /// when the selected identity needs a new login (issue #194), 1 otherwise.
+    pub fn exit_code(&self) -> u8 {
+        match self {
+            CliError::NotAuthenticatedService | CliError::NotAuthenticatedUser { .. } | CliError::UserLoginExpired { .. } => {
+                oauth_user_login::NOT_LOGGED_IN_EXIT_CODE
+            }
+            _ => 1,
+        }
+    }
 }
