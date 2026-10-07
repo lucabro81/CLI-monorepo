@@ -15,6 +15,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - *(confluence)* invalid_client exits 1
 - exit code docs fixes from review (#194)
 - Merge pull request #197 from lucabro81/issue194 ([#197](https://github.com/lucabro81/CLI-monorepo/pull/197))
+- Release
+- Merge pull request #199 from lucabro81/release/confluence ([#199](https://github.com/lucabro81/CLI-monorepo/pull/199))
+## [2.2.0](https://github.com/lucabro81/CLI-monorepo/compare/confluence-v2.1.0...confluence-v2.2.0) - 2026-10-07
+
+### Added
+- *(confluence)* exit code 3 when the selected identity needs a new login
+
+### Other
+- *(confluence)* document exit code 3 for a missing or expired login
+- exit code 3 for a missing or expired login (#194)
+- *(confluence)* invalid_client exits 1
+- exit code docs fixes from review (#194)
+- Merge pull request #197 from lucabro81/issue194 ([#197](https://github.com/lucabro81/CLI-monorepo/pull/197))
 ## [2.1.0](https://github.com/lucabro81/CLI-monorepo/compare/confluence-v2.0.0...confluence-v2.1.0) - 2026-10-07
 
 ### Added
