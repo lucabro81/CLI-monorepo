@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 use tempfile::TempDir;
 
-use super::{resolve_credentials, write_app_config};
+use super::{read_hidden_with, resolve_credentials, write_app_config};
 
 fn temp_config_dir() -> (TempDir, PathBuf) {
     let dir = TempDir::new().expect("tempdir");
@@ -146,5 +146,46 @@ fn a_failed_prompt_is_reported() {
     .unwrap_err();
 
     assert_eq!(err.to_string(), "I/O error: could not read Organization API key: no tty");
+}
+
+#[test]
+fn an_empty_answer_writes_nothing() {
+    // Regression guard (#196 review): Enter on an empty prompt would have
+    // overwritten a valid app.json with an empty key.
+    let err = resolve_credentials(None, Some("org-1".into()), true, no_prompt, |_| Ok(String::new())).unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        "Organization API key is empty: nothing was written. Run atlassian-admin init again and type it, \
+        or pass it with --api-key"
+    );
+
+    let err = resolve_credentials(Some("key-1".into()), None, true, |_| Ok(String::new()), no_prompt).unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        "Organization ID is empty: nothing was written. Run atlassian-admin init again and type it, \
+        or pass it with --org-id"
+    );
+}
+
+#[test]
+fn the_hidden_reader_shows_the_label_and_trims() {
+    let value = read_hidden_with("Organization API key", |prompt| {
+        assert_eq!(prompt, "Organization API key: ");
+        Ok("  key-1 \n".to_string())
+    })
+    .unwrap();
+
+    assert_eq!(value, "key-1");
+}
+
+#[test]
+fn a_failed_hidden_read_says_how_to_retry() {
+    let err = read_hidden_with("Organization API key", |_| Err(std::io::Error::other("no tty"))).unwrap_err();
+
+    assert_eq!(
+        err.to_string(),
+        "I/O error: could not read Organization API key: no tty. Run atlassian-admin init from a terminal, \
+        or pass --api-key and --org-id"
+    );
 }
 

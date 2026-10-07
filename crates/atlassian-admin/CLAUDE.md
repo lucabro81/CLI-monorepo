@@ -13,7 +13,9 @@ src/
   commands/
     mod.rs        — pub mod declarations for all command handlers
     doctor.rs     — run_doctor(); also called by init as final verification
-    init.rs       — run_init(), write_app_config(); human onboarding flow
+    init.rs       — run_init(), write_app_config(), resolve_credentials(),
+                    prompt(), prompt_hidden() / read_hidden_with() (hidden on a
+                    terminal, #196); human onboarding flow
     user.rs       — run(UserCommand); dispatches user subcommands [get]
   auth.rs         — AdminConfig (api_key, org_id), load()/path helpers. No
                     token exchange, no expiry, no refresh — the API key from
@@ -30,7 +32,8 @@ src/
   context.rs      — config_dir(), authenticated_client(), print_json(value, select)
   endpoints.rs    — URL/path constants for the Atlassian Organization Admin API.
   error.rs        — CliError (top-level, thiserror-derived), including a
-                    transparent Select variant wrapping cli_fields::RenderError.
+                    transparent Select variant wrapping cli_fields::RenderError,
+                    IoError and EmptyInput for init's prompts.
   tests/          — all *_tests.rs files, mirroring the src/ layout (see root
                     CLAUDE.md's "Test file convention").
   main.rs         — pure dispatch: resolve --select/--select-all into a
@@ -78,7 +81,7 @@ Config layout, mirroring other crates (`$XDG_CONFIG_HOME/atlassian-admin-cli/`, 
 The Organization API key is a long-lived, org-wide-privileged secret (far more powerful than a single-product OAuth consumer): it must never be echoed into scrollback buffers, terminal session recordings, or tmux/screen logs, and a flag puts it in argv and shell history.
 
 - `init --api-key <KEY> --org-id <ID>` — both provided → writes `app.json` directly, then runs `doctor`, same as other crates.
-- `init` on a terminal (`std::io::IsTerminal` on stdin) — prompts for whatever the flags didn't give: the org id as a plain line, the API key through `rpassword` (echo off on the terminal); then the same write + `doctor`. Meant for a container set up by hand (`docker compose run -it … atlassian-admin init`). It writes even if `app.json` exists: typing the values is the confirmation.
+- `init` on a terminal (`std::io::IsTerminal` on stdin) — prompts for whatever the flags didn't give: the org id as a plain line, the API key through `rpassword` (echo off on the terminal); then the same write + `doctor`. Meant for a container set up by hand (`docker compose run -it … atlassian-admin init`). It writes even if `app.json` exists: typing the values is the confirmation. An empty answer (Enter alone) writes nothing and fails with `CliError::EmptyInput`, naming the flag to pass instead.
 - `init` without a terminal (either flag omitted) — no prompt: writes `app.json` as a skeleton (empty `api_key`/`org_id` string fields) if it doesn't already exist, and prints the exact path to paste the real values into by hand. No `doctor` auto-run (there's nothing live to verify yet). Re-running `init --api-key ... --org-id ...` afterward performs the normal write-and-verify path.
 
 ## Implemented commands

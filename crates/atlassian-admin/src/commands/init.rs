@@ -68,16 +68,24 @@ pub(crate) fn resolve_credentials(
         (api_key, org_id) if is_terminal => {
             let org_id = match org_id {
                 Some(org_id) => org_id,
-                None => visible("Organization ID")?,
+                None => non_empty(visible("Organization ID")?, "Organization ID", "--org-id")?,
             };
             let api_key = match api_key {
                 Some(api_key) => api_key,
-                None => hidden("Organization API key")?,
+                None => non_empty(hidden("Organization API key")?, "Organization API key", "--api-key")?,
             };
             Ok(Some((api_key, org_id)))
         }
         _ => Ok(None),
     }
+}
+
+/// An empty answer (Enter alone) must not overwrite app.json with an empty field.
+fn non_empty(value: String, field: &'static str, flag: &'static str) -> Result<String, CliError> {
+    if value.is_empty() {
+        return Err(CliError::EmptyInput { field, flag });
+    }
+    Ok(value)
 }
 
 /// Reads one visible line from stdin after printing `label`.
@@ -95,8 +103,19 @@ fn prompt(label: &str) -> Result<String, CliError> {
 
 /// Reads a secret from the terminal with echo off.
 fn prompt_hidden(label: &str) -> Result<String, CliError> {
-    let value = rpassword::prompt_password(format!("{label}: "))
-        .map_err(|e| CliError::IoError { reason: format!("could not read {label}: {e}") })?;
+    read_hidden_with(label, rpassword::prompt_password)
+}
+
+/// [`prompt_hidden`] with the reader injected, for tests.
+pub(crate) fn read_hidden_with(
+    label: &str,
+    hidden: impl FnOnce(String) -> io::Result<String>,
+) -> Result<String, CliError> {
+    let value = hidden(format!("{label}: ")).map_err(|e| CliError::IoError {
+        reason: format!(
+            "could not read {label}: {e}. Run atlassian-admin init from a terminal, or pass --api-key and --org-id"
+        ),
+    })?;
     Ok(value.trim().to_string())
 }
 

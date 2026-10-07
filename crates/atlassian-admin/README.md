@@ -53,7 +53,7 @@ This file is static — the CLI never modifies it. There is no separate credenti
 cargo run -p atlassian-admin -- init --api-key <KEY> --org-id <ORG_ID>
 ```
 
-Passing the key as a flag puts it in argv and shell history. Instead, run `init` without flags on a terminal (e.g. `docker compose run -it … atlassian-admin init`): it asks for the org ID in clear and for the API key **hidden** (no echo, so it never lands in scrollback or session logs), then writes `app.json` and runs `doctor` like the flag form. A flag you do pass is not asked again.
+Passing the key as a flag puts it in argv and shell history. Instead, run `init` without flags on a terminal (e.g. `docker compose run -it … atlassian-admin init`): it asks for the org ID in clear and for the API key **hidden** (no echo, so it never lands in scrollback or session logs), then writes `app.json` and runs `doctor` like the flag form. A flag you do pass is not asked again; an empty answer writes nothing.
 
 ```sh
 cargo run -p atlassian-admin -- init
