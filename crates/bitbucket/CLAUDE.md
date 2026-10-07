@@ -15,7 +15,8 @@ src/
     auth.rs       — run_login(), run_whoami(), run_logout() [implemented]
     doctor.rs     — run_doctor(); also called by init as final verification [implemented]
     init.rs       — run_init(), run_init_user_app(), write_app_config(AppSection),
-                    user_app_check(), check_user_app_flag(); human onboarding flow [implemented]
+                    user_app_check(), check_user_app_flag(), prompt_secret()
+                    (hidden on a terminal, #196); human onboarding flow [implemented]
     repo.rs       — run(RepoCommand); dispatches all repo subcommands   [get, list, create, delete implemented]
     pr.rs         — run(PrCommand); dispatches all pr subcommands       [get, list, create, update, comment,
                     list-comments, update-comment, approve, unapprove, decline, merge, diff implemented]

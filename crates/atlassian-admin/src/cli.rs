@@ -35,16 +35,18 @@ pub struct Cli {
 pub enum Command {
     /// Write app.json with your Organization API key and org id
     ///
-    /// Unlike other crates' init, this does not fall back to an interactive
-    /// stdin prompt if you omit the flags — an Organization API key is too
-    /// sensitive to risk landing in terminal scrollback or session logs.
     /// Passing both flags writes app.json directly and runs doctor as
-    /// verification; passing neither (or only one) creates an empty skeleton
-    /// file and prints its path for you to fill in by hand.
+    /// verification. On a terminal, a missing flag is asked instead: the org id
+    /// in clear, the API key hidden (no echo, so it never lands in scrollback or
+    /// session logs), then the same write and doctor. Without a terminal, passing
+    /// neither (or only one) creates an empty skeleton file and prints its path
+    /// for you to fill in by hand.
     #[command(after_help = "Examples:\n  atlassian-admin init\n  atlassian-admin init --api-key <KEY> --org-id <ORG_ID>")]
     Init {
         /// Organization API key from admin.atlassian.com (skips the skeleton-file
-        /// path and writes app.json directly if provided together with --org-id)
+        /// path and writes app.json directly if provided together with --org-id).
+        /// On a terminal prefer leaving it out: the hidden prompt keeps it out of
+        /// shell history
         #[arg(long)]
         api_key: Option<String>,
         /// Organization ID shown alongside the API key when it was created

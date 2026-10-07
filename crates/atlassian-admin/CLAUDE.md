@@ -13,7 +13,9 @@ src/
   commands/
     mod.rs        — pub mod declarations for all command handlers
     doctor.rs     — run_doctor(); also called by init as final verification
-    init.rs       — run_init(), write_app_config(); human onboarding flow
+    init.rs       — run_init(), write_app_config(), resolve_credentials(),
+                    prompt(), prompt_hidden() / read_hidden_with() (hidden on a
+                    terminal, #196); human onboarding flow
     user.rs       — run(UserCommand); dispatches user subcommands [get]
   auth.rs         — AdminConfig (api_key, org_id), load()/path helpers. No
                     token exchange, no expiry, no refresh — the API key from
@@ -30,7 +32,8 @@ src/
   context.rs      — config_dir(), authenticated_client(), print_json(value, select)
   endpoints.rs    — URL/path constants for the Atlassian Organization Admin API.
   error.rs        — CliError (top-level, thiserror-derived), including a
-                    transparent Select variant wrapping cli_fields::RenderError.
+                    transparent Select variant wrapping cli_fields::RenderError,
+                    IoError and EmptyInput for init's prompts.
   tests/          — all *_tests.rs files, mirroring the src/ layout (see root
                     CLAUDE.md's "Test file convention").
   main.rs         — pure dispatch: resolve --select/--select-all into a
@@ -47,8 +50,9 @@ modules with no dedicated `tests/commands/` file — `doctor.rs` has no
 network-free pure logic to isolate (unlike bitbucket's `check_permissions`),
 and `user.rs` has no body-building/identifier-splitting logic at all; both
 are covered entirely by `cli_tests.rs` plus manual live verification.
-`init.rs` keeps `write_app_config` unit-tested (filesystem-only, no network)
-but `run_init`'s branching (direct write vs skeleton) is verified manually —
+`init.rs` keeps `write_app_config` and `resolve_credentials` (flags vs terminal
+prompts vs skeleton, with the terminal check and both prompts injected)
+unit-tested, but `run_init` itself is verified manually —
 `config_dir()` reads `$XDG_CONFIG_HOME` directly and isn't parameterized for
 injection, matching every other crate's `init` test coverage.
 
@@ -72,18 +76,19 @@ Config layout, mirroring other crates (`$XDG_CONFIG_HOME/atlassian-admin-cli/`, 
 - `app.json` — `{"api_key": "...", "org_id": "..."}`. Static, hand-written or written by `init`. The CLI never modifies it at runtime.
 - No `credentials.json` — there is no dynamic token to persist; `app.json` alone is sufficient to authenticate every call.
 
-### `init`'s non-interactive design (deliberate deviation from jira/bitbucket/google-chat's `init`)
+### `init` and the API key (issue #196)
 
-Every other crate's `init` falls back to an interactive stdin prompt for any credential not passed via flags. This crate's `init` does **not** prompt for `--api-key` on stdin, by design: it is a long-lived, org-wide-privileged secret (far more powerful than a single-product OAuth consumer), and typing it into an interactive terminal risks it landing in scrollback buffers, terminal session recordings, or tmux/screen logs in a way a quick paste into a file editor does not.
+The Organization API key is a long-lived, org-wide-privileged secret (far more powerful than a single-product OAuth consumer): it must never be echoed into scrollback buffers, terminal session recordings, or tmux/screen logs, and a flag puts it in argv and shell history.
 
-- `init --api-key <KEY> --org-id <ID>` — both provided → writes `app.json` directly, same as other crates.
-- `init` (either flag omitted) — writes `app.json` as a skeleton (empty `api_key`/`org_id` string fields) if it doesn't already exist, and prints the exact path to paste the real values into by hand. No stdin prompt, no `doctor` auto-run afterward (unlike other crates' `init`, which chains straight into a live verification — there's nothing live to verify yet if the file is still a skeleton). Re-running `init --api-key ... --org-id ...` afterward once the file is filled in performs the normal write-and-verify path.
+- `init --api-key <KEY> --org-id <ID>` — both provided → writes `app.json` directly, then runs `doctor`, same as other crates.
+- `init` on a terminal (`std::io::IsTerminal` on stdin) — prompts for whatever the flags didn't give: the org id as a plain line, the API key through `rpassword` (echo off on the terminal); then the same write + `doctor`. Meant for a container set up by hand (`docker compose run -it … atlassian-admin init`). It writes even if `app.json` exists: typing the values is the confirmation. An empty answer (Enter alone) writes nothing and fails with `CliError::EmptyInput`, naming the flag to pass instead.
+- `init` without a terminal (either flag omitted) — no prompt: writes `app.json` as a skeleton (empty `api_key`/`org_id` string fields) if it doesn't already exist, and prints the exact path to paste the real values into by hand. No `doctor` auto-run (there's nothing live to verify yet). Re-running `init --api-key ... --org-id ...` afterward performs the normal write-and-verify path.
 
 ## Implemented commands
 
 | Command | Notes |
 |---------|-------|
-| `init [--api-key --org-id]` | Non-interactive onboarding; see "init's non-interactive design" above. Re-running bare `init` never overwrites an existing `app.json` — prints "already exists, left untouched" instead |
+| `init [--api-key --org-id]` | Onboarding: flags, hidden prompts on a terminal, or a skeleton file without one; see "`init` and the API key" above. Re-running bare `init` off a terminal never overwrites an existing `app.json` — prints "already exists, left untouched" instead |
 | `doctor` | JSON health check: `app_config` (file exists, well-formed), `api` (live `GET /v1/orgs/{org_id}` succeeds) |
 | `user get --account-id <id>` | `GET https://api.atlassian.com/users/{account_id}/manage/profile` (no `/admin` prefix, no `org_id` in the path, `/profile` suffix required — see "Corrections found via live testing" below) — resolves an Atlassian `account_id` (shared across Jira/Confluence/Bitbucket since the 2019 identity unification) to email + profile, for managed accounts only. Response is wrapped: fields live under `.account.*` (e.g. `--select account.email,account.name`, not `--select email,name`) |
 | `user list [--cursor <cursor>]` | `GET https://api.atlassian.com/admin/v1/orgs/{org_id}/users` (paginated via opaque `cursor` from the response's `links.next`) — every managed user in the organization in one call, each entry already including `account_id`/`name`/`email` directly (no per-user `user get` follow-up needed). Confirmed live 2026-07-22 against a real 37-person organization (single page, no `links.next` present — multi-page behavior not yet observed). Documented (not independently confirmed live) to need the `read:accounts:admin` scope specifically, distinct from `user get`'s `manage:org`/unscoped requirement — moot in practice since the configured key is already unscoped |

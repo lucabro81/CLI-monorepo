@@ -185,3 +185,52 @@ fn user_app_takes_no_user_flag() {
         or jira init --user alice --client-id <ID> --client-secret <SECRET> to do both at once"
     );
 }
+
+// ── hidden secret input (issue #196) ─────────────────────────────────────
+
+#[test]
+fn on_a_terminal_the_secret_is_read_hidden() {
+    // A typed secret must not echo into scrollback.
+    let secret = super::read_secret_with(
+        "Enter Client Secret",
+        true,
+        |prompt| {
+            assert_eq!(prompt, "Enter Client Secret: ");
+            Ok("  s3cr3t \n".to_string())
+        },
+        |_| panic!("the visible line reader must not be used on a terminal"),
+    )
+    .unwrap();
+
+    assert_eq!(secret, "s3cr3t");
+}
+
+#[test]
+fn without_a_terminal_the_secret_is_a_plain_line() {
+    // Piped input (scripts) keeps working as before.
+    let secret = super::read_secret_with(
+        "Enter Client Secret",
+        false,
+        |_| panic!("no terminal: nothing to hide the input on"),
+        |label| {
+            assert_eq!(label, "Enter Client Secret");
+            Ok("s3cr3t".to_string())
+        },
+    )
+    .unwrap();
+
+    assert_eq!(secret, "s3cr3t");
+}
+
+#[test]
+fn a_failed_hidden_read_is_an_io_error() {
+    let err = super::read_secret_with(
+        "Enter Client Secret",
+        true,
+        |_| Err(std::io::Error::other("no tty")),
+        |_| panic!("not used"),
+    )
+    .unwrap_err();
+
+    assert_eq!(err.to_string(), "I/O error: could not read Enter Client Secret: no tty");
+}

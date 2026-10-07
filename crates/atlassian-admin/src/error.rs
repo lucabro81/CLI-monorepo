@@ -49,4 +49,12 @@ pub enum CliError {
 
     #[error("doctor check failed. See the report above for details.")]
     DoctorCheckFailed,
+
+    #[error("I/O error: {reason}")]
+    IoError { reason: String },
+
+    #[error(
+        "{field} is empty: nothing was written. Run atlassian-admin init again and type it, or pass it with {flag}"
+    )]
+    EmptyInput { field: &'static str, flag: &'static str },
 }

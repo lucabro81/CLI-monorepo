@@ -71,7 +71,7 @@ pub enum Command {
         /// OAuth client ID of the identity being set up (skips interactive prompt if provided)
         #[arg(long)]
         client_id: Option<String>,
-        /// OAuth client secret of the identity being set up (skips interactive prompt if provided)
+        /// OAuth client secret of the identity being set up (skips the interactive prompt, which reads it hidden on a terminal, if provided)
         #[arg(long)]
         client_secret: Option<String>,
         /// Set up only the 3LO app every person logs in with (app.json's "user"

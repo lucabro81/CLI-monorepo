@@ -19,6 +19,7 @@ serde_json = "1"
 serde_urlencoded = "0.7"
 dirs = "5"
 thiserror = "1"
+rpassword = "7"
 
 [dev-dependencies]
 tempfile = "3"

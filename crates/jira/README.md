@@ -159,7 +159,7 @@ Every command accepts the global `--user <USER_ID>` flag: without it the command
 
 ### `jira init`
 
-Onboarding for one identity. Prints setup instructions, prompts for Client ID and Client Secret (or accepts `--client-id`/`--client-secret` flags for non-interactive use), writes that identity's section of `app.json` (leaving the other section alone), logs in, and prints a `jira doctor` JSON report for that identity as final confirmation.
+Onboarding for one identity. Prints setup instructions, prompts for Client ID and Client Secret — the secret hidden (no echo) on a terminal, a plain line when stdin is piped — (or accepts `--client-id`/`--client-secret` flags for non-interactive use), writes that identity's section of `app.json` (leaving the other section alone), logs in, and prints a `jira doctor` JSON report for that identity as final confirmation.
 
 - `jira init` — the Service Account: writes `"service"`, runs the non-interactive `client_credentials` login.
 - `jira init --user <USER_ID>` — the 3LO app every person uses: writes `"user"`, runs the browser consent flow for that person.
