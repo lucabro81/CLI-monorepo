@@ -71,6 +71,10 @@ app `client_id` shared by every person), so its shape is unchanged.
 (`CliError::RemoteLoginNeedsUser`), since clap can't see a global `--user` placed
 before the subcommand. `init --user <id>` logs that person in through the browser; a
 changed instance URL removes every stored login (`discard_instance_credentials`).
+`init --user-app` (issue #195) shares `init`'s `write_config` but logs nobody in and
+prints `user_app_report` (doctor's `check_app_config`, failing without a Native app
+`client_id`) as `{"app_config": ...}`; `check_user_app_flag` refuses `--user <id>`
+(`CliError::UserAppWithUser`).
 Exit code (issue #194): `CliError::exit_code()` returns 3 for
 `NotAuthenticatedService`, `NotAuthenticatedUser` (missing, mismatched or corrupted
 credentials file) and `UserLoginExpired` (a person's refresh token refused,
