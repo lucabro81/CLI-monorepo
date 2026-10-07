@@ -49,4 +49,7 @@ pub enum CliError {
 
     #[error("doctor check failed. See the report above for details.")]
     DoctorCheckFailed,
+
+    #[error("I/O error: {reason}")]
+    IoError { reason: String },
 }

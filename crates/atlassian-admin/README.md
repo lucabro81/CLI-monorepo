@@ -53,13 +53,13 @@ This file is static — the CLI never modifies it. There is no separate credenti
 cargo run -p atlassian-admin -- init --api-key <KEY> --org-id <ORG_ID>
 ```
 
-Unlike other crates in this workspace, `init` does **not** fall back to an interactive stdin prompt if you omit the flags — pasting an org-wide secret into a terminal prompt risks it landing in scrollback or session logs. Instead:
+Passing the key as a flag puts it in argv and shell history. Instead, run `init` without flags on a terminal (e.g. `docker compose run -it … atlassian-admin init`): it asks for the org ID in clear and for the API key **hidden** (no echo, so it never lands in scrollback or session logs), then writes `app.json` and runs `doctor` like the flag form. A flag you do pass is not asked again.
 
 ```sh
 cargo run -p atlassian-admin -- init
 ```
 
-creates `app.json` as an empty skeleton (if it doesn't already exist) and prints the exact path — open it in an editor and paste your key/org ID in by hand, then re-run `doctor` to verify.
+Without a terminal (stdin piped or closed), `init` without both flags asks nothing: it creates `app.json` as an empty skeleton (if it doesn't already exist) and prints the exact path — open it in an editor and paste your key/org ID in by hand, then re-run `doctor` to verify.
 
 ## How auth works
 
@@ -73,7 +73,7 @@ The user management API only resolves accounts that are **managed** under your o
 
 ### `atlassian-admin init`
 
-Interactive-free onboarding. See [Setup](#setup) above.
+Onboarding: both flags, hidden prompts on a terminal, or a skeleton file without one. See [Setup](#setup) above.
 
 ```sh
 cargo run -p atlassian-admin -- init
