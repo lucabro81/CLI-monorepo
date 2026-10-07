@@ -139,3 +139,22 @@ fn remove_identity_reports_false_when_there_is_nothing_to_remove() {
     assert!(!remove_identity(dir.path(), "some-cli", &Identity::User(id("alice"))).unwrap());
     assert!(!remove_identity(dir.path(), "some-cli", &Identity::Service).unwrap());
 }
+
+#[test]
+fn not_logged_in_exit_code_is_distinct_from_generic_and_usage_errors() {
+    // 1 is every other failure, 2 is clap's usage error.
+    assert_eq!(super::NOT_LOGGED_IN_EXIT_CODE, 3);
+}
+
+#[test]
+fn token_request_rejected_only_for_a_refused_grant() {
+    // 400/401/403: the token endpoint refused the grant (RFC 6749 errors;
+    // Atlassian answers 403 invalid_grant), so only a new login helps.
+    for status in [400, 401, 403] {
+        assert!(super::token_request_rejected(status), "{status}");
+    }
+    // Transient or not about the grant: retrying may work, a login would not help.
+    for status in [404, 408, 429, 500, 502, 503] {
+        assert!(!super::token_request_rejected(status), "{status}");
+    }
+}

@@ -134,6 +134,20 @@ pub fn remove_identity(config_dir: &Path, cli_dir: &str, identity: &Identity) ->
     }
 }
 
+/// Process exit code of every CLI when the selected identity needs a new
+/// login (issue #194): no stored login, or a person's refresh token refused.
+/// Every other failure exits 1 (clap usage errors: 2), so a caller can start a
+/// login without parsing the message.
+pub const NOT_LOGGED_IN_EXIT_CODE: u8 = 3;
+
+/// True when a token endpoint's HTTP `status` means the grant itself was
+/// refused (400, 401, 403 — RFC 6749 errors such as `invalid_grant`), so only
+/// a new login helps; false for transient failures (408, 429, 5xx) or anything
+/// else, where retrying may work.
+pub fn token_request_rejected(status: u16) -> bool {
+    matches!(status, 400 | 401 | 403)
+}
+
 #[cfg(test)]
 #[path = "tests/identity_tests.rs"]
 mod tests;
