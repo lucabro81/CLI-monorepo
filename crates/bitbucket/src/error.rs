@@ -46,9 +46,17 @@ pub enum CliError {
     #[error(
         "app.json at {path} has no \"user\" section (the OAuth consumer used with --user to act as a person, \
         every person through it; it may be the same consumer). \
-        Run: bitbucket init --user {id} --client-id <KEY> --client-secret <SECRET>"
+        Run: bitbucket init --user {id} --client-id <KEY> --client-secret <SECRET>, \
+        or bitbucket init --user-app --client-id <KEY> --client-secret <SECRET> to set it up without logging anyone in"
     )]
     UserAppMissing { path: String, id: String },
+
+    #[error(
+        "init --user-app sets up the OAuth consumer every person logs in through and logs nobody in, so it takes no --user. \
+        Run: bitbucket init --user-app --client-id <KEY> --client-secret <SECRET>, then bitbucket auth login --user {id}; \
+        or bitbucket init --user {id} --client-id <KEY> --client-secret <SECRET> to do both at once"
+    )]
+    UserAppWithUser { id: String },
 
     #[error(
         "no home directory found — cannot resolve config path. \

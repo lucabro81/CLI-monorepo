@@ -58,8 +58,9 @@ pub enum Command {
     /// may be used for both. The other section of app.json is left untouched. Then
     /// prints a doctor JSON report for that identity. Pass --client-id and
     /// --client-secret to skip interactive prompts. To log in more people once the
-    /// "user" section is set up, use `bitbucket auth login --user <USER_ID>`.
-    #[command(after_help = "Examples:\n  bitbucket init --client-id <KEY> --client-secret <SECRET>          # the OAuth app\n  bitbucket init --user jane.doe --client-id <KEY> --client-secret <SECRET>   # jane.doe, browser consent\n  bitbucket init                                                     # interactive prompts")]
+    /// "user" section is set up, use `bitbucket auth login --user <USER_ID>`. With --user-app: writes only the "user"
+    /// section, logs nobody in, and prints its `app_config` check.
+    #[command(after_help = "Examples:\n  bitbucket init --client-id <KEY> --client-secret <SECRET>          # the OAuth app\n  bitbucket init --user jane.doe --client-id <KEY> --client-secret <SECRET>   # jane.doe, browser consent\n  bitbucket init --user-app --client-id <KEY> --client-secret <SECRET>   # consumer for people only, nobody logged in\n  bitbucket init                                                     # interactive prompts")]
     Init {
         /// Bitbucket OAuth consumer Key of the identity being set up (skips interactive prompt if provided)
         #[arg(long)]
@@ -67,6 +68,11 @@ pub enum Command {
         /// Bitbucket OAuth consumer Secret of the identity being set up (skips interactive prompt if provided)
         #[arg(long)]
         client_secret: Option<String>,
+        /// Set up only the OAuth consumer every person logs in through (app.json's "user"
+        /// section) and log nobody in, e.g. on a server nobody sits at: people then
+        /// log in with `bitbucket auth login --user <USER_ID> --remote`. Takes no --user.
+        #[arg(long)]
+        user_app: bool,
     },
     /// Check that the CLI is correctly configured and can reach the Bitbucket API
     ///
