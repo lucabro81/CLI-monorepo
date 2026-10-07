@@ -27,7 +27,8 @@ use crate::context::config_dir;
 use crate::error::CliError;
 
 /// Writes `app.json` with the given API key/org id to
-/// `<config_dir>/atlassian-admin-cli/app.json` (atomically, mode 0600). Creates parent directories if
+/// `<config_dir>/atlassian-admin-cli/app.json` (atomically, mode 0600).
+/// Creates parent directories if
 /// they do not exist. Overwrites any existing file — callers that must not
 /// clobber an existing file should check for its existence first.
 pub fn write_app_config(config_dir: &Path, api_key: &str, org_id: &str) -> Result<(), CliError> {

@@ -249,7 +249,6 @@ fn an_empty_answer_writes_nothing() {
 
     assert_eq!(
         err.to_string(),
-        "Client Secret is empty: nothing was written. Run jira init again and type it, or pass it with --client-secret"
+        "Client Secret is empty: nothing was written. Run the same jira init command again and type it, or pass it with --client-secret"
     );
 }
-

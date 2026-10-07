@@ -248,7 +248,6 @@ fn an_empty_answer_writes_nothing() {
 
     assert_eq!(
         err.to_string(),
-        "Secret (client_secret) is empty: nothing was written. Run bitbucket init again and type it, or pass it with --client-secret"
+        "Secret (client_secret) is empty: nothing was written. Run the same bitbucket init command again and type it, or pass it with --client-secret"
     );
 }
-

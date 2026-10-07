@@ -189,7 +189,6 @@ fn a_failed_hidden_read_says_how_to_retry() {
     );
 }
 
-
 // ── owner-only app.json (issue #218, aligning with #165) ──────────────────
 
 #[cfg(unix)]
