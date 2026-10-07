@@ -55,6 +55,19 @@ fn run() -> Result<(), CliError> {
             instance_url,
             key_file,
             client_id,
+            user_app: true,
+        } => commands::init::run_init_user_app(
+            &identity,
+            instance_url.as_deref(),
+            key_file.as_deref(),
+            client_id.as_deref(),
+            select,
+        ),
+        Command::Init {
+            instance_url,
+            key_file,
+            client_id,
+            user_app: false,
         } => commands::init::run_init(
             &identity,
             instance_url.as_deref(),

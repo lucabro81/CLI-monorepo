@@ -147,7 +147,7 @@ fn parses_init_with_all_flags() {
     .unwrap();
 
     match cli.command {
-        Command::Init { instance_url, key_file, client_id } => {
+        Command::Init { instance_url, key_file, client_id, user_app: false } => {
             assert_eq!(instance_url.as_deref(), Some("https://acme.zitadel.cloud"));
             assert_eq!(key_file, Some(std::path::PathBuf::from("/tmp/key.json")));
             assert_eq!(client_id.as_deref(), Some("123@cli"));
@@ -162,7 +162,7 @@ fn parses_init_with_no_flags() {
 
     assert!(matches!(
         cli.command,
-        Command::Init { instance_url: None, key_file: None, client_id: None }
+        Command::Init { instance_url: None, key_file: None, client_id: None, user_app: false }
     ));
 }
 
@@ -377,4 +377,17 @@ fn parses_auth_logout() {
     assert_eq!(user(&cli), Some("alice"));
     assert!(matches!(cli.command, Command::Auth { command: AuthCommand::Logout }));
     assert_eq!(parse(&["auth", "logout"]).unwrap().user, None);
+}
+
+#[test]
+fn parses_init_user_app() {
+    // Issue #195: set up the Native app without logging anyone in.
+    let cli = parse(&["init", "--user-app", "--client-id", "123@cli"]).unwrap();
+
+    match cli.command {
+        Command::Init { instance_url: None, key_file: None, client_id, user_app: true } => {
+            assert_eq!(client_id.as_deref(), Some("123@cli"));
+        }
+        other => panic!("expected Init --user-app, got {other:?}"),
+    }
 }

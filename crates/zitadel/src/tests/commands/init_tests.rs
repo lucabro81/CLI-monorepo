@@ -1,8 +1,10 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use super::{
-    build_app_config, discard_instance_credentials, instance_changed, read_key_file, write_app_config,
+    build_app_config, check_user_app_flag, discard_instance_credentials, instance_changed, read_key_file,
+    user_app_report, write_app_config,
 };
+use crate::auth::{Identity, UserId};
 use crate::auth::{AppConfig, ServiceUserKey};
 use crate::error::CliError;
 
@@ -197,4 +199,80 @@ fn invalid_key_file_explains_why_and_names_the_path() {
         }
         other => panic!("expected InvalidKeyFile, got {other:?}"),
     }
+}
+
+// ── init --user-app (issue #195) ──────────────────────────────────────────
+
+fn written(dir: &std::path::Path, client_id: Option<&str>) -> String {
+    let path = dir.join("zitadel-cli").join("app.json");
+    let config = AppConfig {
+        instance_url: "https://acme.zitadel.cloud".to_string(),
+        service_user: None,
+        client_id: client_id.map(str::to_string),
+    };
+    write_app_config(&path, &config).unwrap();
+    path.display().to_string()
+}
+
+#[test]
+fn user_app_report_is_the_app_config_check_once_the_native_app_is_set() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = written(dir.path(), Some("123@cli"));
+
+    let (report, ok) = user_app_report(dir.path());
+
+    assert!(ok);
+    assert_eq!(
+        report,
+        serde_json::json!({"app_config": {
+            "status": "ok",
+            "path": path,
+            "instance_url": "https://acme.zitadel.cloud",
+            "service_user_configured": false,
+            "native_app_configured": true,
+        }})
+    );
+}
+
+#[test]
+fn user_app_report_fails_without_a_native_app_client_id() {
+    // Without the Native app nobody can log in: the setup is not done.
+    let dir = tempfile::tempdir().unwrap();
+    let path = written(dir.path(), None);
+
+    let (report, ok) = user_app_report(dir.path());
+
+    assert!(!ok);
+    assert_eq!(report["app_config"]["status"], "error");
+    assert_eq!(report["app_config"]["path"], path);
+    assert_eq!(
+        report["app_config"]["message"],
+        "no Native app configured: app.json has no \"client_id\". Run: zitadel init --user-app --client-id <client-id>"
+    );
+}
+
+#[test]
+fn user_app_report_fails_without_app_json() {
+    let dir = tempfile::tempdir().unwrap();
+
+    let (report, ok) = user_app_report(dir.path());
+
+    assert!(!ok);
+    assert_eq!(report["app_config"]["status"], "error");
+}
+
+#[test]
+fn user_app_takes_no_user_flag() {
+    // --user-app logs nobody in, so naming a person is a mistake to report,
+    // not to ignore (checked at runtime: clap can't see a global --user placed
+    // before the subcommand).
+    assert!(check_user_app_flag(&Identity::Service).is_ok());
+
+    let err = check_user_app_flag(&Identity::User(UserId::parse("alice").unwrap())).unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        "init --user-app sets up the Native app every person logs in with and logs nobody in, so it takes no --user. \
+        Run: zitadel init --user-app --client-id <client-id>, then zitadel auth login --user alice; \
+        or zitadel init --user alice --client-id <client-id> to do both at once"
+    );
 }

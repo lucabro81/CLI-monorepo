@@ -2,6 +2,11 @@
 //! user (if configured) or, with `--user <id>`, as that person through the browser,
 //! and runs `doctor` for that identity as the final verification.
 //!
+//! `init --user-app` (issue #195) writes `app.json` the same way but logs nobody
+//! in, and prints only the `app_config` check (`user_app_report`): the Native app
+//! can be set up where nobody can open a browser, people log in later with
+//! `auth login --user <id> --remote`.
+//!
 //! Flag-driven only (no interactive prompts — an LLM caller can't answer them).
 //! Re-running merges with the existing `app.json`: omitted flags keep their
 //! current value. Narrative progress goes to stderr; stdout carries only the
@@ -9,7 +14,7 @@
 
 use std::path::Path;
 
-use serde_json::json;
+use serde_json::{Value, json};
 
 use crate::auth::{self, AppConfig, AppConfigError, Identity, ServiceUserKey};
 use crate::commands::doctor;
@@ -24,26 +29,7 @@ pub fn run_init(
     select: cli_fields::Select<'_>,
 ) -> Result<(), CliError> {
     let config_dir = config_dir()?;
-    let app_path = auth::app_config_path(&config_dir);
-
-    let existing = match AppConfig::load(&app_path) {
-        Ok(config) => Some(config),
-        Err(AppConfigError::NotFound(_)) => None,
-        Err(e) => {
-            eprintln!("Ignoring the existing invalid {} ({e}).", app_path.display());
-            None
-        }
-    };
-    let service_user = key_file.map(read_key_file).transpose()?;
-    let previous = existing.clone();
-    let config = build_app_config(existing, instance_url, service_user, client_id)?;
-    write_app_config(&app_path, &config)?;
-    eprintln!("Wrote {}", app_path.display());
-
-    if instance_changed(previous.as_ref(), &config) {
-        discard_instance_credentials(&config_dir)?;
-        eprintln!("Instance URL changed: removed the credentials of the previous instance.");
-    }
+    let config = write_config(&config_dir, instance_url, key_file, client_id)?;
 
     let creds_path = auth::credentials_path(&config_dir, identity);
     let credentials = match identity {
@@ -81,6 +67,90 @@ pub fn run_init(
     if !all_ok {
         return Err(CliError::DoctorCheckFailed);
     }
+    Ok(())
+}
+
+/// Builds `app.json` from the flags merged with the existing file, writes it, and
+/// discards every stored login when the instance URL changed.
+fn write_config(
+    config_dir: &Path,
+    instance_url: Option<&str>,
+    key_file: Option<&Path>,
+    client_id: Option<&str>,
+) -> Result<AppConfig, CliError> {
+    let app_path = auth::app_config_path(config_dir);
+
+    let existing = match AppConfig::load(&app_path) {
+        Ok(config) => Some(config),
+        Err(AppConfigError::NotFound(_)) => None,
+        Err(e) => {
+            eprintln!("Ignoring the existing invalid {} ({e}).", app_path.display());
+            None
+        }
+    };
+    let service_user = key_file.map(read_key_file).transpose()?;
+    let previous = existing.clone();
+    let config = build_app_config(existing, instance_url, service_user, client_id)?;
+    write_app_config(&app_path, &config)?;
+    eprintln!("Wrote {}", app_path.display());
+
+    if instance_changed(previous.as_ref(), &config) {
+        discard_instance_credentials(config_dir)?;
+        eprintln!("Instance URL changed: removed the credentials of the previous instance.");
+    }
+    Ok(config)
+}
+
+/// `doctor`'s `app_config` check, the only one `init --user-app` runs (no identity
+/// to check yet), as `{"app_config": ...}`; not ok without a Native app client id,
+/// which every person's login needs.
+pub(crate) fn user_app_report(config_dir: &Path) -> (Value, bool) {
+    let (mut check, config) = doctor::check_app_config(config_dir);
+    let ok = match config {
+        Some(config) if config.client_id.is_some() => true,
+        Some(_) => {
+            check["status"] = json!("error");
+            check["message"] = json!(
+                "no Native app configured: app.json has no \"client_id\". Run: zitadel init --user-app --client-id <client-id>"
+            );
+            false
+        }
+        None => false,
+    };
+    (json!({"app_config": check}), ok)
+}
+
+/// `init --user-app` names no person: refuses `--user <id>`.
+pub fn check_user_app_flag(identity: &Identity) -> Result<(), CliError> {
+    match identity {
+        Identity::Service => Ok(()),
+        Identity::User(id) => Err(CliError::UserAppWithUser { id: id.to_string() }),
+    }
+}
+
+/// Runs `init --user-app`: writes `app.json` like `init`, logs nobody in, and
+/// prints the `app_config` check.
+pub fn run_init_user_app(
+    identity: &Identity,
+    instance_url: Option<&str>,
+    key_file: Option<&Path>,
+    client_id: Option<&str>,
+    select: cli_fields::Select<'_>,
+) -> Result<(), CliError> {
+    check_user_app_flag(identity)?;
+    let config_dir = config_dir()?;
+    write_config(&config_dir, instance_url, key_file, client_id)?;
+
+    let (report, ok) = user_app_report(&config_dir);
+    print_json(&report, select.or_all())?;
+    if !ok {
+        return Err(CliError::DoctorCheckFailed);
+    }
+    eprintln!(
+        "Nobody is logged in. Log each person in with `zitadel auth login --user <USER_ID>` (browser on this \
+        machine) or `zitadel auth login --user <USER_ID> --remote --redirect-uri <URL>` (the person opens the \
+        link elsewhere)."
+    );
     Ok(())
 }
 
