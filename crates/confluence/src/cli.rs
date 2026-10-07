@@ -64,8 +64,9 @@ pub enum Command {
     /// browser. The other section of app.json is left untouched. Then prints a doctor
     /// JSON report for that identity. Pass --client-id and --client-secret to skip
     /// interactive prompts. To log in more people once the 3LO app is set up, use
-    /// `confluence auth login --user <USER_ID>`.
-    #[command(after_help = "Examples:\n  confluence init --client-id <ID> --client-secret <SECRET>          # Service Account\n  confluence init --user jane.doe --client-id <ID> --client-secret <SECRET>   # 3LO app, jane.doe logs in in the browser\n  confluence init                                                    # interactive prompts")]
+    /// `confluence auth login --user <USER_ID>`. With --user-app: writes only the "user"
+    /// section, logs nobody in, and prints its `app_config` check.
+    #[command(after_help = "Examples:\n  confluence init --client-id <ID> --client-secret <SECRET>          # Service Account\n  confluence init --user jane.doe --client-id <ID> --client-secret <SECRET>   # 3LO app, jane.doe logs in in the browser\n  confluence init --user-app --client-id <ID> --client-secret <SECRET>   # 3LO app for people only, nobody logged in\n  confluence init                                                    # interactive prompts")]
     Init {
         /// OAuth client ID of the identity being set up (skips interactive prompt if provided)
         #[arg(long)]
@@ -73,6 +74,11 @@ pub enum Command {
         /// OAuth client secret of the identity being set up (skips interactive prompt if provided)
         #[arg(long)]
         client_secret: Option<String>,
+        /// Set up only the 3LO app every person logs in with (app.json's "user"
+        /// section) and log nobody in, e.g. on a server nobody sits at: people then
+        /// log in with `confluence auth login --user <USER_ID> --remote`. Takes no --user.
+        #[arg(long)]
+        user_app: bool,
     },
     /// Check that the CLI is correctly configured and can reach the Confluence API
     ///

@@ -115,7 +115,8 @@ fn a_missing_user_section_says_to_run_init_with_user() {
         err,
         "app.json at /cfg/bitbucket-cli/app.json has no \"user\" section (the OAuth consumer used with \
         --user to act as a person, every person through it; it may be the same consumer). \
-        Run: bitbucket init --user alice --client-id <KEY> --client-secret <SECRET>"
+        Run: bitbucket init --user alice --client-id <KEY> --client-secret <SECRET>, \
+        or bitbucket init --user-app --client-id <KEY> --client-secret <SECRET> to set it up without logging anyone in"
     );
 }
 

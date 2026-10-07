@@ -59,7 +59,7 @@ The CLI holds the OAuth app and any number of people side by side, and every com
 
 | File | Written by | Holds |
 |---|---|---|
-| `app.json` | `bitbucket init` / `bitbucket init --user <USER_ID>` | `"service"` section (the consumer used as the app) and `"user"` section (the consumer every person logs in through) — either may be missing; both may hold the same consumer |
+| `app.json` | `bitbucket init` / `bitbucket init --user <USER_ID>` / `bitbucket init --user-app` | `"service"` section (the consumer used as the app) and `"user"` section (the consumer every person logs in through) — either may be missing; both may hold the same consumer |
 | `credentials-service.json` | `bitbucket auth login` | the app's token |
 | `users/<USER_ID>/credentials.json` | `bitbucket auth login --user <USER_ID>` | that person's token and refresh token |
 | `users/<USER_ID>/pending-login.json` | `bitbucket auth login --user <USER_ID> --remote` | that person's remote login waiting for its code |
@@ -69,9 +69,10 @@ An empty `<credentials file>.lock` (mode `0600`) appears next to a credentials f
 ```sh
 cargo run -p bitbucket -- init --client-id <KEY> --client-secret <SECRET>          # the OAuth app, no browser
 cargo run -p bitbucket -- init --user jane.doe --client-id <KEY> --client-secret <SECRET>   # jane.doe, via browser consent
+cargo run -p bitbucket -- init --user-app --client-id <KEY> --client-secret <SECRET>   # the people's consumer only, nobody logged in
 ```
 
-`init` prints the consumer-creation instructions, prompts for the Key/Secret when the flags are omitted, writes that identity's section of `app.json` (leaving the other alone), logs in as that identity, and prints a `doctor` JSON report for it. `app.json` is static — the CLI never modifies it at runtime — and kept separate from the credentials files so automatic token writes never overwrite your app identity. Each login touches only its own credentials file; further people log in with `auth login --user <USER_ID>`, and `auth logout [--user <USER_ID>]` removes one identity's login. An `app.json` in the old flat format (`client_id` at top level, before issue #164) is rejected with the commands to recreate it; leftover credentials files of earlier layouts (`credentials.json`, `credentials-user.json`) are ignored and reported by `doctor`.
+`init` prints the consumer-creation instructions, prompts for the Key/Secret when the flags are omitted, writes that identity's section of `app.json` (leaving the other alone), logs in as that identity, and prints a `doctor` JSON report for it. `app.json` is static — the CLI never modifies it at runtime — and kept separate from the credentials files so automatic token writes never overwrite your app identity. `init --user-app` writes only the `"user"` consumer and logs nobody in (e.g. in a container nobody sits at): it prints only `{"app_config": ...}` for that section, then the commands that log people in (`bitbucket auth login --user <USER_ID>`, or `--remote` for a person elsewhere); it takes no `--user` and exits 1 if the section can't be read back. Each login touches only its own credentials file; further people log in with `auth login --user <USER_ID>`, and `auth logout [--user <USER_ID>]` removes one identity's login. An `app.json` in the old flat format (`client_id` at top level, before issue #164) is rejected with the commands to recreate it; leftover credentials files of earlier layouts (`credentials.json`, `credentials-user.json`) are ignored and reported by `doctor`.
 
 Day-to-day, no identity needs a new login: tokens are renewed automatically. An agent picks the identity on every call:
 
@@ -103,6 +104,7 @@ Onboarding for one identity. See [Setup](#setup) above.
 ```sh
 cargo run -p bitbucket -- init --client-id <KEY> --client-secret <SECRET>
 cargo run -p bitbucket -- init --user jane.doe --client-id <KEY> --client-secret <SECRET>
+cargo run -p bitbucket -- init --user-app --client-id <KEY> --client-secret <SECRET>
 ```
 
 ### `bitbucket doctor`

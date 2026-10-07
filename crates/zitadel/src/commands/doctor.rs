@@ -128,7 +128,7 @@ fn error(path: Option<&Path>, message: &str) -> Value {
     check
 }
 
-fn check_app_config(config_dir: &Path) -> (Value, Option<AppConfig>) {
+pub(crate) fn check_app_config(config_dir: &Path) -> (Value, Option<AppConfig>) {
     let path = auth::app_config_path(config_dir);
     match AppConfig::load(&path) {
         Ok(config) => (

@@ -4,7 +4,7 @@ Architecture and design notes for the `zitadel` crate. Global rules (TDD, error 
 
 ## Status
 
-`init [--user <id>]`, `doctor [--user <id>]`, `auth login [--user <id>]`, `auth whoami [--user <id>]`, `auth logout [--user <id>]`, `user search`, `user get`, `organization list`, `project list` implemented (issue #142). New commands are added one at a time via the `add-cli-command` skill.
+`init [--user <id>]`, `init --user-app`, `doctor [--user <id>]`, `auth login [--user <id>]`, `auth whoami [--user <id>]`, `auth logout [--user <id>]`, `user search`, `user get`, `organization list`, `project list` implemented (issue #142). New commands are added one at a time via the `add-cli-command` skill.
 
 ## Module map (mirrors crates/google-chat)
 
@@ -16,9 +16,11 @@ src/
     doctor.rs        — run_doctor(identity)/run_doctor_in(dir, identity),
                        summarize_memberships(), check_identities(); also
                        called by init as final check                    [implemented]
-    init.rs          — run_init(), build_app_config() (merge flags over existing
+    init.rs          — run_init(), run_init_user_app(), write_config() (shared by
+                       both), build_app_config() (merge flags over existing
                        app.json), write_app_config() (mode 0600),
-                       discard_instance_credentials()                    [implemented]
+                       discard_instance_credentials(), user_app_report(),
+                       check_user_app_flag()                             [implemented]
     user.rs          — run(UserCommand); build_search_body() (pure)    [search, get implemented]
     organization.rs  — run(OrganizationCommand); build_list_body() (pure) [list implemented]
     project.rs       — run(ProjectCommand); build_list_body() (pure)    [list implemented]
@@ -71,6 +73,10 @@ app `client_id` shared by every person), so its shape is unchanged.
 (`CliError::RemoteLoginNeedsUser`), since clap can't see a global `--user` placed
 before the subcommand. `init --user <id>` logs that person in through the browser; a
 changed instance URL removes every stored login (`discard_instance_credentials`).
+`init --user-app` (issue #195) shares `init`'s `write_config` but logs nobody in and
+prints `user_app_report` (doctor's `check_app_config`, failing without a Native app
+`client_id`) as `{"app_config": ...}`; `check_user_app_flag` refuses `--user <id>`
+(`CliError::UserAppWithUser`).
 Exit code (issue #194): `CliError::exit_code()` returns 3 for
 `NotAuthenticatedService`, `NotAuthenticatedUser` (missing, mismatched or corrupted
 credentials file) and `UserLoginExpired` (a person's refresh token refused,
@@ -161,6 +167,7 @@ All of them hold secrets and are written through `oauth_user_login::write_secret
 | `auth login --user <id>` | `GET /oauth/v2/authorize` (browser) + `POST /oauth/v2/token` (authorization_code + PKCE, refresh_token) | n/a |
 | `auth login --user <id> --remote` / `--code --state` | step 1 prints the authorize URL (no request); step 2 `POST /oauth/v2/token` (authorization_code + PKCE) then `GET /auth/v1/users/me` | exempt (`or_all`): step 1's synthesized object, step 2 = whoami |
 | `init [--user <id>]` | writes app.json, logs in the selected identity (`POST /oauth/v2/token`; browser with `--user`), runs doctor for it; flags only, no prompts; narrative on stderr, doctor report on stdout | exempt (`or_all`), like doctor |
+| `init --user-app` | writes app.json like `init`, logs nobody in (not even the service user), prints only `{"app_config": ...}` (error without a Native app `client_id`); refuses `--user` (issue #195) | exempt (`or_all`) |
 | `doctor [--user <id>]` | checks the selected identity (informational `pending_login` and `identities`): `GET /auth/v1/users/me` + `POST /auth/v1/memberships/me/_search` (v1: no v2 equivalent for the caller's own roles) | exempt (`or_all`) |
 | `user search` | `POST /v2/users` (v2 `ListUsers`) | mandatory |
 | `user get <user-id>` | `GET /v2/users/{userId}` (v2 `GetUserByID`) | exempt (`or_all`) |

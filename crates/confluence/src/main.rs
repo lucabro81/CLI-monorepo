@@ -47,8 +47,11 @@ fn run() -> Result<(), CliError> {
     let identity = Identity::from_user_flag(cli.user);
 
     match cli.command {
-        Command::Init { client_id, client_secret } => {
+        Command::Init { client_id, client_secret, user_app: false } => {
             commands::init::run_init(&identity, client_id, client_secret)
+        }
+        Command::Init { client_id, client_secret, user_app: true } => {
+            commands::init::run_init_user_app(&identity, client_id, client_secret)
         }
         Command::Doctor => {
             let (report, all_ok) = commands::doctor::run_doctor(&identity)?;

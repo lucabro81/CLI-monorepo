@@ -7,7 +7,7 @@ use oauth_user_login::UserId;
 use serde_json::json;
 use tempfile::TempDir;
 
-use super::write_app_config;
+use super::{AppSection, check_user_app_flag, user_app_check, write_app_config};
 use crate::error::CliError;
 
 fn alice() -> Identity {
@@ -29,7 +29,7 @@ fn read_app_json(config_dir: &std::path::Path) -> serde_json::Value {
 fn write_app_config_writes_only_the_section_of_the_identity() {
     let (_dir, config_dir) = temp_config_dir();
 
-    write_app_config(&config_dir, &Identity::Service, "svc-id", "svc-secret").expect("should write");
+    write_app_config(&config_dir, AppSection::Service, "svc-id", "svc-secret").expect("should write");
 
     assert_eq!(
         read_app_json(&config_dir),
@@ -42,8 +42,8 @@ fn write_app_config_keeps_the_other_identity_section() {
     // Configuring the 3LO app must not erase the Service Account, and vice versa.
     let (_dir, config_dir) = temp_config_dir();
 
-    write_app_config(&config_dir, &Identity::Service, "svc-id", "svc-secret").expect("first write");
-    write_app_config(&config_dir, &alice(), "usr-id", "usr-secret").expect("second write");
+    write_app_config(&config_dir, AppSection::Service, "svc-id", "svc-secret").expect("first write");
+    write_app_config(&config_dir, AppSection::User, "usr-id", "usr-secret").expect("second write");
 
     assert_eq!(
         read_app_json(&config_dir),
@@ -58,8 +58,8 @@ fn write_app_config_keeps_the_other_identity_section() {
 fn write_app_config_replaces_the_same_section() {
     let (_dir, config_dir) = temp_config_dir();
 
-    write_app_config(&config_dir, &alice(), "old-id", "old-secret").expect("first write");
-    write_app_config(&config_dir, &alice(), "new-id", "new-secret").expect("second write");
+    write_app_config(&config_dir, AppSection::User, "old-id", "old-secret").expect("first write");
+    write_app_config(&config_dir, AppSection::User, "new-id", "new-secret").expect("second write");
 
     assert_eq!(
         read_app_json(&config_dir),
@@ -79,7 +79,7 @@ fn write_app_config_replaces_a_legacy_flat_file() {
     )
     .unwrap();
 
-    write_app_config(&config_dir, &Identity::Service, "svc-id", "svc-secret").expect("should write");
+    write_app_config(&config_dir, AppSection::Service, "svc-id", "svc-secret").expect("should write");
 
     assert_eq!(
         read_app_json(&config_dir),
@@ -94,7 +94,7 @@ fn write_app_config_refuses_to_overwrite_an_unreadable_file() {
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     std::fs::write(&path, "not json").unwrap();
 
-    let result = write_app_config(&config_dir, &Identity::Service, "svc-id", "svc-secret");
+    let result = write_app_config(&config_dir, AppSection::Service, "svc-id", "svc-secret");
 
     assert!(matches!(result, Err(CliError::AppConfigInvalid { .. })), "{result:?}");
     assert_eq!(std::fs::read_to_string(&path).unwrap(), "not json");
@@ -106,7 +106,7 @@ fn write_app_config_creates_parent_directories() {
     let (_dir, config_dir) = temp_config_dir();
     let nested = config_dir.join("does").join("not").join("exist");
 
-    write_app_config(&nested, &alice(), "id", "secret").expect("should create dirs and write");
+    write_app_config(&nested, AppSection::User, "id", "secret").expect("should create dirs and write");
 
     assert!(nested.join("jira-cli").join("app.json").exists());
 }
@@ -119,8 +119,69 @@ fn app_config_is_readable_only_by_the_owner() {
     use std::os::unix::fs::PermissionsExt;
     let (_dir, config_dir) = temp_config_dir();
 
-    write_app_config(&config_dir, &Identity::Service, "svc-id", "svc-secret").unwrap();
+    write_app_config(&config_dir, AppSection::Service, "svc-id", "svc-secret").unwrap();
 
     let mode = std::fs::metadata(config_dir.join("jira-cli/app.json")).unwrap().permissions().mode();
     assert_eq!(mode & 0o777, 0o600);
+}
+
+// ── init --user-app (issue #195) ──────────────────────────────────────────
+
+#[test]
+fn section_follows_the_identity() {
+    assert_eq!(AppSection::from(&Identity::Service), AppSection::Service);
+    assert_eq!(AppSection::from(&alice()), AppSection::User);
+}
+
+#[test]
+fn user_app_check_reports_the_user_section_once_written() {
+    let (_dir, config_dir) = temp_config_dir();
+    write_app_config(&config_dir, AppSection::Service, "svc-id", "svc-secret").unwrap();
+    write_app_config(&config_dir, AppSection::User, "usr-id", "usr-secret").unwrap();
+
+    let path = config_dir.join("jira-cli/app.json").display().to_string();
+    assert_eq!(user_app_check(&config_dir), json!({"status": "ok", "path": path, "section": "user"}));
+    // The Service Account's section is kept.
+    assert_eq!(read_app_json(&config_dir)["service"]["client_id"], "svc-id");
+}
+
+#[test]
+fn user_app_check_fails_without_a_user_section() {
+    let (_dir, config_dir) = temp_config_dir();
+    write_app_config(&config_dir, AppSection::Service, "svc-id", "svc-secret").unwrap();
+
+    let check = user_app_check(&config_dir);
+
+    assert_eq!(check["status"], "error");
+    assert_eq!(check["section"], "user");
+    assert_eq!(
+        check["message"],
+        "app.json has no \"user\" section. Run: jira init --user-app --client-id <ID> --client-secret <SECRET>"
+    );
+}
+
+#[test]
+fn user_app_check_fails_without_app_json() {
+    let (_dir, config_dir) = temp_config_dir();
+
+    let check = user_app_check(&config_dir);
+
+    assert_eq!(check["status"], "error");
+    assert!(check["message"].as_str().unwrap().starts_with("app credentials file not found at "), "{check}");
+}
+
+#[test]
+fn user_app_takes_no_user_flag() {
+    // --user-app logs nobody in, so naming a person is a mistake to report,
+    // not to ignore (checked at runtime: clap can't see a global --user placed
+    // before the subcommand).
+    assert!(check_user_app_flag(&Identity::Service).is_ok());
+
+    let err = check_user_app_flag(&alice()).unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        "init --user-app sets up the 3LO app every person logs in with and logs nobody in, so it takes no --user. \
+        Run: jira init --user-app --client-id <ID> --client-secret <SECRET>, then jira auth login --user alice; \
+        or jira init --user alice --client-id <ID> --client-secret <SECRET> to do both at once"
+    );
 }

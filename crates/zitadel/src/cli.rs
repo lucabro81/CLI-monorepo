@@ -56,8 +56,10 @@ pub enum Command {
     /// person's). Re-running merges
     /// with the existing app.json:
     /// flags you omit keep their current value, so e.g. a Native app client id can
-    /// be added later with --client-id alone. No interactive prompts.
-    #[command(after_help = "Examples:\n  zitadel init --instance-url https://acme.zitadel.cloud --key-file ~/Downloads/123456789.json\n  zitadel init --user jane.doe --client-id 123456789@zitadel-cli   # add the Native app and log jane.doe in")]
+    /// be added later with --client-id alone. No interactive prompts. With
+    /// --user-app: writes app.json the same way but logs nobody in (not even the
+    /// service user) and prints only the `app_config` check.
+    #[command(after_help = "Examples:\n  zitadel init --instance-url https://acme.zitadel.cloud --key-file ~/Downloads/123456789.json\n  zitadel init --user jane.doe --client-id 123456789@zitadel-cli   # add the Native app and log jane.doe in\n  zitadel init --user-app --instance-url https://acme.zitadel.cloud --client-id 123456789@zitadel-cli   # Native app only, nobody logged in")]
     Init {
         /// Instance base URL, e.g. `https://acme.zitadel.cloud` or your self-hosted domain.
         /// Required on the first run.
@@ -71,6 +73,12 @@ pub enum Command {
         /// Client id of a Native application (PKCE), needed only by people (`--user <USER_ID>`), shared by all of them.
         #[arg(long)]
         client_id: Option<String>,
+        /// Set up only what people log in with (instance URL and the Native app's
+        /// --client-id) and log nobody in, e.g. on a server nobody sits at: people then
+        /// log in with `zitadel auth login --user <USER_ID> --remote`. Prints the
+        /// `app_config` check instead of the full doctor report. Takes no --user.
+        #[arg(long)]
+        user_app: bool,
     },
     /// Check configuration, credentials, API reachability and the identity's roles
     ///

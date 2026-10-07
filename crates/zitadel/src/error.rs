@@ -128,6 +128,13 @@ pub enum CliError {
     #[error("I/O error: {reason}")]
     IoError { reason: String },
 
+    #[error(
+        "init --user-app sets up the Native app every person logs in with and logs nobody in, so it takes no --user. \
+        Run: zitadel init --user-app --client-id <client-id>, then zitadel auth login --user {id}; \
+        or zitadel init --user {id} --client-id <client-id> to do both at once"
+    )]
+    UserAppWithUser { id: String },
+
     #[error("nothing to log out: identity \"{label}\" has no stored login on this machine. To log in: {login}")]
     NothingToLogOut { label: String, login: String },
 

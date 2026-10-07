@@ -16,11 +16,18 @@
 //!    or the browser consent with `--user <id>`.
 //! 5. Call `doctor::run_doctor` for that identity and print its JSON report.
 //!
+//! `init --user-app` (issue #195) stops after step 3 for the OAuth consumer: it writes
+//! the "user" section, logs nobody in, and prints `{"app_config": ...}` for that
+//! section (`user_app_check`), so it can be set up where nobody can open a
+//! browser and people log in later with `auth login --user <id> --remote`.
+//!
 //! `write_app_config` is kept as a separate public function so it can be unit-tested
 //! in isolation without going through the interactive flow.
 
 use std::io::{self, BufRead, Write};
 use std::path::Path;
+
+use serde_json::{Value, json};
 
 use crate::auth::{self, AppConfig, Identity, OAuthConfig, OAuthConfigError};
 use crate::commands::doctor;
@@ -43,14 +50,31 @@ Step 5: Save, then copy the consumer's Key (client_id) and Secret (client_secret
 --user <USER_ID>) and logs that person in. The same consumer can serve both.
 ";
 
-/// Writes `identity`'s section of `<config_dir>/bitbucket-cli/app.json`, keeping the
-/// other identity's section. A missing file or one in the legacy single-identity
+/// The section of app.json `init` writes: the default identity's, or the OAuth consumer
+/// every person logs in with.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AppSection {
+    Service,
+    User,
+}
+
+impl From<&Identity> for AppSection {
+    fn from(identity: &Identity) -> Self {
+        match identity {
+            Identity::Service => AppSection::Service,
+            Identity::User(_) => AppSection::User,
+        }
+    }
+}
+
+/// Writes `section` of `<config_dir>/bitbucket-cli/app.json`, keeping the
+/// other section. A missing file or one in the legacy single-identity
 /// format is replaced (the latter with a notice); a file that is not valid JSON is
 /// left alone and reported.
 /// Creates parent directories if they do not exist.
 pub fn write_app_config(
     config_dir: &Path,
-    identity: &Identity,
+    section: AppSection,
     client_id: &str,
     client_secret: &str,
 ) -> Result<(), CliError> {
@@ -65,22 +89,22 @@ pub fn write_app_config(
                 "Replacing the old single-identity {}: its client_id/client_secret are discarded. \
                 Run bitbucket init{} again if the other identity needs them.",
                 path.display(),
-                match identity {
-                    Identity::Service => " --user <USER_ID>",
-                    Identity::User(_) => "",
+                match section {
+                    AppSection::Service => " --user <USER_ID>",
+                    AppSection::User => "",
                 }
             );
             AppConfig { service: None, user: None }
         }
         Err(e) => return Err(app_config_error(e, &path)),
     };
-    let section = Some(OAuthConfig {
+    let config = Some(OAuthConfig {
         client_id: client_id.to_string(),
         client_secret: client_secret.to_string(),
     });
-    match identity {
-        Identity::Service => app.service = section,
-        Identity::User(_) => app.user = section,
+    match section {
+        AppSection::Service => app.service = config,
+        AppSection::User => app.user = config,
     }
 
     // It holds the consumer secrets: written owner-only (#165).
@@ -118,7 +142,7 @@ pub fn run_init(identity: &Identity, client_id: Option<String>, client_secret: O
     };
 
     let cfg_dir = config_dir()?;
-    write_app_config(&cfg_dir, identity, &client_id, &client_secret)?;
+    write_app_config(&cfg_dir, identity.into(), &client_id, &client_secret)?;
     println!("\napp.json written to {}", auth::app_config_path(&cfg_dir).display());
 
     let oauth_config = OAuthConfig { client_id, client_secret };
@@ -158,6 +182,70 @@ pub fn run_init(identity: &Identity, client_id: Option<String>, client_secret: O
         Identity::User(id) => format!("bitbucket auth whoami --user {id}"),
     };
     println!("\nSetup complete. Run `{whoami}` to verify the identity.");
+    Ok(())
+}
+
+/// `doctor`'s `app_config` check for app.json's "user" section, the only thing
+/// `init --user-app` sets up (no identity to check credentials for yet).
+pub fn user_app_check(config_dir: &Path) -> Value {
+    let path = auth::app_config_path(config_dir);
+    let path_str = path.display().to_string();
+    let error = |message: String| json!({"status": "error", "path": path_str, "section": "user", "message": message});
+    match AppConfig::load(&path) {
+        Ok(app) if app.user.is_some() => json!({"status": "ok", "path": path_str, "section": "user"}),
+        Ok(_) => error(
+            "app.json has no \"user\" section. Run: bitbucket init --user-app --client-id <KEY> --client-secret <SECRET>"
+                .to_string(),
+        ),
+        Err(e) => error(app_config_error(e, &path).to_string()),
+    }
+}
+
+/// `init --user-app` names no person: refuses `--user <id>`.
+pub fn check_user_app_flag(identity: &Identity) -> Result<(), CliError> {
+    match identity {
+        Identity::Service => Ok(()),
+        Identity::User(id) => Err(CliError::UserAppWithUser { id: id.to_string() }),
+    }
+}
+
+/// Runs `init --user-app`: writes the OAuth consumer every person logs in with, logs
+/// nobody in, and prints its `app_config` check.
+pub fn run_init_user_app(
+    identity: &Identity,
+    client_id: Option<String>,
+    client_secret: Option<String>,
+) -> Result<(), CliError> {
+    check_user_app_flag(identity)?;
+    println!("{INSTRUCTIONS}");
+
+    let client_id = match client_id {
+        Some(id) => id,
+        None => prompt("Enter Key (client_id)")?,
+    };
+    let client_secret = match client_secret {
+        Some(s) => s,
+        None => prompt("Enter Secret (client_secret)")?,
+    };
+
+    let cfg_dir = config_dir()?;
+    write_app_config(&cfg_dir, AppSection::User, &client_id, &client_secret)?;
+    println!("\napp.json written to {}\n", auth::app_config_path(&cfg_dir).display());
+
+    let check = user_app_check(&cfg_dir);
+    let ok = check["status"] == "ok";
+    let output = serde_json::to_string_pretty(&json!({"app_config": check}))
+        .map_err(|e| CliError::JsonSerialize { reason: e.to_string() })?;
+    println!("{output}");
+    if !ok {
+        return Err(CliError::DoctorCheckFailed);
+    }
+
+    println!(
+        "\nNobody is logged in yet. Log each person in with `bitbucket auth login --user <USER_ID>` \
+        (browser on this machine) or `bitbucket auth login --user <USER_ID> --remote` \
+        (the person opens the link elsewhere)."
+    );
     Ok(())
 }
 
