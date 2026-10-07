@@ -37,8 +37,8 @@ pub struct Cli {
 
     /// Act as the person with this id instead of the Service Account: the human
     /// who logged in with `confluence auth login --user <USER_ID>`. The id is your own
-    /// name for that person, a lowercase slug (a-z, 0-9, '.', '_', '-', e.g.
-    /// jane.doe). Without it every command acts as the Service Account
+    /// name for that person, a lowercase slug (a-z, 0-9, '.', '_', '-', ':', e.g.
+    /// jane.doe or chat:u123). Without it every command acts as the Service Account
     /// (`confluence auth login`). The Service Account and every person are stored side
     /// by side and renewed automatically, so switching between them needs no new
     /// login. On `init`, `auth login`, `auth whoami`, `auth logout` and `doctor` it
