@@ -123,6 +123,13 @@ fn user_flag_needs_the_persons_id() {
 }
 
 #[test]
+fn user_flag_accepts_an_id_with_a_colon() {
+    // Issue #184: the agent's ids may be namespaced (`chat:u123`).
+    let cli = Cli::try_parse_from(["bitbucket", "auth", "whoami", "--user", "chat:u123"]).unwrap();
+    assert_eq!(cli.user.unwrap().as_str(), "chat:u123");
+}
+
+#[test]
 fn user_flag_rejects_an_id_that_is_not_a_slug() {
     for id in ["Jane", "../etc", "a/b", ".hidden", "jane doe"] {
         let err = Cli::try_parse_from(["bitbucket", "auth", "whoami", "--user", id]).unwrap_err();

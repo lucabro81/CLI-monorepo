@@ -31,8 +31,8 @@ pub struct Cli {
 
     /// Act as the person with this id instead of the OAuth app: the human who
     /// logged in with `bitbucket auth login --user <USER_ID>`. The id is your own
-    /// name for that person, a lowercase slug (a-z, 0-9, '.', '_', '-', e.g.
-    /// jane.doe). Without it every command acts as the OAuth app (`bitbucket auth
+    /// name for that person, a lowercase slug (a-z, 0-9, '.', '_', '-', ':', e.g.
+    /// jane.doe or chat:u123). Without it every command acts as the OAuth app (`bitbucket auth
     /// login`). The OAuth app and every person are stored side by side and renewed
     /// automatically, so switching between them needs no new login. On `init`,
     /// `auth login`, `auth whoami`, `auth logout` and `doctor` it selects which

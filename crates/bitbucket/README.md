@@ -55,7 +55,7 @@ After saving, note down the consumer's **Key** (`client_id`) and **Secret** (`cl
 
 ### 2. Save it, log in and verify
 
-The CLI holds the OAuth app and any number of people side by side, and every command picks one per call: without `--user` it acts as the **OAuth app** (bot identity, `client_credentials`), with `--user <USER_ID>` as **that person** (who approved the consent page when logging in). `<USER_ID>` is your own name for the person, a lowercase slug (`a-z`, `0-9`, `.`, `_`, `-`, e.g. `jane.doe`). All of them live in `$XDG_CONFIG_HOME/bitbucket-cli/` (typically `~/.config/bitbucket-cli/`), every file with mode `0600`:
+The CLI holds the OAuth app and any number of people side by side, and every command picks one per call: without `--user` it acts as the **OAuth app** (bot identity, `client_credentials`), with `--user <USER_ID>` as **that person** (who approved the consent page when logging in). `<USER_ID>` is your own name for the person, a lowercase slug (`a-z`, `0-9`, `.`, `_`, `-`, `:`, e.g. `jane.doe` or `chat:u123`). All of them live in `$XDG_CONFIG_HOME/bitbucket-cli/` (typically `~/.config/bitbucket-cli/`), every file with mode `0600`:
 
 | File | Written by | Holds |
 |---|---|---|
