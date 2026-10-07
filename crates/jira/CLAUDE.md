@@ -17,7 +17,8 @@ src/
     doctor.rs     — run_doctor(); also called by init as final verification
     init.rs       — run_init(), run_init_user_app(), write_app_config(AppSection),
                     user_app_check(), check_user_app_flag(), prompt_secret()
-                    (hidden on a terminal, #196); human onboarding flow
+                    (hidden on a terminal, #196), non_empty() (an empty answer is
+                    CliError::EmptyInput, #218); human onboarding flow
     issue.rs      — run(IssueCommand); dispatches all issue subcommands; also
                     holds comment-add's Markdown/mention-composition logic
                     (see below)
