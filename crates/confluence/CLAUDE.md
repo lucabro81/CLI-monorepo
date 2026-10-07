@@ -11,7 +11,8 @@ src/
     auth.rs       — run_login(), run_whoami(), run_logout()
     doctor.rs     — run_doctor(); also called by init as final verification
     init.rs       — run_init(), run_init_user_app(), write_app_config(AppSection),
-                    user_app_check(), check_user_app_flag(); human onboarding flow
+                    user_app_check(), check_user_app_flag(), prompt_secret()
+                    (hidden on a terminal, #196); human onboarding flow
     page.rs       — run(PageCommand); dispatches page get/create/update/search/delete;
                     also holds the --template-id/--body-file body-source
                     resolution logic (see "API design notes" below)
