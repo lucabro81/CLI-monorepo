@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [2.2.0](https://github.com/lucabro81/CLI-monorepo/compare/jira-v2.1.0...jira-v2.2.0) - 2026-10-07
+
+### Added
+- *(jira)* exit code 3 when the selected identity needs a new login
+
+### Other
+- *(jira)* document exit code 3 for a missing or expired login
+- exit code 3 for a missing or expired login (#194)
+- *(jira)* invalid_client exits 1
+- exit code docs fixes from review (#194)
+- Merge pull request #197 from lucabro81/issue194 ([#197](https://github.com/lucabro81/CLI-monorepo/pull/197))
 ## [2.1.0](https://github.com/lucabro81/CLI-monorepo/compare/jira-v2.0.0...jira-v2.1.0) - 2026-10-07
 
 ### Added
