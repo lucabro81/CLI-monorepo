@@ -202,6 +202,17 @@ fn a_transient_refresh_failure_stays_a_token_exchange_error() {
 }
 
 #[test]
+fn a_refused_client_stays_a_token_exchange_error() {
+    // Regression guard (#194 live check): a wrong Native app client id is
+    // invalid_client; a new login through the same app would fail too.
+    let (url, server) = one_shot_server("400 Bad Request", r#"{"error":"invalid_client"}"#);
+    let err = refresh(&native_config(&url), &user_credentials()).unwrap_err();
+    server.join().unwrap();
+
+    assert!(matches!(err, LoginError::TokenExchange(_)), "got {err:?}");
+}
+
+#[test]
 fn expired_user_session_is_renewed_with_its_refresh_token_not_the_service_user() {
     // Regression: renew() used to always re-sign the service-user JWT, which
     // would have silently turned an expired human session into the service user.
