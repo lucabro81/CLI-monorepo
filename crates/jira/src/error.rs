@@ -46,9 +46,17 @@ pub enum CliError {
 
     #[error(
         "app.json at {path} has no \"user\" section (the 3LO app every person logs in with). \
-        Run: jira init --user {id} --client-id <ID> --client-secret <SECRET>"
+        Run: jira init --user {id} --client-id <ID> --client-secret <SECRET>, \
+        or jira init --user-app --client-id <ID> --client-secret <SECRET> to set it up without logging anyone in"
     )]
     UserAppMissing { path: String, id: String },
+
+    #[error(
+        "init --user-app sets up the 3LO app every person logs in with and logs nobody in, so it takes no --user. \
+        Run: jira init --user-app --client-id <ID> --client-secret <SECRET>, then jira auth login --user {id}; \
+        or jira init --user {id} --client-id <ID> --client-secret <SECRET> to do both at once"
+    )]
+    UserAppWithUser { id: String },
 
     #[error(
         "no home directory found — cannot resolve config path. \

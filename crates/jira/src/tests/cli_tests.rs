@@ -697,7 +697,7 @@ fn parses_init_no_flags() {
     let cli = Cli::try_parse_from(["jira", "init"]).expect("should parse");
 
     match cli.command {
-        Command::Init { client_id, client_secret } => {
+        Command::Init { client_id, client_secret, user_app: false } => {
             assert!(client_id.is_none());
             assert!(client_secret.is_none());
         }
@@ -713,7 +713,7 @@ fn parses_init_with_both_flags() {
     .expect("should parse");
 
     match cli.command {
-        Command::Init { client_id, client_secret } => {
+        Command::Init { client_id, client_secret, user_app: false } => {
             assert_eq!(client_id.as_deref(), Some("abc123"));
             assert_eq!(client_secret.as_deref(), Some("s3cr3t"));
         }
@@ -728,7 +728,7 @@ fn parses_init_with_only_client_id() {
         .expect("should parse");
 
     match cli.command {
-        Command::Init { client_id, client_secret } => {
+        Command::Init { client_id, client_secret, user_app: false } => {
             assert_eq!(client_id.as_deref(), Some("abc123"));
             assert!(client_secret.is_none());
         }
@@ -742,9 +742,26 @@ fn parses_init_with_only_client_secret() {
         .expect("should parse");
 
     match cli.command {
-        Command::Init { client_id, client_secret } => {
+        Command::Init { client_id, client_secret, user_app: false } => {
             assert!(client_id.is_none());
             assert_eq!(client_secret.as_deref(), Some("s3cr3t"));
+        }
+        other => panic!("unexpected: {other:?}"),
+    }
+}
+
+#[test]
+fn parses_init_user_app() {
+    // Issue #195: set up the people's 3LO app without logging anyone in.
+    let cli = Cli::try_parse_from(["jira", "init", "--user-app"]).expect("should parse");
+    assert!(matches!(cli.command, Command::Init { client_id: None, client_secret: None, user_app: true }));
+
+    let cli = Cli::try_parse_from(["jira", "init", "--user-app", "--client-id", "abc", "--client-secret", "s3"])
+        .expect("should parse");
+    match cli.command {
+        Command::Init { client_id, client_secret, user_app: true } => {
+            assert_eq!(client_id.as_deref(), Some("abc"));
+            assert_eq!(client_secret.as_deref(), Some("s3"));
         }
         other => panic!("unexpected: {other:?}"),
     }
