@@ -45,7 +45,7 @@ See [`zitadel init`](#zitadel-init) below.
 
 ### The service user and any number of people, side by side
 
-The CLI holds them all at once, and every command picks one per call: without `--user` it acts as the **service user**, with `--user <USER_ID>` as **that person**. `<USER_ID>` is your own name for the person, a lowercase slug (`a-z`, `0-9`, `.`, `_`, `-`, e.g. `jane.doe`). Each identity has its own credentials file — `credentials-service.json` (written by `zitadel auth login`) and `users/<USER_ID>/credentials.json` (written by `zitadel auth login --user <USER_ID>`) — so logging in as one never logs another out, and switching needs no new login while the tokens can be renewed:
+The CLI holds them all at once, and every command picks one per call: without `--user` it acts as the **service user**, with `--user <USER_ID>` as **that person**. `<USER_ID>` is your own name for the person, a lowercase slug (`a-z`, `0-9`, `.`, `_`, `-`, `:`, e.g. `jane.doe` or `chat:u123`). Each identity has its own credentials file — `credentials-service.json` (written by `zitadel auth login`) and `users/<USER_ID>/credentials.json` (written by `zitadel auth login --user <USER_ID>`) — so logging in as one never logs another out, and switching needs no new login while the tokens can be renewed:
 
 ```sh
 zitadel user search --select result.userId                   # as the service user
