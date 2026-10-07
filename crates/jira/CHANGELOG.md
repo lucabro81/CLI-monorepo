@@ -17,6 +17,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Merge pull request #207 from lucabro81/issue195 ([#207](https://github.com/lucabro81/CLI-monorepo/pull/207))
 - *(jira)* the client secret prompt is hidden on a terminal
 - Merge pull request #212 from lucabro81/issue196 ([#212](https://github.com/lucabro81/CLI-monorepo/pull/212))
+- Release
+- Merge pull request #208 from lucabro81/release/jira ([#208](https://github.com/lucabro81/CLI-monorepo/pull/208))
+## [2.3.0](https://github.com/lucabro81/CLI-monorepo/compare/jira-v2.2.0...jira-v2.3.0) - 2026-10-07
+
+### Added
+- *(jira)* init --user-app sets up the 3LO app without logging anyone in
+- *(jira)* read the client secret hidden on a terminal
+
+### Other
+- *(jira)* init --user-app
+- init --user-app in CLAUDE.md files (#195)
+- --user-app review fixes (#195)
+- Merge pull request #207 from lucabro81/issue195 ([#207](https://github.com/lucabro81/CLI-monorepo/pull/207))
+- *(jira)* the client secret prompt is hidden on a terminal
+- Merge pull request #212 from lucabro81/issue196 ([#212](https://github.com/lucabro81/CLI-monorepo/pull/212))
 ## [2.2.0](https://github.com/lucabro81/CLI-monorepo/compare/jira-v2.1.0...jira-v2.2.0) - 2026-10-07
 
 ### Added
