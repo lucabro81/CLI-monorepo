@@ -3,12 +3,14 @@
 //! `search` builds a v2 `ListUsers` body from the typed flags (`build_search_body`,
 //! pure and unit-tested) and prints the raw response; `--select` is mandatory
 //! because the result list is unbounded. `get` prints a single user and is
-//! exempt (`select.or_all()`).
+//! exempt (`select.or_all()`). `authorizations` (issue #229) checks the user
+//! exists, then lists their authorizations (`build_authorizations_body`, pure),
+//! under mandatory `--select`.
 
 use serde_json::{Value, json};
 
 use crate::auth::Identity;
-use crate::cli::{UserCommand, UserState};
+use crate::cli::{AuthorizationState, UserCommand, UserState};
 use crate::context::{
     CONTAINS_IGNORE_CASE, authenticated_client, client_error_to_cli, print_json, search_query,
 };
@@ -43,7 +45,39 @@ pub fn run(command: UserCommand, select: cli_fields::Select<'_>, identity: &Iden
                 .map_err(client_error_to_cli)?;
             print_json(&user, select.or_all())
         }
+        UserCommand::Authorizations { user_id, project_id, state, limit, offset } => {
+            let client = authenticated_client(identity)?;
+            // ListAuthorizations answers an unknown user like one with no roles (an
+            // empty list): check the user first, so a wrong id is a 404 error.
+            client.get_user(&user_id).map_err(client_error_to_cli)?;
+            let body = build_authorizations_body(&user_id, project_id.as_deref(), state, limit, offset);
+            let result = client.list_authorizations(&body).map_err(client_error_to_cli)?;
+            print_json(&result, select)
+        }
     }
+}
+
+/// A v2 `ListAuthorizations` body for one user, optionally narrowed by project
+/// and state (filters are combined with AND).
+pub(crate) fn build_authorizations_body(
+    user_id: &str,
+    project_id: Option<&str>,
+    state: Option<AuthorizationState>,
+    limit: u32,
+    offset: u64,
+) -> Value {
+    let mut filters = vec![json!({"inUserIds": {"ids": [user_id]}})];
+    if let Some(project_id) = project_id {
+        filters.push(json!({"projectId": {"id": project_id}}));
+    }
+    if let Some(state) = state {
+        let state = match state {
+            AuthorizationState::Active => "STATE_ACTIVE",
+            AuthorizationState::Inactive => "STATE_INACTIVE",
+        };
+        filters.push(json!({"state": {"state": state}}));
+    }
+    json!({"pagination": search_query(limit, offset), "filters": filters})
 }
 
 pub(crate) struct UserSearchFilters<'a> {

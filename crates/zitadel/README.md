@@ -15,7 +15,7 @@ CLI for the [ZITADEL](https://zitadel.com) identity platform (Cloud or self-host
 ### 1. Service user (default identity, for agents)
 
 1. In the ZITADEL console of your instance (`https://<instance>.zitadel.cloud` or your own domain): **Users → Service Users → New**.
-2. Grant it an administrator role matching what the CLI should be able to do — e.g. **IAM_OWNER** (whole instance) via *Default settings → Administrators*, or **ORG_OWNER** / **ORG_USER_MANAGER** on an organization. The CLI can only do what this role allows; `zitadel doctor` lists the roles it sees.
+2. Grant it the narrowest manager role the CLI needs; it can only do what this role allows, and `zitadel doctor` lists the roles it sees. To **read** users and their project roles (`user get`, `user search`, `user authorizations`): **ORG_OWNER_VIEWER** on the organization (*Organization → Managers*), read-only (verified: reads work, writes get 403). To **change** things: e.g. **ORG_OWNER** / **ORG_USER_MANAGER** on an organization, or **IAM_OWNER** (whole instance) via *Default settings → Administrators*.
 3. On the service user: **Keys → New → JSON**, and download the key file. It contains a private key — keep it out of any repository.
 
 ### 2. (Optional) Native app, for people (`--user <USER_ID>`)
@@ -190,6 +190,22 @@ One user by id (v2 `GetUserByID`, `GET /v2/users/{userId}`): `details` plus `use
 ```sh
 zitadel user get 123456789012345678
 zitadel user get 123456789012345678 --select user.username,user.state,user.human.email.email
+```
+
+### `zitadel user authorizations <user-id>`
+
+A user's authorizations — the project roles assigned to them (v2 `ListAuthorizations`, `POST /zitadel.authorization.v2.AuthorizationService/ListAuthorizations`, a Connect path). The user is looked up first, so an unknown id fails with a 404 error, while a user with no authorizations gives an empty result (`{"pagination": {"appliedLimit": ...}}`, no `authorizations` key and no `totalResult`). Each authorization has `id`, `state` (`STATE_ACTIVE` / `STATE_INACTIVE`), `project` (`id`, `name`, `organizationId`), `organization` (`id`, `name`), `user` and `roles` (`key`, `displayName`, `group`; absent when none are assigned). Needs the `user.grant.read` permission — the read-only **ORG_OWNER_VIEWER** is enough. Requires `--select` or `--select-all`.
+
+| Flag | Description |
+|---|---|
+| `--project-id <ID>` | Only authorizations on this project |
+| `--state <active\|inactive>` | Only authorizations in this state |
+| `--limit <N>` | Maximum results (default 100, minimum 1) |
+| `--offset <N>` | Results to skip (default 0) |
+
+```sh
+zitadel user authorizations 123456789012345678 --select authorizations.project.id,authorizations.roles.key,authorizations.state
+zitadel user authorizations 123456789012345678 --project-id 987654321098765432 --state active --select authorizations.roles.key
 ```
 
 ### `zitadel organization list`

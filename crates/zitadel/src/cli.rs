@@ -237,6 +237,36 @@ pub enum UserCommand {
         /// The user's id (`userId` in user search results)
         user_id: String,
     },
+    /// List a user's authorizations: the project roles assigned to them
+    ///
+    /// Calls ZITADEL's v2 `ListAuthorizations` (POST
+    /// /zitadel.authorization.v2.AuthorizationService/ListAuthorizations) filtered by
+    /// the user, after checking the user exists: an unknown user id is an error (404),
+    /// while a user with no authorizations gives an empty result (no
+    /// `authorizations` key, no `pagination.totalResult`). Each authorization has id,
+    /// state (`STATE_ACTIVE` / `STATE_INACTIVE`), project (id, name, organizationId),
+    /// organization (id, name), user and roles (key, displayName, group; absent when
+    /// none are assigned). Needs the `user.grant.read` permission, e.g. the read-only
+    /// `ORG_OWNER_VIEWER` on the organization. Pagination: --limit/--offset;
+    /// pagination.totalResult is the total number of matches. --select (or
+    /// --select-all) is required.
+    #[command(after_help = "Examples:\n  zitadel user authorizations 123456789012345678 --select authorizations.project.id,authorizations.roles.key,authorizations.state\n  zitadel user authorizations 123456789012345678 --project-id 987654321098765432 --state active --select authorizations.roles.key")]
+    Authorizations {
+        /// The user's id (`userId` in user search results)
+        user_id: String,
+        /// Only authorizations on this project id
+        #[arg(long)]
+        project_id: Option<String>,
+        /// Only authorizations in this state
+        #[arg(long, value_enum)]
+        state: Option<AuthorizationState>,
+        /// Maximum number of results to return
+        #[arg(long, default_value_t = 100, value_parser = clap::value_parser!(u32).range(1..))]
+        limit: u32,
+        /// Number of results to skip (for paging through results)
+        #[arg(long, default_value_t = 0)]
+        offset: u64,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -299,6 +329,14 @@ pub enum UserState {
     Deleted,
     Locked,
     Initial,
+}
+
+/// Authorization states accepted by `user authorizations --state` (ZITADEL v2
+/// authorization `State`; it rejects anything else with a 400).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum AuthorizationState {
+    Active,
+    Inactive,
 }
 
 #[cfg(test)]

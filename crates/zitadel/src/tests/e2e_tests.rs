@@ -158,3 +158,40 @@ fn e2e_project_list_filters_by_organization() {
     }
     assert!(none.get("projects").is_none_or(|p| p.as_array().unwrap().is_empty()), "got {none:#}");
 }
+
+#[test]
+#[ignore = "e2e: requires zitadel init"]
+fn e2e_user_authorizations_lists_only_that_user() {
+    // Issue #229. The identity's own list may be empty (a service user usually
+    // holds manager roles, not project authorizations): assert the shape, and
+    // that every result, if any, belongs to it.
+    let (client, me) = setup();
+    let body = user::build_authorizations_body(&me.user_id, None, None, 100, 0);
+
+    let result = client.list_authorizations(&body).unwrap();
+
+    assert!(result["pagination"].is_object(), "got {result:#}");
+    for authorization in result["authorizations"].as_array().map(Vec::as_slice).unwrap_or_default() {
+        assert_eq!(authorization["user"]["id"], me.user_id.as_str());
+        assert!(authorization["project"]["id"].is_string());
+        assert!(authorization["state"].is_string());
+    }
+}
+
+#[test]
+#[ignore = "e2e: requires zitadel init"]
+fn e2e_list_authorizations_cannot_tell_an_unknown_user_apart() {
+    // Why `user authorizations` calls `get_user` first (issue #229): the list
+    // answers an unknown user exactly like a user with no roles.
+    let (client, _) = setup();
+    let body = user::build_authorizations_body("999999999999999999", None, None, 100, 0);
+
+    let result = client.list_authorizations(&body).unwrap();
+
+    assert!(result.get("authorizations").is_none(), "got {result:#}");
+    assert!(matches!(
+        client.get_user("999999999999999999").unwrap_err(),
+        crate::client::ClientError::Status { status: 404, .. }
+    ));
+}
+
