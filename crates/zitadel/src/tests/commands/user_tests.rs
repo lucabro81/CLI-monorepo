@@ -114,4 +114,3 @@ fn authorizations_body_narrows_by_project_and_state() {
         json!({"state": {"state": "STATE_INACTIVE"}})
     );
 }
-

@@ -178,3 +178,20 @@ fn e2e_user_authorizations_lists_only_that_user() {
     }
 }
 
+#[test]
+#[ignore = "e2e: requires zitadel init"]
+fn e2e_list_authorizations_cannot_tell_an_unknown_user_apart() {
+    // Why `user authorizations` calls `get_user` first (issue #229): the list
+    // answers an unknown user exactly like a user with no roles.
+    let (client, _) = setup();
+    let body = user::build_authorizations_body("999999999999999999", None, None, 100, 0);
+
+    let result = client.list_authorizations(&body).unwrap();
+
+    assert!(result.get("authorizations").is_none(), "got {result:#}");
+    assert!(matches!(
+        client.get_user("999999999999999999").unwrap_err(),
+        crate::client::ClientError::Status { status: 404, .. }
+    ));
+}
+
