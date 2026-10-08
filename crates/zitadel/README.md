@@ -245,6 +245,7 @@ The e2e suite is read-only: it uses the logged-in identity itself (its id, usern
 Every error is a single plain-text sentence: what went wrong and what to run or change to fix it. In particular:
 
 - missing/invalid `app.json` → the exact `zitadel init ...` command to run;
+- an empty answer to an `init` question → nothing written, the flag to pass instead; a pasted service user key that doesn't validate → paste the whole downloaded key JSON, or use `--key-file <path>`;
 - `401` from the API → `zitadel auth login`;
 - a failed `auth login --user <USER_ID>` → what to check on the Native app (client id, redirect URI, PKCE, refresh token);
 - `403` from the API → the identity lacks an administrator role for that operation; run `zitadel doctor` to see its roles and grant the missing one in the console.
