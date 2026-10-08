@@ -92,13 +92,13 @@ Like `jira init` / `bitbucket init`: prints numbered console setup steps, asks f
 - `zitadel init --user <USER_ID>` — the Native app every person uses: asks the instance URL (only when missing) and the Native app client id, then runs the browser login for that person.
 - `zitadel init --user-app` — the same Native app setup, logging nobody in (see the flag below).
 
-A flag skips its question; an empty answer writes nothing (exit 1, naming the flag); when stdin is piped every answer is one plain line. Re-running merges with the existing `app.json`: values not given keep theirs. Changing the instance URL (`--instance-url`) removes every stored login (the service user's and every person's).
+A flag skips its question; an empty answer writes nothing (exit 1, naming the flag); when stdin is piped every answer is one plain line (so the key JSON must be the single-line file as downloaded; `--key-file` takes any file). As with `jira init`, the key (or, for people, the client id) is asked on every run unless its flag is given; the instance URL and everything else stored are kept. Setup steps and questions go to stderr. Changing the instance URL (`--instance-url`) removes every stored login (the service user's and every person's).
 
 | Flag | Description |
 |---|---|
-| `--instance-url <URL>` | Instance base URL (Cloud or self-hosted). Required on the first run. Trailing `/` is stripped. |
-| `--key-file <PATH>` | Service user JSON key from the console. Validated (JSON, `"type": "serviceaccount"`, RSA PEM) before anything is written. |
-| `--client-id <ID>` | Native app client id, only needed for people (`--user <USER_ID>`), shared by all of them. |
+| `--instance-url <URL>` | Instance base URL (Cloud or self-hosted). Asked when `app.json` has none; this flag is the way to change it. Trailing `/` is stripped. |
+| `--key-file <PATH>` | Service user JSON key from the console. Validated (JSON, `"type": "serviceaccount"`, RSA PEM) before anything is written. Without it, `zitadel init` asks for the key JSON (hidden on a terminal). |
+| `--client-id <ID>` | Native app client id, only needed for people (`--user <USER_ID>`), shared by all of them. Asked by `init --user <USER_ID>` / `init --user-app` when omitted. |
 | `--user-app` | Log nobody in (not even the service user) and print only `{"app_config": ...}` instead of the doctor report: sets up what people log in with where nobody can open a browser; they log in later with `zitadel auth login --user <USER_ID> --remote --redirect-uri <URL>` (a hint saying so goes to stderr). Exits 1 if no Native app client id is configured. Takes no `--user`. |
 
 ```sh
@@ -108,7 +108,7 @@ zitadel init --user jane.doe --client-id 123456789@zitadel-cli    # later: add t
 zitadel init --user-app --instance-url https://acme.zitadel.cloud --client-id 123456789@zitadel-cli   # Native app only, nobody logged in
 ```
 
-Progress lines go to stderr; stdout carries only the doctor report (with `--user-app`, the `app_config` check). Exits non-zero if any doctor check fails.
+Progress lines, setup steps and questions go to stderr; stdout carries only the doctor report (with `--user-app`, the `app_config` check). Exits non-zero if any doctor check fails.
 
 ### `zitadel doctor`
 

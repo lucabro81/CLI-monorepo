@@ -50,9 +50,11 @@ pub enum Command {
     /// Prints numbered console setup steps, then asks for whatever the flags didn't
     /// give, like jira and bitbucket init: the instance URL (only when app.json has
     /// none), then the service user's whole key JSON (input hidden on a terminal)
-    /// or, with --user <USER_ID> / --user-app, the Native app client id. A flag
+    /// or, with `--user <USER_ID>` / --user-app, the Native app client id. A flag
     /// skips its question; an empty answer writes nothing; piped stdin is read one
-    /// line per answer. Writes app.json (mode 0600, merged with the existing one),
+    /// line per answer. Like jira init, the key (or client id) is asked on every run
+    /// unless its flag is given; other stored values are kept. Steps and questions go
+    /// to stderr, stdout carries only JSON. Writes app.json (mode 0600, merged with the existing one),
     /// logs in as the service user (with `--user <USER_ID>`: as that person, through
     /// the browser), then prints the doctor JSON report for that identity and exits
     /// non-zero if any check fails. Changing the instance URL (--instance-url)

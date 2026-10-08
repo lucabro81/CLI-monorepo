@@ -115,10 +115,11 @@ fn write_config(config_dir: &Path, existing: Option<AppConfig>, inputs: InitInpu
 const SERVICE_STEPS: &str = "\
 === zitadel init: service user setup (the default identity) ===
 
-Step 1: In the ZITADEL console: Users -> Service Users -> New (e.g. \"zitadel-cli\", access token type JWT).
-Step 2: Grant it only what your commands need. To read users and their project roles, add it
-        under Organization -> Managers with a read-only role such as ORG_OWNER_VIEWER; add
-        administrator roles only if the CLI should change things.
+Step 1: In the ZITADEL console: Users -> Service Users -> New (e.g. \"zitadel-cli\").
+Step 2: Grant it a manager role matching what the CLI should do: e.g. IAM_OWNER (whole
+        instance, Default settings -> Administrators), or ORG_OWNER / ORG_USER_MANAGER on an
+        organization. Prefer the narrowest role your commands need; `zitadel doctor` lists
+        the roles it sees.
 Step 3: On the service user: Keys -> New, type JSON, and download the file.
 Step 4: Paste the whole content of that file when asked (it is one line; the input is hidden).
 

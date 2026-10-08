@@ -79,7 +79,11 @@ changed instance URL removes every stored login (`discard_instance_credentials`)
 reader, the instance URL only when app.json has none, then the service user's whole key
 JSON (hidden via `rpassword` on a terminal, a plain line when piped; validated by
 `ServiceUserKey::from_key_file`, `CliError::InvalidPastedKey` otherwise) or, for
-`--user`/`--user-app`, the Native app client id; empty answers are `CliError::EmptyInput`.
+`--user`/`--user-app`, the Native app client id, on every run unless its flag is given
+(like jira re-asking the secret); empty answers are `CliError::EmptyInput`. Verified on a
+pty: a 1.8 KB key JSON pasted into `rpassword` arrives whole on macOS; Linux caps a
+canonical line at 4095 bytes (a ZITADEL key fits), and a truncated paste would fail
+validation, not pass silently.
 `init --user-app` (issue #195) shares `init`'s `write_config` but logs nobody in and
 prints `user_app_report` (doctor's `check_app_config`, failing without a Native app
 `client_id`) as `{"app_config": ...}`; `check_user_app_flag` refuses `--user <id>`

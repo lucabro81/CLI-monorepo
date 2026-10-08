@@ -487,3 +487,39 @@ fn a_failed_hidden_read_is_an_io_error() {
     assert_eq!(err.to_string(), "I/O error: could not read Paste the key: no tty");
 }
 
+#[test]
+fn the_key_is_asked_again_even_when_one_is_stored() {
+    // Like jira re-asking the client secret: `zitadel init` sets up the service
+    // user, so it asks for its key unless --key-file is given.
+    let (ask, asked) = answering(vec![pasted_key_json()]);
+
+    let inputs = resolve_init_inputs(InitMode::Service, None, None, None, Some(&existing()), ask).unwrap();
+
+    assert_eq!(*asked.borrow(), vec![Question::ServiceUserKey]);
+    assert_eq!(inputs.service_user, Some(pasted_key()));
+}
+
+#[test]
+fn an_instance_url_flag_with_a_pasted_key() {
+    let (ask, asked) = answering(vec![pasted_key_json()]);
+
+    let inputs =
+        resolve_init_inputs(InitMode::Service, Some("https://acme.zitadel.cloud"), None, None, None, ask).unwrap();
+
+    assert_eq!(*asked.borrow(), vec![Question::ServiceUserKey]);
+    assert_eq!(inputs.instance_url.as_deref(), Some("https://acme.zitadel.cloud"));
+}
+
+#[test]
+fn a_key_file_is_still_accepted_when_setting_up_people() {
+    let dir = tempfile::tempdir().unwrap();
+    let key_file = dir.path().join("key.json");
+    std::fs::write(&key_file, pasted_key_json()).unwrap();
+    let (ask, asked) = answering(vec!["123@cli".to_string()]);
+
+    let inputs = resolve_init_inputs(InitMode::UserApp, None, Some(&key_file), None, Some(&existing()), ask).unwrap();
+
+    assert_eq!(*asked.borrow(), vec![Question::ClientId]);
+    assert_eq!(inputs.service_user, Some(pasted_key()));
+}
+
