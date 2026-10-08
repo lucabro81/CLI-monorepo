@@ -59,6 +59,20 @@ impl ZitadelClient {
         self.post_json(endpoints::AUTHORIZATIONS_LIST_V2_PATH, body)
     }
 
+    /// A user's identity provider links (v2 `ListIDPLinks`): `POST /v2/users/{userId}/links/_search`.
+    pub fn list_idp_links(&self, user_id: &str, body: &serde_json::Value) -> Result<serde_json::Value, ClientError> {
+        let mut url = self.url_with_segment(endpoints::USERS_V2_PATH, user_id)?;
+        url.path_segments_mut()
+            .map_err(|()| ClientError::Request("instance URL cannot have path segments".to_string()))?
+            .extend(endpoints::IDP_LINKS_SEARCH_SEGMENTS);
+        self.post_json_to(url, body)
+    }
+
+    /// An identity provider by id (v2 `GetIDPByID`): `GET /v2/idps/{idpId}`.
+    pub fn get_idp(&self, idp_id: &str) -> Result<serde_json::Value, ClientError> {
+        self.get_json(self.url_with_segment(endpoints::IDPS_V2_PATH, idp_id)?)
+    }
+
     /// A single user by id (v2 `GetUserByID`): `GET /v2/users/{userId}`.
     pub fn get_user(&self, user_id: &str) -> Result<serde_json::Value, ClientError> {
         self.get_json(self.url_with_segment(endpoints::USERS_V2_PATH, user_id)?)
@@ -87,9 +101,13 @@ impl ZitadelClient {
     }
 
     fn post_json(&self, path: &str, body: &serde_json::Value) -> Result<serde_json::Value, ClientError> {
+        self.post_json_to(format!("{}{path}", self.instance_url), body)
+    }
+
+    fn post_json_to(&self, url: impl reqwest::IntoUrl, body: &serde_json::Value) -> Result<serde_json::Value, ClientError> {
         let response = self
             .http
-            .post(format!("{}{path}", self.instance_url))
+            .post(url)
             .bearer_auth(&self.access_token)
             .header(reqwest::header::ACCEPT, "application/json")
             .json(body)

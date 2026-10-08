@@ -99,6 +99,7 @@ fn e2e_user_search_by_username_and_organization_finds_the_identity() {
     let (client, me) = setup();
     let body = user::build_search_body(&user::UserSearchFilters {
         email: None,
+        email_exact: None,
         username: Some(&me.user_name),
         state: Some(crate::cli::UserState::Active),
         organization_id: Some(&me.organization_id),
@@ -118,6 +119,7 @@ fn e2e_user_search_respects_limit() {
     let (client, _) = setup();
     let body = user::build_search_body(&user::UserSearchFilters {
         email: None,
+        email_exact: None,
         username: None,
         state: None,
         organization_id: None,
@@ -193,5 +195,39 @@ fn e2e_list_authorizations_cannot_tell_an_unknown_user_apart() {
         client.get_user("999999999999999999").unwrap_err(),
         crate::client::ClientError::Status { status: 404, .. }
     ));
+}
+
+#[test]
+#[ignore = "e2e: requires zitadel init"]
+fn e2e_user_idp_links_of_the_identity_parse() {
+    // Issue #230. A service user usually has no links: assert the shape only.
+    let (client, me) = setup();
+
+    let result = client.list_idp_links(&me.user_id, &user::build_idp_links_body(100, 0)).unwrap();
+
+    assert!(result["details"].is_object(), "got {result:#}");
+    for link in result["result"].as_array().map(Vec::as_slice).unwrap_or_default() {
+        assert!(link["idpId"].is_string() && link["userId"].is_string(), "got {link:#}");
+    }
+}
+
+#[test]
+#[ignore = "e2e: requires zitadel init"]
+fn e2e_user_search_email_exact_does_not_match_a_fragment() {
+    // Issue #230: --email-exact is a whole-address match, unlike --email.
+    let (client, _) = setup();
+    let body = user::build_search_body(&user::UserSearchFilters {
+        email: None,
+        email_exact: Some("@"),
+        username: None,
+        state: None,
+        organization_id: None,
+        limit: 100,
+        offset: 0,
+    });
+
+    let result = client.search_users(&body).unwrap();
+
+    assert!(result.get("result").is_none(), "a bare \"@\" must match no address, got {result:#}");
 }
 

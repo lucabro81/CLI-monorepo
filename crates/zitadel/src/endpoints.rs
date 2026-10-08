@@ -59,6 +59,12 @@ pub const ORGANIZATIONS_SEARCH_V2_PATH: &str = "/v2/organizations/_search";
 /// `application/json` body (verified live; `application/connect+json` → 415).
 pub const PROJECTS_LIST_V2_PATH: &str = "/zitadel.project.v2.ProjectService/ListProjects";
 
+/// v2 `ListIDPLinks`: `<USERS_V2_PATH>/{userId}` followed by these segments.
+pub const IDP_LINKS_SEARCH_SEGMENTS: [&str; 2] = ["links", "_search"];
+
+/// v2 `GetIDPByID`: `<IDPS_V2_PATH>/{idpId}`.
+pub const IDPS_V2_PATH: &str = "/v2/idps";
+
 /// v2 `AuthorizationService.ListAuthorizations` (a user's project roles). Like
 /// `ProjectService`, reachable only through its Connect path with a plain JSON body.
 pub const AUTHORIZATIONS_LIST_V2_PATH: &str = "/zitadel.authorization.v2.AuthorizationService/ListAuthorizations";

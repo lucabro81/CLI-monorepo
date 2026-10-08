@@ -101,6 +101,9 @@ pub fn client_error_to_cli(error: ClientError) -> CliError {
 /// Text-match method used by every free-text search flag.
 pub const CONTAINS_IGNORE_CASE: &str = "TEXT_QUERY_METHOD_CONTAINS_IGNORE_CASE";
 
+/// Whole-value match, case-insensitive (`user search --email-exact`).
+pub const EQUALS_IGNORE_CASE: &str = "TEXT_QUERY_METHOD_EQUALS_IGNORE_CASE";
+
 /// The pagination/ordering block of a v2 search/list request body (`query` in the
 /// user/organization services, `pagination` in the project service).
 pub fn search_query(limit: u32, offset: u64) -> serde_json::Value {

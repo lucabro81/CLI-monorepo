@@ -171,7 +171,8 @@ fn parses_user_search_with_defaults() {
     let cli = parse(&["user", "search"]).unwrap();
 
     match cli.command {
-        Command::User { command: UserCommand::Search { email, username, state, organization_id, limit, offset } } => {
+        Command::User { command: UserCommand::Search { email, email_exact, username, state, organization_id, limit, offset } } => {
+            assert_eq!(email_exact, None);
             assert_eq!((email, username, state, organization_id), (None, None, None, None));
             assert_eq!((limit, offset), (100, 0));
         }
@@ -188,7 +189,8 @@ fn parses_user_search_with_all_flags() {
     .unwrap();
 
     match cli.command {
-        Command::User { command: UserCommand::Search { email, username, state, organization_id, limit, offset } } => {
+        Command::User { command: UserCommand::Search { email, email_exact, username, state, organization_id, limit, offset } } => {
+            assert_eq!(email_exact, None);
             assert_eq!(email.as_deref(), Some("@acme.com"));
             assert_eq!(username.as_deref(), Some("john"));
             assert_eq!(state, Some(UserState::Locked));
@@ -437,3 +439,45 @@ fn parses_init_user_app() {
         other => panic!("expected Init --user-app, got {other:?}"),
     }
 }
+
+// ── user search --email-exact and user idp-links (issue #230) ─────────────
+
+#[test]
+fn parses_user_search_email_exact() {
+    let cli = parse(&["user", "search", "--email-exact", "jane@acme.com", "--select", "result.userId"]).unwrap();
+
+    match cli.command {
+        Command::User { command: UserCommand::Search { email, email_exact, .. } } => {
+            assert_eq!(email, None);
+            assert_eq!(email_exact.as_deref(), Some("jane@acme.com"));
+        }
+        other => panic!("expected user search, got {other:?}"),
+    }
+}
+
+#[test]
+fn user_search_email_and_email_exact_are_exclusive() {
+    assert_eq!(
+        error_kind(&["user", "search", "--email", "acme", "--email-exact", "jane@acme.com"]),
+        ErrorKind::ArgumentConflict
+    );
+}
+
+#[test]
+fn parses_user_idp_links() {
+    let cli = parse(&["user", "idp-links", "123"]).unwrap();
+    assert!(matches!(
+        cli.command,
+        Command::User { command: UserCommand::IdpLinks { ref user_id, limit: 100, offset: 0 } } if user_id == "123"
+    ));
+
+    let cli = parse(&["user", "idp-links", "123", "--limit", "5", "--offset", "10"]).unwrap();
+    assert!(matches!(cli.command, Command::User { command: UserCommand::IdpLinks { limit: 5, offset: 10, .. } }));
+}
+
+#[test]
+fn user_idp_links_requires_a_user_id_and_a_positive_limit() {
+    assert_eq!(error_kind(&["user", "idp-links"]), ErrorKind::MissingRequiredArgument);
+    assert_eq!(error_kind(&["user", "idp-links", "1", "--limit", "0"]), ErrorKind::ValueValidation);
+}
+
