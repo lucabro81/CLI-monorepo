@@ -121,7 +121,8 @@ Step 2: Grant it a manager role matching what the CLI should do: e.g. IAM_OWNER 
         organization. Prefer the narrowest role your commands need; `zitadel doctor` lists
         the roles it sees.
 Step 3: On the service user: Keys -> New, type JSON, and download the file.
-Step 4: Paste the whole content of that file when asked (it is one line; the input is hidden).
+Step 4: Paste the whole content of that file when asked (it is one line; hidden on a terminal),
+        or pass it with --key-file <path>.
 
 For people (commands run with --user <USER_ID>), run `zitadel init --user-app` instead.
 ";
@@ -380,6 +381,8 @@ pub(crate) fn build_app_config(
     let url = instance_url
         .map(str::to_string)
         .or(existing_url)
+        // Defensive: `resolve_init_inputs` asks for the URL whenever app.json has none,
+        // so `init` never gets here without one; kept for direct callers of this merge.
         .ok_or(CliError::InstanceUrlRequired)?;
 
     let value = app_config_json(&AppConfig {

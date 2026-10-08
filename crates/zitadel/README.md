@@ -23,7 +23,7 @@ CLI for the [ZITADEL](https://zitadel.com) identity platform (Cloud or self-host
 Only needed if commands must act as people (run with `--user <USER_ID>`); one Native app serves every person:
 
 1. **Projects → Create** (or pick an existing project) → **New Application → Native**.
-2. Authentication method: **PKCE**. Redirect URI: `http://localhost:8080/callback` (enable *Development Mode*, required for an `http` redirect).
+2. Authentication method: **PKCE**. Redirect URI: `http://localhost:8080/callback` (enable *Development Mode*, required for an `http` redirect) and, for people logging in from elsewhere (`auth login --user <USER_ID> --remote --redirect-uri <url>`), the HTTPS URL that receives the code, e.g. `https://<your server>/login/callback`.
 3. In the token settings enable **Refresh Token**.
 4. Note the **Client ID**.
 
@@ -97,7 +97,7 @@ A flag skips its question; an empty answer writes nothing (exit 1, naming the fl
 | Flag | Description |
 |---|---|
 | `--instance-url <URL>` | Instance base URL (Cloud or self-hosted). Asked when `app.json` has none; this flag is the way to change it. Trailing `/` is stripped. |
-| `--key-file <PATH>` | Service user JSON key from the console. Validated (JSON, `"type": "serviceaccount"`, RSA PEM) before anything is written. Without it, `zitadel init` asks for the key JSON (hidden on a terminal). |
+| `--key-file <PATH>` | Service user JSON key from the console. Validated (JSON, `"type": "serviceaccount"`, RSA PEM) before anything is written. Without it, `zitadel init` asks for the key JSON (hidden on a terminal). With `--user` / `--user-app` it isn't asked, but a given file is still validated and stored. |
 | `--client-id <ID>` | Native app client id, only needed for people (`--user <USER_ID>`), shared by all of them. Asked by `init --user <USER_ID>` / `init --user-app` when omitted. |
 | `--user-app` | Log nobody in (not even the service user) and print only `{"app_config": ...}` instead of the doctor report: sets up what people log in with where nobody can open a browser; they log in later with `zitadel auth login --user <USER_ID> --remote --redirect-uri <URL>` (a hint saying so goes to stderr). Exits 1 if no Native app client id is configured. Takes no `--user`. |
 

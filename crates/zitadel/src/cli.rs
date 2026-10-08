@@ -63,13 +63,16 @@ pub enum Command {
     #[command(after_help = "Examples:\n  zitadel init                                                       # asks the instance URL and the key JSON\n  zitadel init --instance-url https://acme.zitadel.cloud --key-file ~/Downloads/123456789.json\n  zitadel init --user jane.doe --client-id 123456789@zitadel-cli   # add the Native app and log jane.doe in\n  zitadel init --user-app --instance-url https://acme.zitadel.cloud --client-id 123456789@zitadel-cli   # Native app only, nobody logged in")]
     Init {
         /// Instance base URL, e.g. `https://acme.zitadel.cloud` or your self-hosted domain.
-        /// Required on the first run.
+        /// Asked for when app.json has none; passing it is the way to change it, and
+        /// discards every stored login.
         #[arg(long)]
         instance_url: Option<String>,
         /// Path to the service user's JSON key file downloaded from the console
         /// (Users > Service Users > <user> > Keys > New, type JSON). Its content is
         /// copied into app.json; the file itself is no longer needed afterwards.
         /// Without it, `init` asks for the key JSON to be pasted (hidden on a terminal).
+        /// With `--user <USER_ID>` / --user-app it is not asked, but a given file is still
+        /// validated and stored (only the service user needs it).
         #[arg(long, value_name = "PATH")]
         key_file: Option<std::path::PathBuf>,
         /// Client id of a Native application (PKCE), needed only by people (`--user <USER_ID>`), shared by all of them.
