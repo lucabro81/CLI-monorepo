@@ -4,7 +4,7 @@ Architecture and design notes for the `zitadel` crate. Global rules (TDD, error 
 
 ## Status
 
-`init [--user <id>]`, `init --user-app`, `doctor [--user <id>]`, `auth login [--user <id>]`, `auth whoami [--user <id>]`, `auth logout [--user <id>]`, `user search`, `user get`, `organization list`, `project list` implemented (issue #142). New commands are added one at a time via the `add-cli-command` skill.
+`init [--user <id>]`, `init --user-app`, `doctor [--user <id>]`, `auth login [--user <id>]`, `auth whoami [--user <id>]`, `auth logout [--user <id>]`, `user search`, `user get`, `user authorizations` (issue #229), `organization list`, `project list` implemented (issue #142). New commands are added one at a time via the `add-cli-command` skill.
 
 ## Module map (mirrors crates/google-chat)
 
@@ -23,7 +23,8 @@ src/
                        check_user_app_flag(); resolve_init_inputs() (what to ask
                        per InitMode, issue #228), ask_on_stdin()/prompt()/
                        read_secret_with() (key JSON hidden on a terminal)  [implemented]
-    user.rs          — run(UserCommand); build_search_body() (pure)    [search, get implemented]
+    user.rs          — run(UserCommand); build_search_body(),
+                       build_authorizations_body() (pure)  [search, get, authorizations implemented]
     organization.rs  — run(OrganizationCommand); build_list_body() (pure) [list implemented]
     project.rs       — run(ProjectCommand); build_list_body() (pure)    [list implemented]
   auth.rs         — AppConfig, ServiceUserKey (+ from_key_file: validates type/PEM),
@@ -37,7 +38,7 @@ src/
   client.rs       — ZitadelClient (blocking reqwest); get_json/post_json helpers; url_with_segment()
                     percent-encodes ids as one path segment; ClientError::{Request, Status}
                     [get_current_user, list_my_memberships, search_users, get_user, list_organizations,
-                    list_projects implemented]
+                    list_projects, list_authorizations implemented]
   cli.rs          — clap structs only, no logic
   context.rs      — config_dir(), load_app_config(), authenticated_client(identity),
                     login_error_to_cli(e, path, identity), login_command(identity),
@@ -182,6 +183,7 @@ All of them hold secrets and are written through `oauth_user_login::write_secret
 | `doctor [--user <id>]` | checks the selected identity (informational `pending_login` and `identities`): `GET /auth/v1/users/me` + `POST /auth/v1/memberships/me/_search` (v1: no v2 equivalent for the caller's own roles) | exempt (`or_all`) |
 | `user search` | `POST /v2/users` (v2 `ListUsers`) | mandatory |
 | `user get <user-id>` | `GET /v2/users/{userId}` (v2 `GetUserByID`) | exempt (`or_all`) |
+| `user authorizations <user-id>` | `GET /v2/users/{userId}` (existence: ListAuthorizations answers an unknown user like one with no roles) then `POST /zitadel.authorization.v2.AuthorizationService/ListAuthorizations` (Connect path; filters `inUserIds`, `projectId`, `state`); needs `user.grant.read`, verified live that `ORG_OWNER_VIEWER` reads it and gets 403 on writes; empty result has no `authorizations`/`totalResult`, an authorization without roles has no `roles` | mandatory |
 | `organization list` | `POST /v2/organizations/_search` (v2 `ListOrganizations`); visibility follows roles (`IAM_OWNER` all, `ORG_OWNER` own only) | mandatory |
 | `project list` | `POST /zitadel.project.v2.ProjectService/ListProjects` (Connect path, see API notes) | mandatory |
 | `auth whoami` | `GET /auth/v1/users/me` (v1: no v2 "me" endpoint; `/oidc/v1/userinfo` only returns `sub` with the `openid` scope) | exempt (`or_all`) |

@@ -116,10 +116,11 @@ const SERVICE_STEPS: &str = "\
 === zitadel init: service user setup (the default identity) ===
 
 Step 1: In the ZITADEL console: Users -> Service Users -> New (e.g. \"zitadel-cli\").
-Step 2: Grant it a manager role matching what the CLI should do: e.g. IAM_OWNER (whole
-        instance, Default settings -> Administrators), or ORG_OWNER / ORG_USER_MANAGER on an
-        organization. Prefer the narrowest role your commands need; `zitadel doctor` lists
-        the roles it sees.
+Step 2: Grant it the narrowest manager role your commands need (`zitadel doctor` lists the
+        roles it sees). To read users and their project roles (user get/search, user
+        authorizations): ORG_OWNER_VIEWER on the organization (Organization -> Managers).
+        To change things: e.g. ORG_OWNER / ORG_USER_MANAGER, or IAM_OWNER for the whole
+        instance (Default settings -> Administrators).
 Step 3: On the service user: Keys -> New, type JSON, and download the file.
 Step 4: Paste the whole content of that file when asked (it is one line; hidden on a terminal),
         or pass it with --key-file <path>.
