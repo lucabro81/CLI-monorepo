@@ -196,19 +196,25 @@ pub enum UserCommand {
     /// Search users across the organizations the identity may read
     ///
     /// Calls ZITADEL's v2 `ListUsers` (POST /v2/users). All filters are optional and
-    /// combined with AND; --email and --username match "contains", case-insensitive.
+    /// combined with AND; --email and --username match "contains", case-insensitive;
+    /// --email-exact matches the whole address, case-insensitive.
     /// Without filters, lists every user the identity is allowed to read (requires
     /// the user.read permission, e.g. `ORG_OWNER` or `ORG_USER_MANAGER` on the user's
     /// organization). Pagination: --limit/--offset; the response's
     /// details.totalResult is the total number of matches (absent when there are
     /// none). Each result has userId, username, state, details.resourceOwner (its
-    /// organization) and either a "human" (profile, email, phone) or a "machine"
-    /// object. --select (or --select-all) is required.
-    #[command(after_help = "Examples:\n  zitadel user search --email @acme.com --select result.userId,result.username,result.human.email.email\n  zitadel user search --username john --state active --select result.userId,result.state\n  zitadel user search --organization-id 123456789 --limit 50 --offset 50 --select details.totalResult,result.userId")]
+    /// organization) and either a "human" (profile, email with isVerified, phone) or a
+    /// "machine" object. --select (or --select-all) is required.
+    #[command(after_help = "Examples:\n  zitadel user search --email @acme.com --select result.userId,result.username,result.human.email.email\n  zitadel user search --email-exact jane@acme.com --select result.userId,result.human.email.isVerified\n  zitadel user search --username john --state active --select result.userId,result.state\n  zitadel user search --organization-id 123456789 --limit 50 --offset 50 --select details.totalResult,result.userId")]
     Search {
         /// Email contains this text (case-insensitive), e.g. "@acme.com" or a full address
         #[arg(long)]
         email: Option<String>,
+        /// Email is exactly this address (case-insensitive); a fragment matches nothing.
+        /// Use it to find the user behind a known address, then check
+        /// result.human.email.isVerified
+        #[arg(long, value_name = "ADDRESS", conflicts_with = "email")]
+        email_exact: Option<String>,
         /// Username contains this text (case-insensitive)
         #[arg(long)]
         username: Option<String>,
@@ -260,6 +266,29 @@ pub enum UserCommand {
         /// Only authorizations in this state
         #[arg(long, value_enum)]
         state: Option<AuthorizationState>,
+        /// Maximum number of results to return
+        #[arg(long, default_value_t = 100, value_parser = clap::value_parser!(u32).range(1..))]
+        limit: u32,
+        /// Number of results to skip (for paging through results)
+        #[arg(long, default_value_t = 0)]
+        offset: u64,
+    },
+    /// List the external accounts linked to a user (identity provider links)
+    ///
+    /// Calls ZITADEL's v2 `ListIDPLinks` (POST /v2/users/<user-id>/links/_search) after
+    /// checking the user exists: an unknown user id is an error (404), while a user
+    /// with no links gives an empty result (only `details`, no `result`). Each link has
+    /// idpId, idpName (added by the CLI from GET /v2/idps/<id>; absent if the identity
+    /// provider can't be read), and userId / userName — the account's id and name AT
+    /// THE IDENTITY PROVIDER (e.g. the Google account id), not the ZITADEL user id.
+    /// There is no reverse lookup (from an external account to its ZITADEL user):
+    /// ZITADEL has no API for it. Needs read access to users, e.g. the read-only
+    /// `ORG_OWNER_VIEWER`. Pagination: --limit/--offset. --select (or --select-all) is
+    /// required.
+    #[command(after_help = "Examples:\n  zitadel user idp-links 123456789012345678 --select result.idpId,result.idpName,result.userId\n  zitadel user idp-links 123456789012345678 --select details.totalResult,result.userName")]
+    IdpLinks {
+        /// The user's id (`userId` in user search results)
+        user_id: String,
         /// Maximum number of results to return
         #[arg(long, default_value_t = 100, value_parser = clap::value_parser!(u32).range(1..))]
         limit: u32,

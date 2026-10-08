@@ -117,8 +117,8 @@ const SERVICE_STEPS: &str = "\
 
 Step 1: In the ZITADEL console: Users -> Service Users -> New (e.g. \"zitadel-cli\").
 Step 2: Grant it the narrowest manager role your commands need (`zitadel doctor` lists the
-        roles it sees). To read users and their project roles (user get/search, user
-        authorizations): ORG_OWNER_VIEWER on the organization (Organization -> Managers).
+        roles it sees). To read users, their project roles and IdP links (user get/search,
+        user authorizations, user idp-links): ORG_OWNER_VIEWER on the organization (Organization -> Managers).
         To change things: e.g. ORG_OWNER / ORG_USER_MANAGER, or IAM_OWNER for the whole
         instance (Default settings -> Administrators).
 Step 3: On the service user: Keys -> New, type JSON, and download the file.

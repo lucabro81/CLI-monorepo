@@ -16,9 +16,12 @@
 //!
 //! # Isolation
 //!
-//! Read-only: every test uses the logged-in identity itself as the known
-//! fixture (its user id, username and organization from `GET /auth/v1/users/me`),
-//! so nothing is created and nothing needs cleaning up.
+//! Mostly read-only: tests use the logged-in identity itself as the known
+//! fixture (its user id, username and organization from `GET /auth/v1/users/me`).
+//! The IdP-link test (issue #230) creates its own fixtures — a human user and a
+//! generic OIDC identity provider that is never used to log in, both named
+//! `zitadel-cli-e2e-<timestamp>` — removed on drop (`LinkedHuman`), and
+//! `e2e_cleanup` removes leftovers of an interrupted run.
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
@@ -99,6 +102,7 @@ fn e2e_user_search_by_username_and_organization_finds_the_identity() {
     let (client, me) = setup();
     let body = user::build_search_body(&user::UserSearchFilters {
         email: None,
+        email_exact: None,
         username: Some(&me.user_name),
         state: Some(crate::cli::UserState::Active),
         organization_id: Some(&me.organization_id),
@@ -118,6 +122,7 @@ fn e2e_user_search_respects_limit() {
     let (client, _) = setup();
     let body = user::build_search_body(&user::UserSearchFilters {
         email: None,
+        email_exact: None,
         username: None,
         state: None,
         organization_id: None,
@@ -195,3 +200,150 @@ fn e2e_list_authorizations_cannot_tell_an_unknown_user_apart() {
     ));
 }
 
+#[test]
+#[ignore = "e2e: requires zitadel init"]
+fn e2e_user_idp_links_of_the_identity_parse() {
+    // Issue #230. A service user usually has no links: assert the shape only.
+    let (client, me) = setup();
+
+    let result = client.list_idp_links(&me.user_id, &user::build_idp_links_body(100, 0)).unwrap();
+
+    assert!(result["details"].is_object(), "got {result:#}");
+    for link in result["result"].as_array().map(Vec::as_slice).unwrap_or_default() {
+        assert!(link["idpId"].is_string() && link["userId"].is_string(), "got {link:#}");
+    }
+}
+
+#[test]
+#[ignore = "e2e: requires zitadel init"]
+fn e2e_user_search_email_exact_does_not_match_a_fragment() {
+    // Issue #230: --email-exact is a whole-address match, unlike --email.
+    let (client, _) = setup();
+    let body = user::build_search_body(&user::UserSearchFilters {
+        email: None,
+        email_exact: Some("@"),
+        username: None,
+        state: None,
+        organization_id: None,
+        limit: 100,
+        offset: 0,
+    });
+
+    let result = client.search_users(&body).unwrap();
+
+    assert!(result.get("result").is_none(), "a bare \"@\" must match no address, got {result:#}");
+}
+
+// ── fixtures created by the test itself (issue #230) ──────────────────────
+
+const E2E_PREFIX: &str = "zitadel-cli-e2e-";
+/// The external account id the fixture link carries (a made-up Google-like `sub`).
+const EXTERNAL_USER_ID: &str = "108123456789012345678";
+
+/// A human user linked to a throwaway generic OIDC identity provider; both are
+/// deleted on drop.
+struct LinkedHuman<'a> {
+    client: &'a ZitadelClient,
+    user_id: String,
+    email: String,
+    idp_id: String,
+    idp_name: String,
+}
+
+impl<'a> LinkedHuman<'a> {
+    fn create(client: &'a ZitadelClient) -> Self {
+        use reqwest::Method;
+        let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis();
+        let idp_name = format!("{E2E_PREFIX}idp-{stamp}");
+        let email = format!("{E2E_PREFIX}{stamp}@example.com");
+        let idp = client
+            .send_for_tests(Method::POST, "/management/v1/idps/generic_oidc", Some(&serde_json::json!({
+                "name": idp_name, "issuer": "https://accounts.google.com", "clientId": "e2e", "clientSecret": "e2e",
+                "scopes": ["openid"],
+                "providerOptions": {"isLinkingAllowed": true, "isCreationAllowed": false, "isAutoCreation": false, "isAutoUpdate": false},
+            })))
+            .unwrap();
+        let idp_id = idp["id"].as_str().unwrap().to_string();
+        let user = client
+            .send_for_tests(Method::POST, "/v2/users/human", Some(&serde_json::json!({
+                "username": format!("{E2E_PREFIX}human-{stamp}"),
+                "profile": {"givenName": "E2E", "familyName": "Human"},
+                "email": {"email": email, "isVerified": true},
+            })))
+            .unwrap();
+        let fixture = LinkedHuman { client, user_id: user["userId"].as_str().unwrap().to_string(), email, idp_id, idp_name };
+        client
+            .send_for_tests(Method::POST, &format!("/v2/users/{}/links", fixture.user_id), Some(&serde_json::json!({
+                "idpLink": {"idpId": fixture.idp_id, "userId": EXTERNAL_USER_ID, "userName": fixture.email},
+            })))
+            .unwrap();
+        fixture
+    }
+}
+
+impl Drop for LinkedHuman<'_> {
+    fn drop(&mut self) {
+        let _ = self.client.send_for_tests(reqwest::Method::DELETE, &format!("/management/v1/users/{}", self.user_id), None);
+        let _ = self.client.send_for_tests(reqwest::Method::DELETE, &format!("/management/v1/idps/templates/{}", self.idp_id), None);
+    }
+}
+
+fn exact_email_search(email: &str) -> Value {
+    user::build_search_body(&user::UserSearchFilters {
+        email: None,
+        email_exact: Some(email),
+        username: None,
+        state: None,
+        organization_id: None,
+        limit: 100,
+        offset: 0,
+    })
+}
+
+#[test]
+#[ignore = "e2e: requires zitadel init"]
+fn e2e_a_linked_human_is_found_by_exact_email_and_its_links_name_the_provider() {
+    // Issue #230: the reads Mercury chains — exact verified email, then the link.
+    let (client, _) = setup();
+    let fixture = LinkedHuman::create(&client);
+
+    let found = client.search_users(&exact_email_search(&fixture.email.to_uppercase())).unwrap();
+    assert_eq!(found["result"].as_array().unwrap().len(), 1, "got {found:#}");
+    assert_eq!(found["result"][0]["userId"], fixture.user_id.as_str());
+    assert_eq!(found["result"][0]["human"]["email"]["isVerified"], true);
+
+    let local_part = &fixture.email[..fixture.email.find('@').unwrap()];
+    let fragment = client.search_users(&exact_email_search(local_part)).unwrap();
+    assert!(fragment.get("result").is_none(), "a fragment must not match, got {fragment:#}");
+
+    let links = client.list_idp_links(&fixture.user_id, &user::build_idp_links_body(100, 0)).unwrap();
+    assert_eq!(links["result"].as_array().unwrap().len(), 1, "got {links:#}");
+    assert_eq!(links["result"][0]["idpId"], fixture.idp_id.as_str());
+    assert_eq!(links["result"][0]["userId"], EXTERNAL_USER_ID);
+    assert_eq!(links["result"][0]["userName"], fixture.email.as_str());
+
+    let idp = client.get_idp(&fixture.idp_id).unwrap();
+    assert_eq!(idp["idp"]["name"], fixture.idp_name.as_str());
+}
+
+#[test]
+#[ignore = "e2e: requires zitadel init"]
+fn e2e_cleanup() {
+    // Removes fixtures left behind by an interrupted run.
+    use reqwest::Method;
+    let (client, _) = setup();
+    let users = client
+        .search_users(&serde_json::json!({"queries": [{"userNameQuery": {"userName": E2E_PREFIX, "method": "TEXT_QUERY_METHOD_STARTS_WITH"}}]}))
+        .unwrap();
+    for leftover in users["result"].as_array().map(Vec::as_slice).unwrap_or_default() {
+        let id = leftover["userId"].as_str().unwrap();
+        client.send_for_tests(Method::DELETE, &format!("/management/v1/users/{id}"), None).unwrap();
+    }
+    let idps = client.send_for_tests(Method::POST, "/management/v1/idps/templates/_search", Some(&serde_json::json!({}))).unwrap();
+    for leftover in idps["result"].as_array().map(Vec::as_slice).unwrap_or_default() {
+        if leftover["name"].as_str().is_some_and(|name| name.starts_with(E2E_PREFIX)) {
+            let id = leftover["id"].as_str().unwrap();
+            client.send_for_tests(Method::DELETE, &format!("/management/v1/idps/templates/{id}"), None).unwrap();
+        }
+    }
+}
