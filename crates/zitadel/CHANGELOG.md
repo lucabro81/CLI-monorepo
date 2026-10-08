@@ -13,6 +13,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - *(zitadel)* user authorizations and the read-only service-user role (#229)
 - *(zitadel)* e2e shows why user authorizations checks the user first (#229)
 - Merge pull request #234 from lucabro81/issue229 ([#234](https://github.com/lucabro81/CLI-monorepo/pull/234))
+- Release
+- Merge pull request #235 from lucabro81/release/zitadel ([#235](https://github.com/lucabro81/CLI-monorepo/pull/235))
+## [2.5.0](https://github.com/lucabro81/CLI-monorepo/compare/zitadel-v2.4.0...zitadel-v2.5.0) - 2026-10-08
+
+### Added
+- *(zitadel)* user authorizations lists a user's project roles
+
+### Other
+- *(zitadel)* user authorizations and the read-only service-user role (#229)
+- *(zitadel)* e2e shows why user authorizations checks the user first (#229)
+- Merge pull request #234 from lucabro81/issue229 ([#234](https://github.com/lucabro81/CLI-monorepo/pull/234))
 ## [2.4.0](https://github.com/lucabro81/CLI-monorepo/compare/zitadel-v2.3.0...zitadel-v2.4.0) - 2026-10-08
 
 ### Added
