@@ -4,7 +4,7 @@ use clap::Parser;
 use clap::error::ErrorKind;
 
 use super::{
-    AuthCommand, Cli, Command, OrganizationCommand, ProjectCommand, UserCommand, UserState,
+    AuthCommand, AuthorizationState, Cli, Command, OrganizationCommand, ProjectCommand, UserCommand, UserState,
 };
 
 fn parse(args: &[&str]) -> Result<Cli, clap::Error> {
@@ -213,6 +213,52 @@ fn parses_user_get() {
 #[test]
 fn user_get_requires_a_user_id() {
     assert_eq!(error_kind(&["user", "get"]), ErrorKind::MissingRequiredArgument);
+}
+
+// ── user authorizations (issue #229) ──────────────────────────────────────
+
+#[test]
+fn parses_user_authorizations_with_defaults() {
+    let cli = parse(&["user", "authorizations", "123"]).unwrap();
+
+    match cli.command {
+        Command::User { command: UserCommand::Authorizations { user_id, project_id, state, limit, offset } } => {
+            assert_eq!(user_id, "123");
+            assert_eq!((project_id, state, limit, offset), (None, None, 100, 0));
+        }
+        other => panic!("expected user authorizations, got {other:?}"),
+    }
+}
+
+#[test]
+fn parses_user_authorizations_with_all_flags() {
+    let cli = parse(&[
+        "user", "authorizations", "123", "--project-id", "456", "--state", "inactive", "--limit", "5", "--offset", "10",
+    ])
+    .unwrap();
+
+    match cli.command {
+        Command::User { command: UserCommand::Authorizations { user_id, project_id, state, limit, offset } } => {
+            assert_eq!(user_id, "123");
+            assert_eq!(project_id.as_deref(), Some("456"));
+            assert_eq!(state, Some(AuthorizationState::Inactive));
+            assert_eq!((limit, offset), (5, 10));
+        }
+        other => panic!("expected user authorizations, got {other:?}"),
+    }
+}
+
+#[test]
+fn user_authorizations_accepts_only_known_states() {
+    // ZITADEL rejects unknown states with a 400; clap catches them first, naming the valid ones.
+    assert_eq!(parse(&["user", "authorizations", "1", "--state", "active"]).map(|_| ()).ok(), Some(()));
+    assert_eq!(error_kind(&["user", "authorizations", "1", "--state", "deleted"]), ErrorKind::InvalidValue);
+}
+
+#[test]
+fn user_authorizations_requires_a_user_id_and_a_positive_limit() {
+    assert_eq!(error_kind(&["user", "authorizations"]), ErrorKind::MissingRequiredArgument);
+    assert_eq!(error_kind(&["user", "authorizations", "1", "--limit", "0"]), ErrorKind::ValueValidation);
 }
 
 #[test]
