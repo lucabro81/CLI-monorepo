@@ -15,6 +15,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - *(zitadel)* e2e suite creates fixtures for the IdP-link test (#230)
 - *(zitadel)* context module map lists EQUALS_IGNORE_CASE (#230)
 - Merge pull request #237 from lucabro81/issue230 ([#237](https://github.com/lucabro81/CLI-monorepo/pull/237))
+- Release
+- Merge pull request #238 from lucabro81/release/zitadel ([#238](https://github.com/lucabro81/CLI-monorepo/pull/238))
+## [2.6.0](https://github.com/lucabro81/CLI-monorepo/compare/zitadel-v2.5.0...zitadel-v2.6.0) - 2026-10-08
+
+### Added
+- *(zitadel)* user idp-links and user search --email-exact
+
+### Other
+- *(zitadel)* user idp-links and --email-exact (#230)
+- *(zitadel)* e2e fixtures for idp links and exact email; idp_ids tests (#230)
+- *(zitadel)* e2e suite creates fixtures for the IdP-link test (#230)
+- *(zitadel)* context module map lists EQUALS_IGNORE_CASE (#230)
+- Merge pull request #237 from lucabro81/issue230 ([#237](https://github.com/lucabro81/CLI-monorepo/pull/237))
 ## [2.5.0](https://github.com/lucabro81/CLI-monorepo/compare/zitadel-v2.4.0...zitadel-v2.5.0) - 2026-10-08
 
 ### Added
