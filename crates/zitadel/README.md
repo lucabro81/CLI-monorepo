@@ -86,7 +86,13 @@ Every command prints JSON on stdout and a single plain-text error on stderr (non
 
 ### `zitadel init`
 
-Writes `app.json`, logs in and prints the [`doctor`](#zitadel-doctor) report for that identity: without `--user` as the service user (if a key is configured), with `--user <USER_ID>` as that person through the browser (needs the Native app client id). Flag-driven, no prompts. Re-running merges with the existing `app.json`: omitted flags keep their value. Changing the instance URL removes every stored login (the service user's and every person's).
+Like `jira init` / `bitbucket init`: prints numbered console setup steps, asks for whatever the flags didn't give, writes `app.json` (mode `0600`), logs in and prints the [`doctor`](#zitadel-doctor) report for that identity.
+
+- `zitadel init` — the service user: asks the instance URL (only when `app.json` has none) and the service user's **whole key JSON**, pasted as downloaded (it is one line; hidden, no echo, on a terminal), validated like `--key-file`; then logs in as the service user.
+- `zitadel init --user <USER_ID>` — the Native app every person uses: asks the instance URL (only when missing) and the Native app client id, then runs the browser login for that person.
+- `zitadel init --user-app` — the same Native app setup, logging nobody in (see the flag below).
+
+A flag skips its question; an empty answer writes nothing (exit 1, naming the flag); when stdin is piped every answer is one plain line. Re-running merges with the existing `app.json`: values not given keep theirs. Changing the instance URL (`--instance-url`) removes every stored login (the service user's and every person's).
 
 | Flag | Description |
 |---|---|
@@ -96,6 +102,7 @@ Writes `app.json`, logs in and prints the [`doctor`](#zitadel-doctor) report for
 | `--user-app` | Log nobody in (not even the service user) and print only `{"app_config": ...}` instead of the doctor report: sets up what people log in with where nobody can open a browser; they log in later with `zitadel auth login --user <USER_ID> --remote --redirect-uri <URL>` (a hint saying so goes to stderr). Exits 1 if no Native app client id is configured. Takes no `--user`. |
 
 ```sh
+zitadel init                                                        # asks the instance URL and the key JSON
 zitadel init --instance-url https://acme.zitadel.cloud --key-file ~/Downloads/123456789.json
 zitadel init --user jane.doe --client-id 123456789@zitadel-cli    # later: add the Native app and log jane.doe in
 zitadel init --user-app --instance-url https://acme.zitadel.cloud --client-id 123456789@zitadel-cli   # Native app only, nobody logged in

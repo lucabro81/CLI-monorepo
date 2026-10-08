@@ -20,7 +20,9 @@ src/
                        both), build_app_config() (merge flags over existing
                        app.json), write_app_config() (mode 0600),
                        discard_instance_credentials(), user_app_report(),
-                       check_user_app_flag()                             [implemented]
+                       check_user_app_flag(); resolve_init_inputs() (what to ask
+                       per InitMode, issue #228), ask_on_stdin()/prompt()/
+                       read_secret_with() (key JSON hidden on a terminal)  [implemented]
     user.rs          — run(UserCommand); build_search_body() (pure)    [search, get implemented]
     organization.rs  — run(OrganizationCommand); build_list_body() (pure) [list implemented]
     project.rs       — run(ProjectCommand); build_list_body() (pure)    [list implemented]
@@ -73,6 +75,11 @@ app `client_id` shared by every person), so its shape is unchanged.
 (`CliError::RemoteLoginNeedsUser`), since clap can't see a global `--user` placed
 before the subcommand. `init --user <id>` logs that person in through the browser; a
 changed instance URL removes every stored login (`discard_instance_credentials`).
+`init` mirrors `jira init` (issue #228): `resolve_init_inputs` asks, through an injected
+reader, the instance URL only when app.json has none, then the service user's whole key
+JSON (hidden via `rpassword` on a terminal, a plain line when piped; validated by
+`ServiceUserKey::from_key_file`, `CliError::InvalidPastedKey` otherwise) or, for
+`--user`/`--user-app`, the Native app client id; empty answers are `CliError::EmptyInput`.
 `init --user-app` (issue #195) shares `init`'s `write_config` but logs nobody in and
 prints `user_app_report` (doctor's `check_app_config`, failing without a Native app
 `client_id`) as `{"app_config": ...}`; `check_user_app_flag` refuses `--user <id>`
@@ -166,7 +173,7 @@ All of them hold secrets and are written through `oauth_user_login::write_secret
 | `auth login` | `POST /oauth/v2/token` (jwt-bearer) | n/a (prints a confirmation line) |
 | `auth login --user <id>` | `GET /oauth/v2/authorize` (browser) + `POST /oauth/v2/token` (authorization_code + PKCE, refresh_token) | n/a |
 | `auth login --user <id> --remote` / `--code --state` | step 1 prints the authorize URL (no request); step 2 `POST /oauth/v2/token` (authorization_code + PKCE) then `GET /auth/v1/users/me` | exempt (`or_all`): step 1's synthesized object, step 2 = whoami |
-| `init [--user <id>]` | writes app.json, logs in the selected identity (`POST /oauth/v2/token`; browser with `--user`), runs doctor for it; flags only, no prompts; narrative on stderr, doctor report on stdout | exempt (`or_all`), like doctor |
+| `init [--user <id>]` | prints setup steps, asks what the flags didn't give (instance URL if missing; key JSON hidden for the service user, Native app client id with `--user`; issue #228), writes app.json, logs in the selected identity (`POST /oauth/v2/token`; browser with `--user`), runs doctor for it; narrative and questions on stderr, doctor report on stdout | exempt (`or_all`), like doctor |
 | `init --user-app` | writes app.json like `init`, logs nobody in (not even the service user), prints only `{"app_config": ...}` (error without a Native app `client_id`); refuses `--user` (issue #195) | exempt (`or_all`) |
 | `doctor [--user <id>]` | checks the selected identity (informational `pending_login` and `identities`): `GET /auth/v1/users/me` + `POST /auth/v1/memberships/me/_search` (v1: no v2 equivalent for the caller's own roles) | exempt (`or_all`) |
 | `user search` | `POST /v2/users` (v2 `ListUsers`) | mandatory |

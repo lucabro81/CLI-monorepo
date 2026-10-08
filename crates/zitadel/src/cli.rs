@@ -47,19 +47,18 @@ pub struct Cli {
 pub enum Command {
     /// Configure the CLI for a ZITADEL instance, log in, and verify with doctor
     ///
-    /// Writes app.json (instance URL, service user key, optional Native app client
-    /// id; file mode 0600 because it holds the private key), logs in as the service
-    /// user if one is configured (with `--user <USER_ID>`: as that person, through
-    /// the browser, which needs the Native app client id), then prints the doctor
-    /// JSON report for that identity and exits non-zero if any check fails. Changing
-    /// the instance URL removes every stored login (the service user's and every
-    /// person's). Re-running merges
-    /// with the existing app.json:
-    /// flags you omit keep their current value, so e.g. a Native app client id can
-    /// be added later with --client-id alone. No interactive prompts. With
-    /// --user-app: writes app.json the same way but logs nobody in (not even the
+    /// Prints numbered console setup steps, then asks for whatever the flags didn't
+    /// give, like jira and bitbucket init: the instance URL (only when app.json has
+    /// none), then the service user's whole key JSON (input hidden on a terminal)
+    /// or, with --user <USER_ID> / --user-app, the Native app client id. A flag
+    /// skips its question; an empty answer writes nothing; piped stdin is read one
+    /// line per answer. Writes app.json (mode 0600, merged with the existing one),
+    /// logs in as the service user (with `--user <USER_ID>`: as that person, through
+    /// the browser), then prints the doctor JSON report for that identity and exits
+    /// non-zero if any check fails. Changing the instance URL (--instance-url)
+    /// removes every stored login. With --user-app: logs nobody in (not even the
     /// service user) and prints only the `app_config` check.
-    #[command(after_help = "Examples:\n  zitadel init --instance-url https://acme.zitadel.cloud --key-file ~/Downloads/123456789.json\n  zitadel init --user jane.doe --client-id 123456789@zitadel-cli   # add the Native app and log jane.doe in\n  zitadel init --user-app --instance-url https://acme.zitadel.cloud --client-id 123456789@zitadel-cli   # Native app only, nobody logged in")]
+    #[command(after_help = "Examples:\n  zitadel init                                                       # asks the instance URL and the key JSON\n  zitadel init --instance-url https://acme.zitadel.cloud --key-file ~/Downloads/123456789.json\n  zitadel init --user jane.doe --client-id 123456789@zitadel-cli   # add the Native app and log jane.doe in\n  zitadel init --user-app --instance-url https://acme.zitadel.cloud --client-id 123456789@zitadel-cli   # Native app only, nobody logged in")]
     Init {
         /// Instance base URL, e.g. `https://acme.zitadel.cloud` or your self-hosted domain.
         /// Required on the first run.
@@ -68,9 +67,11 @@ pub enum Command {
         /// Path to the service user's JSON key file downloaded from the console
         /// (Users > Service Users > <user> > Keys > New, type JSON). Its content is
         /// copied into app.json; the file itself is no longer needed afterwards.
+        /// Without it, `init` asks for the key JSON to be pasted (hidden on a terminal).
         #[arg(long, value_name = "PATH")]
         key_file: Option<std::path::PathBuf>,
         /// Client id of a Native application (PKCE), needed only by people (`--user <USER_ID>`), shared by all of them.
+        /// Asked for by `init --user <USER_ID>` / `init --user-app` when omitted.
         #[arg(long)]
         client_id: Option<String>,
         /// Set up only what people log in with (instance URL and the Native app's
