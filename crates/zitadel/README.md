@@ -15,7 +15,7 @@ CLI for the [ZITADEL](https://zitadel.com) identity platform (Cloud or self-host
 ### 1. Service user (default identity, for agents)
 
 1. In the ZITADEL console of your instance (`https://<instance>.zitadel.cloud` or your own domain): **Users → Service Users → New**.
-2. Grant it the narrowest manager role the CLI needs; it can only do what this role allows, and `zitadel doctor` lists the roles it sees. To **read** users and their project roles (`user get`, `user search`, `user authorizations`): **ORG_OWNER_VIEWER** on the organization (*Organization → Managers*), read-only (verified: reads work, writes get 403). To **change** things: e.g. **ORG_OWNER** / **ORG_USER_MANAGER** on an organization, or **IAM_OWNER** (whole instance) via *Default settings → Administrators*.
+2. Grant it the narrowest manager role the CLI needs; it can only do what this role allows, and `zitadel doctor` lists the roles it sees. To **read** users, their project roles and their identity provider links (`user get`, `user search`, `user authorizations`, `user idp-links`): **ORG_OWNER_VIEWER** on the organization (*Organization → Managers*), read-only (verified: reads work, writes get 403). To **change** things: e.g. **ORG_OWNER** / **ORG_USER_MANAGER** on an organization, or **IAM_OWNER** (whole instance) via *Default settings → Administrators*.
 3. On the service user: **Keys → New → JSON**, and download the key file. It contains a private key — keep it out of any repository.
 
 ### 2. (Optional) Native app, for people (`--user <USER_ID>`)
@@ -169,16 +169,18 @@ Searches users with ZITADEL's v2 `ListUsers` (`POST /v2/users`). Filters are opt
 | Flag | Description |
 |---|---|
 | `--email <TEXT>` | Email contains this text, case-insensitive (`@acme.com`, or a full address). |
+| `--email-exact <ADDRESS>` | Email is exactly this address, case-insensitive; a fragment matches nothing. Excludes `--email`. To find the user behind a known address — check `result.human.email.isVerified` before trusting it. |
 | `--username <TEXT>` | Username contains this text, case-insensitive. |
 | `--state <STATE>` | `active`, `inactive`, `deleted`, `locked`, `initial`. Validated locally: ZITADEL silently returns nothing for an unknown state. |
 | `--organization-id <ID>` | Only users of this organization. |
 | `--limit <N>` | Max results, default 100. |
 | `--offset <N>` | Results to skip, default 0. |
 
-Response: `details.totalResult` (total matches; absent, together with `result`, when there are none) and `result[]` with `userId`, `username`, `state`, `loginNames`, `details.resourceOwner` (organization) and a `human` (`profile`, `email`, `phone`) or `machine` object.
+Response: `details.totalResult` (total matches; absent, together with `result`, when there are none) and `result[]` with `userId`, `username`, `state`, `loginNames`, `details.resourceOwner` (organization) and a `human` (`profile`, `email` with `isVerified`, `phone`) or `machine` object.
 
 ```sh
 zitadel user search --email @acme.com --select result.userId,result.username,result.human.email.email
+zitadel user search --email-exact jane@acme.com --select result.userId,result.human.email.isVerified
 zitadel user search --username john --state active --select result.userId,result.state
 zitadel user search --limit 50 --offset 50 --select details.totalResult,result.userId
 ```
@@ -206,6 +208,22 @@ A user's authorizations — the project roles assigned to them (v2 `ListAuthoriz
 ```sh
 zitadel user authorizations 123456789012345678 --select authorizations.project.id,authorizations.roles.key,authorizations.state
 zitadel user authorizations 123456789012345678 --project-id 987654321098765432 --state active --select authorizations.roles.key
+```
+
+### `zitadel user idp-links <user-id>`
+
+The external accounts linked to a user — identity provider links, created when the person signs in through e.g. Google (v2 `ListIDPLinks`, `POST /v2/users/{userId}/links/_search`). The user is looked up first, so an unknown id fails with a 404 error, while a user with no links gives an empty result (only `details`, no `result`). Each link has `idpId`, `idpName` (added by the CLI from `GET /v2/idps/{id}`; absent if the provider can't be read) and `userId` / `userName` — the account's id and name **at the identity provider** (e.g. the Google account id), not the ZITADEL user id. Read-only `ORG_OWNER_VIEWER` is enough. Requires `--select` or `--select-all`.
+
+There is no reverse lookup (from an external account to its ZITADEL user): ZITADEL has no API for it. To find the user behind a sender, search by verified email (`user search --email-exact`) and confirm with `user idp-links`.
+
+| Flag | Description |
+|---|---|
+| `--limit <N>` | Maximum results (default 100, minimum 1) |
+| `--offset <N>` | Results to skip (default 0) |
+
+```sh
+zitadel user idp-links 123456789012345678 --select result.idpId,result.idpName,result.userId
+zitadel user idp-links 123456789012345678 --select details.totalResult,result.userName
 ```
 
 ### `zitadel organization list`
