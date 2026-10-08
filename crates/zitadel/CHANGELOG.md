@@ -16,6 +16,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - *(zitadel)* README setup shows the interactive init (#228)
 - *(zitadel)* init errors in README error design (#228)
 - Merge pull request #231 from lucabro81/issue228 ([#231](https://github.com/lucabro81/CLI-monorepo/pull/231))
+- Release
+- Merge pull request #232 from lucabro81/release/zitadel ([#232](https://github.com/lucabro81/CLI-monorepo/pull/232))
+## [2.4.0](https://github.com/lucabro81/CLI-monorepo/compare/zitadel-v2.3.0...zitadel-v2.4.0) - 2026-10-08
+
+### Added
+- *(zitadel)* init asks for what the flags didn't give, the key JSON hidden
+
+### Other
+- *(zitadel)* interactive init (#228)
+- *(zitadel)* init review fixes (#228)
+- *(zitadel)* init --help and README review fixes (#228)
+- *(zitadel)* README setup shows the interactive init (#228)
+- *(zitadel)* init errors in README error design (#228)
+- Merge pull request #231 from lucabro81/issue228 ([#231](https://github.com/lucabro81/CLI-monorepo/pull/231))
 ## [2.3.0](https://github.com/lucabro81/CLI-monorepo/compare/zitadel-v2.2.0...zitadel-v2.3.0) - 2026-10-07
 
 ### Added
