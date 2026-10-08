@@ -2,7 +2,7 @@
 
 use serde_json::json;
 
-use super::{UserSearchFilters, add_idp_names, build_authorizations_body, build_idp_links_body, build_search_body};
+use super::{UserSearchFilters, add_idp_names, build_authorizations_body, build_idp_links_body, build_search_body, idp_ids};
 use crate::cli::{AuthorizationState, UserState};
 
 fn filters() -> UserSearchFilters<'static> {
@@ -164,5 +164,28 @@ fn idp_names_leave_an_empty_response_alone() {
     add_idp_names(&mut response, &std::collections::HashMap::from([("g".to_string(), "Google".to_string())]));
 
     assert_eq!(response, json!({"details": {"timestamp": "t"}}));
+}
+
+#[test]
+fn idp_ids_are_distinct_and_skip_links_without_one() {
+    // One GetIDPByID call per provider, however many links use it.
+    let response = json!({"result": [
+        {"idpId": "g", "userId": "1"},
+        {"idpId": "a", "userId": "2"},
+        {"idpId": "g", "userId": "3"},
+        {"userId": "4"},
+    ]});
+
+    assert_eq!(idp_ids(&response), vec!["a".to_string(), "g".to_string()]);
+    assert!(idp_ids(&json!({"details": {}})).is_empty());
+}
+
+#[test]
+fn a_link_without_an_idp_id_gets_no_name() {
+    let mut response = json!({"result": [{"userId": "4"}]});
+
+    add_idp_names(&mut response, &std::collections::HashMap::from([("g".to_string(), "Google".to_string())]));
+
+    assert_eq!(response, json!({"result": [{"userId": "4"}]}));
 }
 

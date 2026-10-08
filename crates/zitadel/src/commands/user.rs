@@ -86,7 +86,7 @@ pub(crate) fn build_idp_links_body(limit: u32, offset: u64) -> Value {
 }
 
 /// The distinct identity provider ids in a `ListIDPLinks` response.
-fn idp_ids(response: &Value) -> Vec<String> {
+pub(crate) fn idp_ids(response: &Value) -> Vec<String> {
     let mut ids: Vec<String> = response["result"]
         .as_array()
         .map(Vec::as_slice)

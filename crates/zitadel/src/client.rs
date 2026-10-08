@@ -89,6 +89,25 @@ impl ZitadelClient {
         Ok(url)
     }
 
+    /// Any request, for e2e fixtures (create/delete) that the CLI itself never sends.
+    #[cfg(test)]
+    pub(crate) fn send_for_tests(
+        &self,
+        method: reqwest::Method,
+        path: &str,
+        body: Option<&serde_json::Value>,
+    ) -> Result<serde_json::Value, ClientError> {
+        let mut request = self
+            .http
+            .request(method, format!("{}{path}", self.instance_url))
+            .bearer_auth(&self.access_token)
+            .header(reqwest::header::ACCEPT, "application/json");
+        if let Some(body) = body {
+            request = request.json(body);
+        }
+        Self::into_json(request.send().map_err(|e| ClientError::Request(e.to_string()))?)
+    }
+
     fn get_json(&self, url: impl reqwest::IntoUrl) -> Result<serde_json::Value, ClientError> {
         let response = self
             .http
