@@ -128,6 +128,15 @@ pub enum CliError {
     #[error("I/O error: {reason}")]
     IoError { reason: String },
 
+    #[error("{field} is empty: nothing was written. Run the same zitadel init command again and type it, or pass it with {flag}")]
+    EmptyInput { field: &'static str, flag: &'static str },
+
+    #[error(
+        "the pasted service user key is not valid ({reason}). Paste the whole content of the key JSON downloaded \
+        from the console (Users > Service Users > <user> > Keys > New, type JSON), or pass the file with --key-file <path>"
+    )]
+    InvalidPastedKey { reason: String },
+
     #[error(
         "init --user-app sets up the Native app every person logs in with and logs nobody in, so it takes no --user. \
         Run: zitadel init --user-app --client-id <client-id>, then zitadel auth login --user {id}; \
@@ -139,7 +148,7 @@ pub enum CliError {
     NothingToLogOut { label: String, login: String },
 
     #[error(
-        "no instance URL known. Pass it explicitly: \
+        "no instance URL known. Run zitadel init and answer the question, or pass it explicitly: \
         zitadel init --instance-url https://<instance>.zitadel.cloud --key-file <path-to-key.json>"
     )]
     InstanceUrlRequired,
