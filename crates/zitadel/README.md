@@ -30,12 +30,14 @@ Only needed if commands must act as people (run with `--user <USER_ID>`); one Na
 ### 3. Initialize
 
 ```sh
-zitadel init --instance-url https://<instance>.zitadel.cloud --key-file ~/path/to/key.json
+zitadel init        # prints the steps, asks the instance URL and the key JSON (pasted, hidden on a terminal)
+zitadel init --instance-url https://<instance>.zitadel.cloud --key-file ~/path/to/key.json   # same, no questions
 ```
 
 The key file's content is copied into `app.json` (mode `0600`); the original file is no longer needed by the CLI afterwards. For people, add the Native app and log the first one in through the browser (`jane.doe` is your own id for that person):
 
 ```sh
+zitadel init --user jane.doe        # asks the Native app client id (and the instance URL if missing)
 zitadel init --user jane.doe --client-id <CLIENT_ID>
 ```
 

@@ -148,7 +148,7 @@ pub enum CliError {
     NothingToLogOut { label: String, login: String },
 
     #[error(
-        "no instance URL known. Pass it explicitly: \
+        "no instance URL known. Run zitadel init and answer the question, or pass it explicitly: \
         zitadel init --instance-url https://<instance>.zitadel.cloud --key-file <path-to-key.json>"
     )]
     InstanceUrlRequired,
