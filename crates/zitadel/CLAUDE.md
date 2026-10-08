@@ -45,8 +45,8 @@ src/
                     login_error_to_cli(e, path, identity), login_command(identity),
                     client_error_to_cli() (401 → re-login hint, 403 → missing-role hint
                     pointing to doctor, 404 → verify-id hint), print_json(value, select),
-                    search_query(limit, offset) + CONTAINS_IGNORE_CASE (shared by
-                    every v2 search body)
+                    search_query(limit, offset) + CONTAINS_IGNORE_CASE / EQUALS_IGNORE_CASE
+                    (shared by every v2 search body; the latter for user search --email-exact)
   endpoints.rs    — path constants/builders relative to the instance URL, no logic
   error.rs        — CliError (thiserror), incl. transparent Select(cli_fields::RenderError)
   tests/          — *_tests.rs mirroring src/; auth_user_tests.rs = the --user flow
