@@ -25,7 +25,7 @@ src/
                        read_secret_with() (key JSON hidden on a terminal)  [implemented]
     user.rs          — run(UserCommand); build_search_body(),
                        build_authorizations_body(), build_idp_links_body(),
-                       add_idp_names() (pure)  [search, get, authorizations, idp-links implemented]
+                       idp_ids(), add_idp_names() (pure)  [search, get, authorizations, idp-links implemented]
     organization.rs  — run(OrganizationCommand); build_list_body() (pure) [list implemented]
     project.rs       — run(ProjectCommand); build_list_body() (pure)    [list implemented]
   auth.rs         — AppConfig, ServiceUserKey (+ from_key_file: validates type/PEM),
@@ -198,4 +198,4 @@ cargo test -p zitadel                 # unit tests, no credentials
 cargo test -p zitadel -- --ignored    # e2e against a real instance (see ADDENDUM)
 ```
 
-`tests/e2e_tests.rs` is read-only and self-referential: the logged-in identity is the fixture.
+`tests/e2e_tests.rs` mostly reads, with the logged-in identity as the fixture; the IdP-link test (issue #230) creates and drops its own `zitadel-cli-e2e-*` fixtures (`LinkedHuman`: a generic OIDC IdP, a human, the link) through the test-only `ZitadelClient::send_for_tests`, so it needs a role that can create users and IdPs; `e2e_cleanup` removes leftovers.

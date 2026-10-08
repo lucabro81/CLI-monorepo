@@ -188,4 +188,3 @@ fn a_link_without_an_idp_id_gets_no_name() {
 
     assert_eq!(response, json!({"result": [{"userId": "4"}]}));
 }
-

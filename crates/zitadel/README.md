@@ -272,7 +272,7 @@ cargo test -p zitadel                 # unit tests
 cargo test -p zitadel -- --ignored    # e2e against the configured instance (needs `zitadel init`)
 ```
 
-The e2e suite is read-only: it uses the logged-in identity itself (its id, username and organization) as the known fixture, so it creates nothing.
+The e2e suite mostly reads, using the logged-in identity itself (its id, username and organization) as the known fixture. One test (the IdP link / exact email check) creates and deletes its own `zitadel-cli-e2e-*` fixtures — a generic OIDC identity provider never used to log in, a human user and their link — so it needs a service user that can create users and identity providers (e.g. `ORG_OWNER` or `IAM_OWNER`; a read-only `ORG_OWNER_VIEWER` can't run it). `e2e_cleanup` removes leftovers of an interrupted run.
 
 ## Error design
 

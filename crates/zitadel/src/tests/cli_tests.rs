@@ -480,4 +480,3 @@ fn user_idp_links_requires_a_user_id_and_a_positive_limit() {
     assert_eq!(error_kind(&["user", "idp-links"]), ErrorKind::MissingRequiredArgument);
     assert_eq!(error_kind(&["user", "idp-links", "1", "--limit", "0"]), ErrorKind::ValueValidation);
 }
-
