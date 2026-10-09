@@ -2,7 +2,7 @@
 
 use crate::cli::BranchCommand;
 use crate::auth::Identity;
-use crate::context::{authenticated_client, print_json, split_repository};
+use crate::context::{authenticated_client, print_json, split_repository, client_error_to_cli};
 use crate::error::CliError;
 
 /// Dispatches a `BranchCommand` variant to the appropriate Bitbucket API call.
@@ -12,9 +12,7 @@ pub fn run(command: BranchCommand, select: cli_fields::Select<'_>, identity: &Id
             let (workspace, repo_slug) = split_repository(&repository)?;
             let value = authenticated_client(identity)?
                 .list_branches(workspace, repo_slug, page)
-                .map_err(|e| CliError::ApiRequestFailed {
-                    reason: e.to_string(),
-                })?;
+                .map_err(client_error_to_cli)?;
             print_json(&value, select)
         }
         BranchCommand::Create { repository, name, target } => {
@@ -25,9 +23,7 @@ pub fn run(command: BranchCommand, select: cli_fields::Select<'_>, identity: &Id
             });
             let value = authenticated_client(identity)?
                 .create_branch(workspace, repo_slug, &body)
-                .map_err(|e| CliError::ApiRequestFailed {
-                    reason: e.to_string(),
-                })?;
+                .map_err(client_error_to_cli)?;
             // Exempt: a single branch object, fixed shape.
             print_json(&value, select.or_all())
         }
@@ -39,9 +35,7 @@ pub fn run(command: BranchCommand, select: cli_fields::Select<'_>, identity: &Id
                 let (workspace, repo_slug) = split_repository(&repository)?;
                 let model = authenticated_client(identity)?
                     .get_branching_model(workspace, repo_slug)
-                    .map_err(|e| CliError::ApiRequestFailed {
-                        reason: e.to_string(),
-                    })?;
+                    .map_err(client_error_to_cli)?;
                 match resolve_prefix_from_branching_model(&model, &desired_kind) {
                     Some(prefix) => (prefix, "branching_model"),
                     None => (desired_kind.clone(), "heuristic"),

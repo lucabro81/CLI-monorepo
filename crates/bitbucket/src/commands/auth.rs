@@ -26,7 +26,7 @@
 use serde_json::{json, Value};
 
 use crate::auth::{self, Identity, LoginError, UserId};
-use crate::context::{authenticated_client, config_dir, load_oauth_config, login_command, print_json};
+use crate::context::{authenticated_client, config_dir, load_oauth_config, login_command, print_json, client_error_to_cli};
 use crate::error::CliError;
 
 /// Which login `auth login` runs, decided by its flags (clap has already
@@ -137,9 +137,7 @@ pub(crate) fn remote_login_error(error: LoginError, id: &UserId) -> CliError {
 pub fn run_whoami(select: cli_fields::Select<'_>, identity: &Identity) -> Result<(), CliError> {
     let value = authenticated_client(identity)?
         .get_current_user()
-        .map_err(|e| CliError::ApiRequestFailed {
-            reason: e.to_string(),
-        })?;
+        .map_err(client_error_to_cli)?;
     print_json(&value, select.or_all())
 }
 

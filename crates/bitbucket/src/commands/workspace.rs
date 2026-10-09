@@ -2,7 +2,7 @@
 
 use crate::cli::WorkspaceCommand;
 use crate::auth::Identity;
-use crate::context::{authenticated_client, print_json};
+use crate::context::{authenticated_client, print_json, client_error_to_cli};
 use crate::error::CliError;
 
 /// Dispatches a `WorkspaceCommand` variant to the appropriate Bitbucket API call.
@@ -11,9 +11,7 @@ pub fn run(command: WorkspaceCommand, select: cli_fields::Select<'_>, identity: 
         WorkspaceCommand::Members { workspace, page } => {
             let value = authenticated_client(identity)?
                 .list_workspace_members(&workspace, page)
-                .map_err(|e| CliError::ApiRequestFailed {
-                    reason: e.to_string(),
-                })?;
+                .map_err(client_error_to_cli)?;
             print_json(&value, select)
         }
     }

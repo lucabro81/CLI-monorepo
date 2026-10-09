@@ -42,8 +42,8 @@
 use serde_json::{json, Value};
 
 use crate::auth::{self, AppConfig, Identity, OAuthConfig};
-use crate::client::BitbucketClient;
-use crate::context::{app_config_error, config_dir, login_command, oauth_section};
+use crate::client::{BitbucketClient, ClientError};
+use crate::context::{app_config_error, config_dir, login_command, oauth_section, rejected_token_renewer};
 use crate::error::CliError;
 
 /// Runs all doctor checks for `identity`. Returns `(report, all_ok)`.
@@ -56,14 +56,32 @@ pub fn run_doctor(identity: &Identity) -> Result<(Value, bool), CliError> {
     let (app_check, oauth_config) = check_app_config(&config_dir, identity);
     let app_passed = app_check["status"] == "ok";
 
-    let (creds_check, credentials) = match oauth_config {
+    let (mut creds_check, credentials) = match oauth_config {
         Some(ref config) if app_passed => check_credentials(config, &config_dir, identity),
         _ => (skipped("app_config check failed"), None),
     };
-    let creds_passed = creds_check["status"] == "ok";
+    let mut creds_passed = creds_check["status"] == "ok";
 
-    let connectivity_check = match credentials {
-        Some(ref creds) if creds_passed => check_api(creds),
+    let connectivity_check = match (&oauth_config, &credentials) {
+        (Some(config), Some(creds)) if creds_passed => {
+            let path = auth::credentials_path(&config_dir, identity);
+            let client = BitbucketClient::new(creds)
+                .with_renewer(rejected_token_renewer(config.clone(), path.clone(), identity.clone()));
+            match check_api(&client) {
+                Ok(check) => check,
+                // Rejected and not renewable (issue #240: revoked before it
+                // expired): a credentials problem, not an API one.
+                Err(renewal) => {
+                    creds_check = json!({
+                        "status": "error",
+                        "path": path.display().to_string(),
+                        "message": renewal.to_string(),
+                    });
+                    creds_passed = false;
+                    skipped("credentials check failed")
+                }
+            }
+        }
         _ => skipped("credentials check failed"),
     };
     let connectivity_passed = connectivity_check["status"] == "ok";
@@ -186,16 +204,17 @@ fn identity(credentials: &auth::Credentials) -> &'static str {
     if credentials.refresh_token.is_some() { "user" } else { "app" }
 }
 
-fn check_api(credentials: &auth::Credentials) -> Value {
-    let client = BitbucketClient::new(credentials);
-    match client.get_current_user() {
+/// The `api` check, or the error of a renewal after a 401 (for `credentials`).
+fn check_api(client: &BitbucketClient) -> Result<Value, CliError> {
+    Ok(match client.get_current_user() {
         Ok(user) => {
             let username = user["username"].as_str().unwrap_or("unknown").to_string();
             let account_type = user["type"].as_str().unwrap_or("unknown").to_string();
             json!({"status": "ok", "username": username, "type": account_type})
         }
+        Err(ClientError::Renewal(e)) => return Err(*e),
         Err(e) => json!({"status": "error", "message": e.to_string()}),
-    }
+    })
 }
 
 /// Lists the OAuth scopes granted to the consumer, from `credentials.scopes`
