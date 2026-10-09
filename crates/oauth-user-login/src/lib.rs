@@ -14,12 +14,14 @@
 //! semantics. Errors here are generic; each crate wraps them in its own
 //! `LoginError` so the message carries that CLI's exact retry command.
 
+mod bearer;
 mod callback;
 mod identity;
 mod pending;
 mod pkce;
 mod secret_file;
 
+pub use bearer::{BearerToken, Renewer};
 pub use callback::{
     CallbackError, CallbackParams, ListenerError, WaitError, bind_listener,
     parse_callback_request_line, wait_for_callback,
