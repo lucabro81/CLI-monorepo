@@ -93,6 +93,8 @@ Bitbucket Cloud's native OAuth `client_credentials` grant is used — not the un
 
 Before each API call, the CLI checks whether the selected identity's access token is expired (or about to expire within 60s). The app's credentials (`credentials-service.json`) have no `refresh_token`: the token is re-requested via the same `client_credentials` exchange. A person's (`users/<USER_ID>/credentials.json`) use the stored `refresh_token` (Bitbucket rotates it on every use; an unused one expires after 3 months, then run `auth login --user <USER_ID>` again). Either way only that identity's file is overwritten with the new values, under a lock on the file: parallel commands for the same identity renew once and share the result.
 
+**A token revoked before it expires** (e.g. the person ended their session or revoked the app's access; issue #240) only shows up as a `401` from the API. The CLI then renews that identity's token once, under the same lock, and repeats the request (safe: a `401` means the request was not processed). If that renewal is refused, a person's command exits `3` (see [Exit codes](#exit-codes)); a `401` that persists with the fresh token is reported as is.
+
 ## Usage
 
 Every command accepts the global `--user <USER_ID>` flag: without it the command acts as the OAuth app, with it as that person (see [Setup](#setup)).
@@ -109,7 +111,7 @@ cargo run -p bitbucket -- init --user-app --client-id <KEY> --client-secret <SEC
 
 ### `bitbucket doctor`
 
-Runs four checks for the selected identity (the OAuth app, or the person with `--user <USER_ID>`) and prints a structured JSON report: `app_config` (app.json has the identity's section), `credentials` (that identity's tokens exist and are not expired, renewed if needed), `api` (live call to `/2.0/user` succeeds), `permissions` (the OAuth scopes granted to the consumer). Exits non-zero if any check fails. Two informational keys never affect the exit code: `pending_login` (the selected person's remote login) and `identities` (which identity was checked, whether the OAuth app is logged in, the ids of the people logged in under `users`, and credentials files of earlier layouts under `legacy_credentials_files`).
+Runs four checks for the selected identity (the OAuth app, or the person with `--user <USER_ID>`) and prints a structured JSON report: `app_config` (app.json has the identity's section), `credentials` (that identity's tokens exist and are not expired, renewed if needed), `api` (live call to `/2.0/user` succeeds), `permissions` (the OAuth scopes granted to the consumer). A token the `api` call gets a `401` for is renewed and the call repeated, as every command does; if that renewal fails, `credentials` reports the error (with the login command) and the later checks are `skipped`. Exits non-zero if any check fails. Two informational keys never affect the exit code: `pending_login` (the selected person's remote login) and `identities` (which identity was checked, whether the OAuth app is logged in, the ids of the people logged in under `users`, and credentials files of earlier layouts under `legacy_credentials_files`).
 
 ```sh
 cargo run -p bitbucket -- doctor
@@ -535,6 +537,6 @@ Errors are typed with `thiserror` (`CliError` in `error.rs`). Internal module er
 ### Exit codes
 
 - `0` — success.
-- `3` — the selected identity needs a new login: nothing stored for it, or its credentials file holds the other identity's login (`not logged in ...` / `user <id> is not logged in ...`), or the person's refresh token was refused (`the login of user <id> is no longer valid ...`). Run the login command the message names. A caller (e.g. an agent acting for many people) can rely on this code instead of the message text.
+- `3` — the selected identity needs a new login: nothing stored for it, or its credentials file holds the other identity's login (`not logged in ...` / `user <id> is not logged in ...`), or the person's refresh token was refused (`the login of user <id> is no longer valid ...`), including when the API answered `401` to a token revoked before it expired and renewing it failed. Run the login command the message names. A caller (e.g. an agent acting for many people) can rely on this code instead of the message text.
 - `2` — invalid arguments (reported by clap).
-- `1` — every other failure, including a renewal that failed for a transient reason (network, 429, 5xx: retry), a refused renewal of the OAuth app (its grant is the consumer Key/Secret in app.json, so a new login would not help), an app refused by the token endpoint (`invalid_client`: fix app.json, a new login through the same app would fail too), a credentials file that exists but can't be read or is corrupted, and `doctor` with a failing check.
+- `1` — every other failure, including a renewal that failed for a transient reason (network, 429, 5xx: retry), a refused renewal of the OAuth app (its grant is the consumer Key/Secret in app.json, so a new login would not help), an app refused by the token endpoint (`invalid_client`: fix app.json, a new login through the same app would fail too), a credentials file that exists but can't be read or is corrupted, a `401` that persists with a freshly renewed token, and `doctor` with a failing check.

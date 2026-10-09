@@ -28,10 +28,13 @@ src/
                     identity), pending_login_path(dir, id), list_users(),
                     legacy_credentials_files(), remove_identity(), login_client_credentials(),
                     login() (authorization_code, --user <id>), renew(), load_credentials()
-                    (renews under a per-file lock)/save_credentials() (0600) [implemented];
+                    (renews under a per-file lock)/save_credentials() (0600), renew_rejected()
+                    (after a 401, issue #240) [implemented];
                     state, the callback listener and the secret-file helpers come from
                     crates/oauth-user-login
-  client.rs       — BitbucketClient (blocking reqwest); get_json/post_json/put_json/delete helpers;
+  client.rs       — BitbucketClient (blocking reqwest); get_json/post_json/put_json/delete helpers over
+                    send(), which sends through oauth_user_login::BearerToken (with_renewer: a 401
+                    renews once and repeats the request, issue #240; ClientError::Renewal);
                     Bitbucket REST API v2.0 methods [get_current_user, get_repository,
                     list_repositories, create_repository, delete_repository, list_pull_requests,
                     get_pull_request, create_pull_request, update_pull_request,
@@ -42,7 +45,8 @@ src/
   cli.rs          — clap structs: Cli (--select, --select-all, --user <USER_ID> global), Command, AuthCommand, RepoCommand,
                     PrCommand, BranchCommand, WorkspaceCommand. No logic.
   context.rs      — config_dir(), load_app_config(), load_oauth_config(identity),
-                    authenticated_client(identity), login_command(identity),
+                    authenticated_client(identity) (client with rejected_token_renewer, issue #240),
+                    client_error_to_cli(e) (Renewal as is, else ApiRequestFailed), login_command(identity),
                     login_error_to_cli(e, identity), oauth_section(), app_config_error(),
                     print_json(value, select), split_repository(repository) (shared by
                     repo and pr commands).
@@ -138,6 +142,8 @@ Exit code (issue #194): `CliError::exit_code()` returns 3 for `NotAuthenticatedS
   session never silently becomes the app); without one, via `client_credentials`
   again. Renewal holds a lock on the credentials file and re-reads it first, so
   parallel commands for the same identity renew once. Access tokens last 1 hour; an unused refresh token expires after 3 months.
+  A 401 renews once more (`auth::renew_rejected`, same lock) and repeats the request (issue #240):
+  a person whose renewal is refused gets exit 3; `doctor` reports it in `credentials`.
 - **`--user <id>` specifics** (from Bitbucket's docs): no PKCE and no `redirect_uri`
   parameter — Bitbucket always redirects to the consumer's callback URL. `state` is
   sent and checked for CSRF. The token response may name the scope field `scope` or
