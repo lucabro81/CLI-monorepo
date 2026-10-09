@@ -16,6 +16,9 @@ mod commands;
 mod context;
 mod endpoints;
 mod error;
+#[cfg(test)]
+#[path = "tests/test_support.rs"]
+mod test_support;
 
 #[cfg(test)]
 #[path = "tests/e2e_tests.rs"]

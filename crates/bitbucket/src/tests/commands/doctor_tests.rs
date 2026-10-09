@@ -143,3 +143,69 @@ fn identities_flags_leftover_credentials_files_of_earlier_layouts() {
     assert_eq!(check["users"], json!([]));
     assert_eq!(check["legacy_credentials_files"], json!(["credentials.json", "credentials-user.json"]));
 }
+
+// ── issue #240: a token revoked before it expires ─────────────────────────
+
+mod revoked_token {
+    use super::super::api_or_credentials_error;
+    use crate::auth::Credentials;
+    use crate::client::BitbucketClient;
+    use crate::error::CliError;
+    use crate::test_support::mock_server;
+
+    const REVOKED: &str = r#"{"error":"token revoked"}"#;
+
+    fn client(url: &str, renewal: Result<&'static str, CliError>) -> BitbucketClient {
+        let renewal = std::cell::RefCell::new(Some(renewal.map(str::to_string)));
+        BitbucketClient::new(&Credentials {
+            access_token: "at-revoked".to_string(),
+            expires_at: u64::MAX,
+            scopes: vec![],
+            refresh_token: Some("rt".to_string()),
+        })
+        .with_base_url(url)
+        .with_renewer(Box::new(move |_: &str| renewal.borrow_mut().take().expect("renewed twice")))
+    }
+
+    #[test]
+    fn a_revoked_token_whose_renewal_is_refused_fails_the_credentials_check() {
+        // Issue #240: credentials were reported ok whenever expires_at was in
+        // the future, although the provider had revoked the token.
+        let (url, server) = mock_server(&[("401 Unauthorized", REVOKED)]);
+        let refused = CliError::UserLoginExpired { reason: "400: invalid_grant".to_string(), id: "alice".to_string() };
+        let path = std::path::Path::new("/c/users/alice/credentials.json");
+
+        let credentials_check = api_or_credentials_error(&client(&url, Err(refused)), path).unwrap_err();
+
+        server.join().unwrap();
+        assert_eq!(credentials_check["status"], "error");
+        assert_eq!(credentials_check["path"], "/c/users/alice/credentials.json");
+        let message = credentials_check["message"].as_str().unwrap();
+        assert!(message.starts_with("the login of user alice is no longer valid"), "got {message}");
+        assert!(message.contains("auth login --user alice"), "got {message}");
+    }
+
+    #[test]
+    fn a_revoked_token_that_renews_passes_the_api_check_with_the_new_token() {
+        let (url, server) = mock_server(&[("401 Unauthorized", REVOKED), ("200 OK", r#"{"username":"alice","type":"user"}"#)]);
+        let client = client(&url, Ok("at-fresh"));
+
+        let api_check = api_or_credentials_error(&client, std::path::Path::new("/c/creds.json")).unwrap();
+
+        server.join().unwrap();
+        assert_eq!(api_check["status"], "ok");
+        assert_eq!(api_check["username"], "alice");
+        assert_eq!(client.access_token(), "at-fresh");
+    }
+
+    #[test]
+    fn a_401_with_the_renewed_token_fails_the_api_check_not_the_credentials_one() {
+        let (url, server) = mock_server(&[("401 Unauthorized", REVOKED), ("401 Unauthorized", REVOKED)]);
+
+        let api_check =
+            api_or_credentials_error(&client(&url, Ok("at-fresh")), std::path::Path::new("/c/creds.json")).unwrap();
+
+        server.join().unwrap();
+        assert_eq!(api_check["status"], "error");
+    }
+}

@@ -67,6 +67,19 @@ impl BitbucketClient {
         self
     }
 
+    /// Sends every request to `base_url` instead of the real API (local test server).
+    #[cfg(test)]
+    pub(crate) fn with_base_url(mut self, base_url: &str) -> Self {
+        self.base_url = base_url.to_string();
+        self
+    }
+
+    /// The token the next request will send (renewed after a 401).
+    #[cfg(test)]
+    pub(crate) fn access_token(&self) -> String {
+        self.token.current()
+    }
+
     /// Returns the account associated with the access token, as raw JSON.
     pub fn get_current_user(&self) -> Result<serde_json::Value, ClientError> {
         self.get_json(endpoints::PATH_USER)
@@ -309,3 +322,7 @@ impl BitbucketClient {
             .map_err(|e| ClientError::Request(e.to_string()))
     }
 }
+
+#[cfg(test)]
+#[path = "tests/client_tests.rs"]
+mod tests;
