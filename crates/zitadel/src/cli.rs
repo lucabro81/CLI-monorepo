@@ -100,7 +100,9 @@ pub enum Command {
     /// (whether the service user is logged in, the ids of the people logged in, and
     /// credentials files of earlier layouts, credentials.json and
     /// credentials-user.json, no longer read): informational, never counted in the
-    /// exit code. Always prints the full report regardless
+    /// exit code. A 401 from the live call renews the token once and repeats it; if
+    /// that renewal fails, `credentials` reports it and the later checks are
+    /// skipped. Always prints the full report regardless
     /// of --select (an explicit --select is still honored).
     #[command(after_help = "Examples:\n  zitadel doctor\n  zitadel doctor --user jane.doe\n  zitadel doctor --select memberships")]
     Doctor,

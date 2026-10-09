@@ -80,6 +80,8 @@ For a person who is not at the CLI's machine (the CLI runs on a server, the pers
 
 Each login writes its own identity's file. Before each command, the selected identity's token is renewed if it expires within 60 seconds — via the refresh token for a person, by re-signing the JWT for the service user — under a lock on the file, so parallel commands for the same identity renew once and share the result.
 
+**A token revoked before it expires** (e.g. the person ended their session or revoked the app's access; issue #240) only shows up as a `401` from the API. The CLI then renews that identity's token once, under the same lock, and repeats the request (safe: a `401` means the request was not processed). If that renewal is refused, a person's command exits `3` (see [Exit codes](#exit-codes)); a `401` that persists with the fresh token is reported as is.
+
 Config lives in `$XDG_CONFIG_HOME/zitadel-cli/` (fallback `~/.config/zitadel-cli/`): `app.json` (instance URL, service user key, optional client id), `credentials-service.json` and `users/<USER_ID>/credentials.json` (managed by the CLI), all with mode `0600`. An empty `<credentials file>.lock` (mode `0600`) appears next to a credentials file after its first renewal: it keeps parallel commands from renewing the same token twice. Leave it in place.
 
 ## Usage
@@ -117,7 +119,7 @@ Progress lines, setup steps and questions go to stderr; stdout carries only the 
 Four cascading checks for the selected identity (the service user, or the person with `--user <USER_ID>`), each with `"status": "ok" | "error" | "skipped"`:
 
 - `app_config` — `app.json` valid; `instance_url`, `service_user_configured`, `native_app_configured`.
-- `credentials` — that identity's stored token usable (renewed if expiring); `identity` is `service_user` or `user`, plus `expires_at`.
+- `credentials` — that identity's stored token usable (renewed if expiring); `identity` is `service_user` or `user`, plus `expires_at`. A token the `api` call gets a `401` for is renewed and the call repeated, as every command does; if that renewal fails, this check reports the error (with the login command) and the later checks are `skipped`.
 - `api` — `GET /auth/v1/users/me`: `user_id`, `user_name`, `type` (`machine`/`human`), `organization_id`.
 - `memberships` — the identity's administrator roles, one entry per `{level, id, display_name, roles}` with `level` in `instance` / `organization` / `project` / `project_grant`. ZITADEL authorizes by these roles, so they decide which commands succeed; no membership at all is an error.
 
@@ -287,6 +289,6 @@ Every error is a single plain-text sentence: what went wrong and what to run or 
 ### Exit codes
 
 - `0` — success.
-- `3` — the selected identity needs a new login: nothing stored for it, or its credentials file holds the other identity's login, or is corrupted (`not logged in ...` / `user <id> is not logged in ...`), or the person's refresh token was refused (`the login of user <id> is no longer valid ...`). Run the login command the message names. A caller (e.g. an agent acting for many people) can rely on this code instead of the message text.
+- `3` — the selected identity needs a new login: nothing stored for it, or its credentials file holds the other identity's login, or is corrupted (`not logged in ...` / `user <id> is not logged in ...`), or the person's refresh token was refused (`the login of user <id> is no longer valid ...`), including when the API answered `401` to a token revoked before it expired and renewing it failed. Run the login command the message names. A caller (e.g. an agent acting for many people) can rely on this code instead of the message text.
 - `2` — invalid arguments (reported by clap).
-- `1` — every other failure, including a renewal that failed for a transient reason (network, 429, 5xx: retry), a refused renewal of the service user (its grant is its key in app.json, so a new login would not help), an app refused by the token endpoint (`invalid_client`: fix app.json, a new login through the same app would fail too), a credentials file that exists but can't be read, a `401` from the API with a stored token (the message still names `zitadel auth login`), and `doctor` with a failing check.
+- `1` — every other failure, including a renewal that failed for a transient reason (network, 429, 5xx: retry), a refused renewal of the service user (its grant is its key in app.json, so a new login would not help), an app refused by the token endpoint (`invalid_client`: fix app.json, a new login through the same app would fail too), a credentials file that exists but can't be read, a `401` that persists with a freshly renewed token (the message still names `zitadel auth login`), and `doctor` with a failing check.

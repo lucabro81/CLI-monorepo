@@ -31,17 +31,21 @@ src/
   auth.rs         — AppConfig, ServiceUserKey (+ from_key_file: validates type/PEM),
                     Credentials; JWT-profile login
                     (service user), authorization code + PKCE login (--user),
-                    renew(), load_credentials() (renews under a per-file lock)/
+                    renew(), load_credentials() (renews under a per-file lock), renew_rejected()
+                    (after a 401, same lock, issue #240)/
                     save_credentials() (0600), credentials_path(dir, identity),
                     pending_login_path(dir, id), list_users(), legacy_credentials_files(),
                     remove_identity(); PKCE, the callback listener, Identity/UserId and
                     the secret-file helpers come from crates/oauth-user-login
-  client.rs       — ZitadelClient (blocking reqwest); get_json/post_json helpers; url_with_segment()
-                    percent-encodes ids as one path segment; ClientError::{Request, Status}
+  client.rs       — ZitadelClient (blocking reqwest); get_json/post_json helpers over send(), which
+                    sends through oauth_user_login::BearerToken (with_renewer: a 401 renews once and
+                    repeats the request, issue #240); url_with_segment() percent-encodes ids as one
+                    path segment; ClientError::{Request, Status, Renewal}
                     [get_current_user, list_my_memberships, search_users, get_user, list_organizations,
                     list_projects, list_authorizations, list_idp_links, get_idp implemented]
   cli.rs          — clap structs only, no logic
-  context.rs      — config_dir(), load_app_config(), authenticated_client(identity),
+  context.rs      — config_dir(), load_app_config(), authenticated_client(identity) (client with
+                    rejected_token_renewer(config, path, identity), issue #240),
                     login_error_to_cli(e, path, identity), login_command(identity),
                     client_error_to_cli() (401 → re-login hint, 403 → missing-role hint
                     pointing to doctor, 404 → verify-id hint), print_json(value, select),
@@ -95,7 +99,11 @@ Exit code (issue #194): `CliError::exit_code()` returns 3 for
 credentials file) and `UserLoginExpired` (a person's refresh token refused,
 `LoginError::TokenRejected`), 1 for everything else; `context::login_error_to_cli` keeps
 a refused service user renewal, a transient `TokenExchange`, an unreadable (not missing)
-credentials file (`IoError`) and an API `401` (`ApiUnauthorized`) out of code 3.
+credentials file (`IoError`) and an API `401` that persists with a freshly renewed token
+(`ApiUnauthorized`) out of code 3. A 401 first renews the token and repeats the request (issue #240,
+root `CLAUDE.md`): a person whose renewal is refused (session ended, token revoked early) gets
+`UserLoginExpired`, exit 3, through `ClientError::Renewal`; `doctor` reports that failure in its
+`credentials` check.
 
 - **`auth login` (default) — service user, private key JWT** (Zitadel's
   recommended service-account method; no human step, intended for agents).

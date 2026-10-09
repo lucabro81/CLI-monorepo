@@ -5,9 +5,16 @@
 //! methods return raw `serde_json::Value` so callers decide how much
 //! structure to impose; the `--select` flag can then filter the output
 //! client-side without requiring typed response structs for every endpoint.
+//!
+//! Every request goes through `send`, which adds the token, renews it once and
+//! repeats the request when Bitbucket answers 401 (issue #240: a token revoked
+//! before it expires).
+
+use oauth_user_login::BearerToken;
 
 use crate::auth::Credentials;
 use crate::endpoints;
+use crate::error::CliError;
 
 /// Error returned by `BitbucketClient` methods.
 ///
@@ -19,6 +26,8 @@ pub enum ClientError {
     Request(String),
     /// The server responded but with a non-2xx status code.
     Status { status: u16, body: String },
+    /// Renewing the token after a 401 failed; carries the error for the user.
+    Renewal(Box<CliError>),
 }
 
 impl std::fmt::Display for ClientError {
@@ -28,6 +37,7 @@ impl std::fmt::Display for ClientError {
             ClientError::Status { status, body } => {
                 write!(f, "Bitbucket returned status {status}: {body}")
             }
+            ClientError::Renewal(error) => write!(f, "{error}"),
         }
     }
 }
@@ -35,7 +45,7 @@ impl std::fmt::Display for ClientError {
 /// Blocking HTTP client for the Bitbucket REST API v2.0.
 pub struct BitbucketClient {
     base_url: String,
-    access_token: String,
+    token: BearerToken<CliError>,
     http: reqwest::blocking::Client,
 }
 
@@ -44,9 +54,30 @@ impl BitbucketClient {
     pub fn new(credentials: &Credentials) -> Self {
         Self {
             base_url: endpoints::BITBUCKET_API_BASE_URL.to_string(),
-            access_token: credentials.access_token.clone(),
+            token: BearerToken::new(credentials.access_token.clone()),
             http: reqwest::blocking::Client::new(),
         }
+    }
+
+    /// On a 401 the client calls `renewer` once with the rejected token and
+    /// repeats the request with the token it returns (issue #240).
+    #[must_use]
+    pub fn with_renewer(mut self, renewer: oauth_user_login::Renewer<CliError>) -> Self {
+        self.token = self.token.with_renewer(renewer);
+        self
+    }
+
+    /// Sends every request to `base_url` instead of the real API (local test server).
+    #[cfg(test)]
+    pub(crate) fn with_base_url(mut self, base_url: &str) -> Self {
+        self.base_url = base_url.to_string();
+        self
+    }
+
+    /// The token the next request will send (renewed after a 401).
+    #[cfg(test)]
+    pub(crate) fn access_token(&self) -> String {
+        self.token.current()
     }
 
     /// Returns the account associated with the access token, as raw JSON.
@@ -222,40 +253,12 @@ impl BitbucketClient {
 
     fn get_json(&self, path: &str) -> Result<serde_json::Value, ClientError> {
         let url = format!("{}{path}", self.base_url);
-
-        let response = self
-            .http
-            .get(&url)
-            .bearer_auth(&self.access_token)
-            .header("Accept", "application/json")
-            .send()
-            .map_err(|e| ClientError::Request(e.to_string()))?;
-
-        let status = response.status();
-        if !status.is_success() {
-            let body = response.text().unwrap_or_default();
-            return Err(ClientError::Status {
-                status: status.as_u16(),
-                body,
-            });
-        }
-
-        response
-            .json()
-            .map_err(|e| ClientError::Request(e.to_string()))
+        Self::json(self.send(|| self.http.get(&url).header("Accept", "application/json"))?)
     }
 
     fn get_text(&self, path: &str) -> Result<String, ClientError> {
         let url = format!("{}{path}", self.base_url);
-
-        let response = self
-            .http
-            .get(&url)
-            .bearer_auth(&self.access_token)
-            .header("Accept", "text/plain")
-            .send()
-            .map_err(|e| ClientError::Request(e.to_string()))?;
-
+        let response = self.send(|| self.http.get(&url).header("Accept", "text/plain"))?;
         let status = response.status();
         let body = response.text().map_err(|e| ClientError::Request(e.to_string()))?;
         if !status.is_success() {
@@ -270,65 +273,38 @@ impl BitbucketClient {
 
     fn delete(&self, path: &str) -> Result<(), ClientError> {
         let url = format!("{}{path}", self.base_url);
-
-        let response = self
-            .http
-            .delete(&url)
-            .bearer_auth(&self.access_token)
-            .header("Accept", "application/json")
-            .send()
-            .map_err(|e| ClientError::Request(e.to_string()))?;
-
-        let status = response.status();
-        if !status.is_success() {
-            let body = response.text().unwrap_or_default();
-            return Err(ClientError::Status {
-                status: status.as_u16(),
-                body,
-            });
-        }
-
+        Self::success(self.send(|| self.http.delete(&url).header("Accept", "application/json"))?)?;
         Ok(())
     }
 
     fn post_json(&self, path: &str, body: &serde_json::Value) -> Result<serde_json::Value, ClientError> {
         let url = format!("{}{path}", self.base_url);
-
-        let response = self
-            .http
-            .post(&url)
-            .bearer_auth(&self.access_token)
-            .header("Accept", "application/json")
-            .json(body)
-            .send()
-            .map_err(|e| ClientError::Request(e.to_string()))?;
-
-        let status = response.status();
-        if !status.is_success() {
-            let body = response.text().unwrap_or_default();
-            return Err(ClientError::Status {
-                status: status.as_u16(),
-                body,
-            });
-        }
-
-        response
-            .json()
-            .map_err(|e| ClientError::Request(e.to_string()))
+        Self::json(self.send(|| self.http.post(&url).header("Accept", "application/json").json(body))?)
     }
 
     fn put_json(&self, path: &str, body: &serde_json::Value) -> Result<serde_json::Value, ClientError> {
         let url = format!("{}{path}", self.base_url);
+        Self::json(self.send(|| self.http.put(&url).header("Accept", "application/json").json(body))?)
+    }
 
-        let response = self
-            .http
-            .put(&url)
-            .bearer_auth(&self.access_token)
-            .header("Accept", "application/json")
-            .json(body)
-            .send()
-            .map_err(|e| ClientError::Request(e.to_string()))?;
+    /// Sends the request `build` makes with the current token. On a 401 renews
+    /// the token once (if a renewer is set) and sends a rebuilt request: a 401
+    /// means Bitbucket did not process it, so repeating a POST is safe.
+    fn send(
+        &self,
+        build: impl Fn() -> reqwest::blocking::RequestBuilder,
+    ) -> Result<reqwest::blocking::Response, ClientError> {
+        self.token
+            .send(
+                |token| build().bearer_auth(token).send(),
+                |response| matches!(response, Ok(r) if r.status() == reqwest::StatusCode::UNAUTHORIZED),
+            )
+            .map_err(|e| ClientError::Renewal(Box::new(e)))?
+            .map_err(|e| ClientError::Request(e.to_string()))
+    }
 
+    /// A non-2xx response becomes `Status` with its body.
+    fn success(response: reqwest::blocking::Response) -> Result<reqwest::blocking::Response, ClientError> {
         let status = response.status();
         if !status.is_success() {
             let body = response.text().unwrap_or_default();
@@ -337,9 +313,16 @@ impl BitbucketClient {
                 body,
             });
         }
+        Ok(response)
+    }
 
-        response
+    fn json(response: reqwest::blocking::Response) -> Result<serde_json::Value, ClientError> {
+        Self::success(response)?
             .json()
             .map_err(|e| ClientError::Request(e.to_string()))
     }
 }
+
+#[cfg(test)]
+#[path = "tests/client_tests.rs"]
+mod tests;

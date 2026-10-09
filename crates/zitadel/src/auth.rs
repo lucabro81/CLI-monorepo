@@ -520,7 +520,40 @@ pub(crate) fn load_credentials_with(
     Ok(renewed)
 }
 
-fn read_credentials(path: &Path, identity: &Identity) -> Result<Credentials, LoginError> {
+/// Renews credentials whose access token ZITADEL answered 401 to, although it
+/// had not expired (revoked, e.g. the person ended their session; issue #240).
+pub fn renew_rejected(
+    config: &AppConfig,
+    path: &Path,
+    identity: &Identity,
+    rejected_token: &str,
+) -> Result<Credentials, LoginError> {
+    renew_rejected_with(path, identity, rejected_token, |credentials| renew(config, credentials))
+}
+
+/// [`renew_rejected`] with the renewal injected. Same lock as
+/// [`load_credentials_with`]: if the file no longer holds `rejected_token`,
+/// another call renewed it meanwhile and its token is returned as is.
+pub(crate) fn renew_rejected_with(
+    path: &Path,
+    identity: &Identity,
+    rejected_token: &str,
+    renew: impl FnOnce(&Credentials) -> Result<Credentials, LoginError>,
+) -> Result<Credentials, LoginError> {
+    // Read before locking, so a login removed meanwhile is reported as missing
+    // instead of having its folder recreated for the lock file.
+    read_credentials(path, identity)?;
+    let _lock = oauth_user_login::lock_exclusive(path).map_err(|e| LoginError::SaveCredentials(e.to_string()))?;
+    let credentials = read_credentials(path, identity)?;
+    if credentials.access_token != rejected_token {
+        return Ok(credentials);
+    }
+    let renewed = renew(&credentials)?;
+    save_credentials(path, &renewed)?;
+    Ok(renewed)
+}
+
+pub(crate) fn read_credentials(path: &Path, identity: &Identity) -> Result<Credentials, LoginError> {
     let raw = std::fs::read_to_string(path)?;
     let credentials: Credentials = serde_json::from_str(&raw)
         .map_err(|e| LoginError::InvalidCredentialsFile(e.to_string()))?;

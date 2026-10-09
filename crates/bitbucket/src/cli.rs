@@ -81,7 +81,9 @@ pub enum Command {
     /// waiting for its code) and `identities` (whether the OAuth app is logged in,
     /// the ids of the people logged in, and credentials files of earlier layouts,
     /// credentials.json and credentials-user.json, no longer read): informational,
-    /// never counted in the exit code.
+    /// never counted in the exit code. A 401 from the live call renews the token
+    /// once and repeats it; if that renewal fails, `credentials` reports it and the
+    /// later checks are skipped.
     /// Always prints its full result regardless of --select — the report is
     /// generated internally and is always small and fixed-shape.
     #[command(after_help = "Examples:\n  bitbucket doctor\n  bitbucket doctor --user jane.doe")]

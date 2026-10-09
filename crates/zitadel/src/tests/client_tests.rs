@@ -2,7 +2,10 @@
 
 use super::{ClientError, ZitadelClient};
 use crate::auth::Credentials;
-use crate::test_support::one_shot_server;
+use crate::error::CliError;
+use crate::test_support::{mock_server, one_shot_server};
+use std::cell::RefCell;
+use std::rc::Rc;
 
 fn client(url: &str) -> ZitadelClient {
     ZitadelClient::new(
@@ -41,7 +44,7 @@ fn non_success_status_returns_status_and_body() {
             assert_eq!(status, 403);
             assert_eq!(body, r#"{"code":7,"message":"No matching permissions found"}"#);
         }
-        ClientError::Request(reason) => panic!("expected Status, got Request({reason})"),
+        other => panic!("expected Status, got {other:?}"),
     }
 }
 
@@ -127,4 +130,117 @@ fn success_status_with_non_json_body_is_a_request_error() {
         matches!(&err, ClientError::Request(reason) if reason.starts_with("invalid JSON response:")),
         "got {err:?}"
     );
+}
+
+// ── renewal after a 401 (issue #240) ──────────────────────────────────────
+
+const REVOKED: &str = r#"{"code":16,"message":"Errors.Token.Invalid (AUTH-7fs1e)"}"#;
+
+/// A client whose renewer records the rejected tokens it is given and answers `result`.
+fn renewing_client(url: &str, result: Result<&str, CliError>) -> (ZitadelClient, Rc<RefCell<Vec<String>>>) {
+    let calls = Rc::new(RefCell::new(vec![]));
+    let seen = Rc::clone(&calls);
+    let result = RefCell::new(Some(result.map(str::to_string)));
+    let client = client(url).with_renewer(Box::new(move |rejected: &str| {
+        seen.borrow_mut().push(rejected.to_string());
+        result.borrow_mut().take().expect("renewer called twice")
+    }));
+    (client, calls)
+}
+
+fn bearer(request: &str) -> String {
+    let lower = request.to_ascii_lowercase();
+    let start = lower.find("authorization: bearer ").unwrap() + "authorization: bearer ".len();
+    request[start..].lines().next().unwrap().to_string()
+}
+
+#[test]
+fn a_401_renews_the_token_once_and_repeats_the_request_with_the_new_one() {
+    // Issue #240: a revoked (not expired) token was sent once and the 401
+    // reported as is; the client must renew and retry.
+    let (url, server) = mock_server(&[("401 Unauthorized", REVOKED), ("200 OK", r#"{"user":{"id":"42"}}"#)]);
+    let (client, calls) = renewing_client(&url, Ok("at-fresh"));
+
+    let value = client.get_current_user().unwrap();
+
+    let requests = server.join().unwrap();
+    assert_eq!(value, serde_json::json!({"user": {"id": "42"}}));
+    assert_eq!(*calls.borrow(), vec!["at-123".to_string()]);
+    assert_eq!((bearer(&requests[0]), bearer(&requests[1])), ("at-123".to_string(), "at-fresh".to_string()));
+    assert!(requests[1].starts_with("GET /auth/v1/users/me "), "got {}", requests[1]);
+}
+
+#[test]
+fn a_retried_post_sends_the_same_body_again() {
+    let body = serde_json::json!({"query": {"limit": 1}});
+    let (url, server) = mock_server(&[("401 Unauthorized", REVOKED), ("200 OK", "{}")]);
+    let (client, _) = renewing_client(&url, Ok("at-fresh"));
+
+    client.search_users(&body).unwrap();
+
+    let requests = server.join().unwrap();
+    assert!(requests[1].starts_with("POST /v2/users "), "got {}", requests[1]);
+    assert!(requests[1].ends_with(&body.to_string()), "got {}", requests[1]);
+}
+
+#[test]
+fn a_second_401_with_the_renewed_token_is_returned_without_renewing_again() {
+    let (url, server) = mock_server(&[("401 Unauthorized", REVOKED), ("401 Unauthorized", REVOKED)]);
+    let (client, calls) = renewing_client(&url, Ok("at-fresh"));
+
+    let err = client.get_current_user().unwrap_err();
+
+    server.join().unwrap();
+    assert!(matches!(err, ClientError::Status { status: 401, ref body } if body == REVOKED), "got {err:?}");
+    assert_eq!(calls.borrow().len(), 1);
+}
+
+#[test]
+fn a_failed_renewal_after_a_401_is_returned_as_the_renewal_error() {
+    let (url, server) = mock_server(&[("401 Unauthorized", REVOKED)]);
+    let refused = CliError::UserLoginExpired { reason: "400: invalid_grant".to_string(), id: "alice".to_string() };
+    let (client, _) = renewing_client(&url, Err(refused));
+
+    let err = client.get_current_user().unwrap_err();
+
+    server.join().unwrap();
+    match err {
+        ClientError::Renewal(e) => assert!(matches!(*e, CliError::UserLoginExpired { ref id, .. } if id == "alice")),
+        other => panic!("expected Renewal, got {other:?}"),
+    }
+}
+
+#[test]
+fn a_renewed_token_is_kept_for_the_next_requests() {
+    let (url, server) = mock_server(&[("401 Unauthorized", REVOKED), ("200 OK", "{}"), ("200 OK", "{}")]);
+    let (client, calls) = renewing_client(&url, Ok("at-fresh"));
+
+    client.get_current_user().unwrap();
+    client.list_my_memberships().unwrap();
+
+    let requests = server.join().unwrap();
+    assert_eq!(bearer(&requests[2]), "at-fresh");
+    assert_eq!(calls.borrow().len(), 1);
+}
+
+#[test]
+fn other_errors_do_not_renew() {
+    let (url, server) = mock_server(&[("403 Forbidden", "{}")]);
+    let (client, calls) = renewing_client(&url, Ok("unused"));
+
+    let err = client.get_current_user().unwrap_err();
+
+    server.join().unwrap();
+    assert!(matches!(err, ClientError::Status { status: 403, .. }), "got {err:?}");
+    assert!(calls.borrow().is_empty());
+}
+
+#[test]
+fn without_a_renewer_a_401_is_returned_as_is() {
+    let (url, server) = one_shot_server("401 Unauthorized", REVOKED);
+
+    let err = client(&url).get_current_user().unwrap_err();
+
+    server.join().unwrap();
+    assert!(matches!(err, ClientError::Status { status: 401, .. }), "got {err:?}");
 }

@@ -283,3 +283,62 @@ fn every_other_error_exits_1() {
         assert_eq!(err.exit_code(), 1, "{err}");
     }
 }
+
+// ── issue #240: renewing after a 401 ──────────────────────────────────────
+
+use super::rejected_token_renewer;
+use crate::auth::{AppConfig, Credentials, credentials_path, save_credentials};
+use crate::test_support::one_shot_server;
+
+fn native_app(instance_url: &str) -> AppConfig {
+    AppConfig { instance_url: instance_url.to_string(), service_user: None, client_id: Some("app-1".to_string()) }
+}
+
+fn person_login() -> Credentials {
+    Credentials { access_token: "at-revoked".to_string(), refresh_token: Some("rt".to_string()), expires_at: u64::MAX }
+}
+
+#[test]
+fn the_renewer_refreshes_a_rejected_token_and_saves_it() {
+    let (url, server) =
+        one_shot_server("200 OK", r#"{"access_token":"at-fresh","refresh_token":"rt-2","expires_in":3600}"#);
+    let dir = tempfile::tempdir().unwrap();
+    let path = credentials_path(dir.path(), &alice());
+    save_credentials(&path, &person_login()).unwrap();
+
+    let token = rejected_token_renewer(native_app(&url), path.clone(), alice())("at-revoked").unwrap();
+
+    assert!(server.join().unwrap().contains("grant_type=refresh_token"));
+    assert_eq!(token, "at-fresh");
+    let saved: Credentials = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    assert_eq!((saved.access_token.as_str(), saved.refresh_token.as_deref()), ("at-fresh", Some("rt-2")));
+}
+
+#[test]
+fn a_refused_refresh_after_a_401_asks_for_the_persons_login_and_exits_3() {
+    // Issue #240: the person ended their ZITADEL session, so both the access
+    // token and the refresh token are dead; the agent must see exit 3.
+    let (url, server) = one_shot_server("400 Bad Request", r#"{"error":"invalid_grant"}"#);
+    let dir = tempfile::tempdir().unwrap();
+    let path = credentials_path(dir.path(), &alice());
+    save_credentials(&path, &person_login()).unwrap();
+
+    let err = rejected_token_renewer(native_app(&url), path, alice())("at-revoked").unwrap_err();
+
+    server.join().unwrap();
+    assert!(matches!(&err, CliError::UserLoginExpired { id, .. } if id == "alice"), "got {err:?}");
+    assert_eq!(err.exit_code(), 3);
+}
+
+#[test]
+fn a_renewal_error_reaches_the_user_unchanged() {
+    let renewal = ClientError::Renewal(Box::new(CliError::UserLoginExpired {
+        reason: "r".to_string(),
+        id: "alice".to_string(),
+    }));
+
+    let err = client_error_to_cli(renewal);
+
+    assert!(matches!(&err, CliError::UserLoginExpired { id, .. } if id == "alice"), "got {err:?}");
+    assert_eq!(err.exit_code(), 3);
+}

@@ -260,3 +260,66 @@ fn every_other_error_exits_1() {
         assert_eq!(err.exit_code(), 1, "{err}");
     }
 }
+
+// ── issue #240: renewing after a 401 ──────────────────────────────────────
+
+mod rejected_token {
+    use super::super::{client_error_to_cli, rejected_token_renewer};
+    use crate::auth::{Credentials, Identity, OAuthConfig, UserId, credentials_path, save_credentials};
+    use crate::client::ClientError;
+    use crate::error::CliError;
+
+    fn alice() -> Identity {
+        Identity::User(UserId::parse("alice").unwrap())
+    }
+
+    fn app() -> OAuthConfig {
+        OAuthConfig {
+            client_id: "id".to_string(),
+            client_secret: "secret".to_string(),
+            redirect_uri: "http://localhost:8080/callback".to_string(),
+        }
+    }
+
+    #[test]
+    fn a_person_logged_out_meanwhile_needs_a_new_login_and_exits_3() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = credentials_path(dir.path(), &alice());
+
+        let err = rejected_token_renewer(app(), path, alice())("at").unwrap_err();
+
+        assert!(matches!(&err, CliError::NotAuthenticatedUser { id } if id == "alice"), "got {err:?}");
+        assert_eq!(err.exit_code(), 3);
+    }
+
+    #[test]
+    fn a_token_another_call_already_renewed_is_returned_without_a_request() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = credentials_path(dir.path(), &alice());
+        let stored = Credentials {
+            access_token: "at-renewed-meanwhile".to_string(),
+            refresh_token: Some("rt".to_string()),
+            expires_at: u64::MAX,
+            cloud_id: "cid".to_string(),
+            site_url: None,
+        };
+        save_credentials(&path, &stored).unwrap();
+
+        let token = rejected_token_renewer(app(), path, alice())("at-revoked").unwrap();
+
+        assert_eq!(token, "at-renewed-meanwhile");
+    }
+
+    #[test]
+    fn a_renewal_error_reaches_the_user_unchanged() {
+        let renewal = ClientError::Renewal(Box::new(CliError::UserLoginExpired {
+            reason: "r".to_string(),
+            id: "alice".to_string(),
+        }));
+
+        let err = client_error_to_cli(renewal);
+
+        assert!(matches!(&err, CliError::UserLoginExpired { id, .. } if id == "alice"), "got {err:?}");
+        assert_eq!(err.exit_code(), 3);
+    }
+}

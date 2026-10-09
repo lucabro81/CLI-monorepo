@@ -34,7 +34,9 @@ src/
                     (workspace-local, shared with `jira` — see root CLAUDE.md's
                     "Shared library: crates/atlassian-auth")
   client.rs       — ConfluenceClient (blocking reqwest); get_json/post_json/put_json/delete
-                    helpers; Confluence REST API methods spanning both API
+                    helpers over send(), which sends through oauth_user_login::BearerToken
+                    (with_renewer: a 401 renews once and repeats the request, issue #240;
+                    ClientError::Renewal); Confluence REST API methods spanning both API
                     generations [get_current_user, get_page, create_page,
                     update_page, delete_page, get_template, create_template,
                     update_template, delete_template, list_templates,
@@ -42,7 +44,8 @@ src/
   cli.rs          — clap structs: Cli (--select, --select-all, --user <USER_ID> global), Command, AuthCommand,
                     PageCommand, SpaceCommand, TemplateCommand. No logic.
   context.rs      — config_dir(), load_app_config(), load_oauth_config(identity),
-                    authenticated_client(identity), login_command(identity),
+                    authenticated_client(identity) (client with rejected_token_renewer,
+                    issue #240), login_command(identity),
                     login_error_to_cli(e, identity), oauth_section(),
                     app_config_error(), print_json(value, select),
                     client_error_to_cli(e). Shared by all command handlers.
@@ -55,6 +58,9 @@ src/
   tests/          — all *_tests.rs files, mirroring the src/ layout (see "Test
                     file convention" below). No e2e_tests.rs yet — see
                     "Known gaps" below.
+                    tests/test_support.rs = a local HTTP server for client_tests.rs (the
+                    retry after a 401, issue #240) and doctor's revoked-token tests;
+                    client.rs has a test-only with_base_url() seam for it.
   main.rs         — pure dispatch: resolve --select/--select-all into a
                     cli_fields::Select and --user <USER_ID> into an Identity once, match
                     Command, call commands::*.
@@ -81,15 +87,15 @@ command is a thin passthrough, covered entirely by `cli_tests.rs`. `auth.rs`
 is a thin wrapper over `atlassian_auth`
 (see "OAuth / auth design" below) — its own test file only guards this
 crate's config-dir name and SCOPES constant, not OAuth logic (covered by
-`atlassian_auth`'s own tests). `doctor.rs` has no dedicated test file, same
-reasoning as `jira`'s: every check either does live I/O or is trivially
-correct status-string logic, nothing pure enough to isolate.
+`atlassian_auth`'s own tests). `doctor.rs`'s tests cover its pure helpers and, against a local server,
+`api_or_credentials_error` (a revoked token whose renewal fails is reported in
+`credentials`, issue #240).
 
 ## OAuth / auth design
 
 **Implementation lives in `atlassian-auth`** (workspace-local crate, `crates/atlassian-auth`), not in this crate — `auth.rs` here is a thin wrapper fixing the `confluence-cli` config dir name and this crate's `SCOPES` constant. `jira` uses the exact same underlying flows (same `auth.atlassian.com`/`api.atlassian.com` endpoints, same `cloud_id` resolution), just with its own scopes — see `jira`'s own CLAUDE.md for the two grant types (`client_credentials` default, 3LO+PKCE via `--user <id>`) and the Service Account vs 3LO-app tradeoffs, which apply identically here.
 
-**The Service Account and any number of people, stored side by side (issues #164, #175)** — identical to `jira` (see its CLAUDE.md and root `CLAUDE.md`'s "Service and per-person identities"): the global `--user <USER_ID>` flag selects, per call, the Service Account (default, `app.json`'s `service` section, `credentials-service.json`) or that person (`user` section, one 3LO app for everybody, `users/<id>/credentials.json`). `context::authenticated_client(identity)` loads and renews (under a per-file lock) only that identity; `LoginMode` carries the person's id and `LoginMode::identity()` decides which file a login writes; `auth logout` removes one identity's login; `--remote`/`--code` without `--user` fail in `LoginMode::from_flags` (`CliError::RemoteLoginNeedsUser`), since clap can't see a global `--user` placed before the subcommand. Exit code (issue #194): `CliError::exit_code()` returns 3 for `NotAuthenticatedService`, `NotAuthenticatedUser` and `UserLoginExpired` (a person's refresh token refused, `LoginError::TokenRejected`), 1 for everything else; `context::login_error_to_cli` keeps a refused service renewal, a transient `TokenExchange` and an unreadable (not missing) credentials file (`IoError`) out of code 3 — see root `CLAUDE.md`. `init --user-app` (issue #195) writes only the `user` section through `write_app_config(dir, AppSection::User, ..)`, logs nobody in and prints `commands::init::user_app_check` as `{"app_config": ...}`; `check_user_app_flag` refuses `--user <id>` (`CliError::UserAppWithUser`).
+**The Service Account and any number of people, stored side by side (issues #164, #175)** — identical to `jira` (see its CLAUDE.md and root `CLAUDE.md`'s "Service and per-person identities"): the global `--user <USER_ID>` flag selects, per call, the Service Account (default, `app.json`'s `service` section, `credentials-service.json`) or that person (`user` section, one 3LO app for everybody, `users/<id>/credentials.json`). `context::authenticated_client(identity)` loads and renews (under a per-file lock) only that identity; `LoginMode` carries the person's id and `LoginMode::identity()` decides which file a login writes; `auth logout` removes one identity's login; `--remote`/`--code` without `--user` fail in `LoginMode::from_flags` (`CliError::RemoteLoginNeedsUser`), since clap can't see a global `--user` placed before the subcommand. Exit code (issue #194): `CliError::exit_code()` returns 3 for `NotAuthenticatedService`, `NotAuthenticatedUser` and `UserLoginExpired` (a person's refresh token refused, `LoginError::TokenRejected`), 1 for everything else; `context::login_error_to_cli` keeps a refused service renewal, a transient `TokenExchange` and an unreadable (not missing) credentials file (`IoError`) out of code 3 — see root `CLAUDE.md`. `init --user-app` (issue #195) writes only the `user` section through `write_app_config(dir, AppSection::User, ..)`, logs nobody in and prints `commands::init::user_app_check` as `{"app_config": ...}`; `check_user_app_flag` refuses `--user <id>` (`CliError::UserAppWithUser`). A 401 renews the token once and repeats the request (issue #240, as in `jira`): a person whose renewal is refused gets exit 3, and `doctor` reports it in `credentials`.
 
 **`confluence init` sets up one identity** (`commands/init.rs`), same as `jira init`: without `--user` it writes the `service` section and runs `client_credentials` (no browser — a Service Account has no consent step, access is assigned in admin.atlassian.com); with `--user <id>` it writes the `user` section and runs the 3LO browser consent for that person, which is what grants a 3LO app access to a site at all. Both print the scopes to add (`SCOPES`). `confluence init --user-app` writes the `user` section and logs nobody in, printing only `{"app_config": ...}` (issue #195). `write_app_config(config_dir, section: AppSection, ...)` keeps the other section, replaces a missing or legacy flat file, and refuses to overwrite invalid JSON.
 

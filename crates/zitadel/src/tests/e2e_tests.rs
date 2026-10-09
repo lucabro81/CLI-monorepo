@@ -257,7 +257,7 @@ impl<'a> LinkedHuman<'a> {
         let idp_name = format!("{E2E_PREFIX}idp-{stamp}");
         let email = format!("{E2E_PREFIX}{stamp}@example.com");
         let idp = client
-            .send_for_tests(Method::POST, "/management/v1/idps/generic_oidc", Some(&serde_json::json!({
+            .send_for_tests(&Method::POST, "/management/v1/idps/generic_oidc", Some(&serde_json::json!({
                 "name": idp_name, "issuer": "https://accounts.google.com", "clientId": "e2e", "clientSecret": "e2e",
                 "scopes": ["openid"],
                 "providerOptions": {"isLinkingAllowed": true, "isCreationAllowed": false, "isAutoCreation": false, "isAutoUpdate": false},
@@ -265,7 +265,7 @@ impl<'a> LinkedHuman<'a> {
             .unwrap();
         let idp_id = idp["id"].as_str().unwrap().to_string();
         let user = client
-            .send_for_tests(Method::POST, "/v2/users/human", Some(&serde_json::json!({
+            .send_for_tests(&Method::POST, "/v2/users/human", Some(&serde_json::json!({
                 "username": format!("{E2E_PREFIX}human-{stamp}"),
                 "profile": {"givenName": "E2E", "familyName": "Human"},
                 "email": {"email": email, "isVerified": true},
@@ -273,7 +273,7 @@ impl<'a> LinkedHuman<'a> {
             .unwrap();
         let fixture = LinkedHuman { client, user_id: user["userId"].as_str().unwrap().to_string(), email, idp_id, idp_name };
         client
-            .send_for_tests(Method::POST, &format!("/v2/users/{}/links", fixture.user_id), Some(&serde_json::json!({
+            .send_for_tests(&Method::POST, &format!("/v2/users/{}/links", fixture.user_id), Some(&serde_json::json!({
                 "idpLink": {"idpId": fixture.idp_id, "userId": EXTERNAL_USER_ID, "userName": fixture.email},
             })))
             .unwrap();
@@ -283,8 +283,8 @@ impl<'a> LinkedHuman<'a> {
 
 impl Drop for LinkedHuman<'_> {
     fn drop(&mut self) {
-        let _ = self.client.send_for_tests(reqwest::Method::DELETE, &format!("/management/v1/users/{}", self.user_id), None);
-        let _ = self.client.send_for_tests(reqwest::Method::DELETE, &format!("/management/v1/idps/templates/{}", self.idp_id), None);
+        let _ = self.client.send_for_tests(&reqwest::Method::DELETE, &format!("/management/v1/users/{}", self.user_id), None);
+        let _ = self.client.send_for_tests(&reqwest::Method::DELETE, &format!("/management/v1/idps/templates/{}", self.idp_id), None);
     }
 }
 
@@ -337,13 +337,13 @@ fn e2e_cleanup() {
         .unwrap();
     for leftover in users["result"].as_array().map(Vec::as_slice).unwrap_or_default() {
         let id = leftover["userId"].as_str().unwrap();
-        client.send_for_tests(Method::DELETE, &format!("/management/v1/users/{id}"), None).unwrap();
+        client.send_for_tests(&Method::DELETE, &format!("/management/v1/users/{id}"), None).unwrap();
     }
-    let idps = client.send_for_tests(Method::POST, "/management/v1/idps/templates/_search", Some(&serde_json::json!({}))).unwrap();
+    let idps = client.send_for_tests(&Method::POST, "/management/v1/idps/templates/_search", Some(&serde_json::json!({}))).unwrap();
     for leftover in idps["result"].as_array().map(Vec::as_slice).unwrap_or_default() {
         if leftover["name"].as_str().is_some_and(|name| name.starts_with(E2E_PREFIX)) {
             let id = leftover["id"].as_str().unwrap();
-            client.send_for_tests(Method::DELETE, &format!("/management/v1/idps/templates/{id}"), None).unwrap();
+            client.send_for_tests(&Method::DELETE, &format!("/management/v1/idps/templates/{id}"), None).unwrap();
         }
     }
 }

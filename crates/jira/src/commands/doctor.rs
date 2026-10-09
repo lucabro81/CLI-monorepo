@@ -46,8 +46,8 @@
 use serde_json::{json, Value};
 
 use crate::auth::{self, AppConfig, Identity, OAuthConfig};
-use crate::client::JiraClient;
-use crate::context::{app_config_error, config_dir, login_command, oauth_section};
+use crate::client::{ClientError, JiraClient};
+use crate::context::{app_config_error, config_dir, login_command, oauth_section, rejected_token_renewer};
 use crate::error::CliError;
 
 /// Runs all doctor checks for `identity`. Returns `(report, all_ok)`.
@@ -60,14 +60,30 @@ pub fn run_doctor(identity: &Identity) -> Result<(Value, bool), CliError> {
     let (app_check, oauth_config) = check_app_config(&config_dir, identity);
     let app_passed = app_check["status"] == "ok";
 
-    let (creds_check, credentials) = match oauth_config {
+    let (mut creds_check, mut credentials) = match oauth_config {
         Some(ref config) if app_passed => check_credentials(config, &config_dir, identity),
         _ => (skipped("app_config check failed"), None),
     };
-    let creds_passed = creds_check["status"] == "ok";
+    let mut creds_passed = creds_check["status"] == "ok";
 
-    let jira_check = match credentials {
-        Some(ref creds) if creds_passed => check_api(creds),
+    let jira_check = match (&oauth_config, credentials.as_mut()) {
+        (Some(config), Some(creds)) if creds_passed => {
+            let path = auth::credentials_path(&config_dir, identity);
+            let client = JiraClient::new(creds)
+                .with_renewer(rejected_token_renewer(config.clone(), path.clone(), identity.clone()));
+            match api_or_credentials_error(&client, &path) {
+                Ok(check) => {
+                    // Renewed after a 401: the later checks need the new token.
+                    creds.access_token = client.access_token();
+                    check
+                }
+                Err(check) => {
+                    creds_check = check;
+                    creds_passed = false;
+                    skipped("credentials check failed")
+                }
+            }
+        }
         _ => skipped("credentials check failed"),
     };
     let jira_passed = jira_check["status"] == "ok";
@@ -219,17 +235,31 @@ fn check_credentials(
     )
 }
 
-fn check_api(credentials: &auth::Credentials) -> Value {
-    let client = JiraClient::new(credentials);
-    match client.get_myself() {
+/// The `api` check; `Err` is the `credentials` check to report instead when
+/// the API answered 401 and the token could not be renewed (issue #240: a
+/// token revoked before it expired is a credentials problem, not an API one).
+pub(crate) fn api_or_credentials_error(client: &JiraClient, credentials_path: &std::path::Path) -> Result<Value, Value> {
+    check_api(client).map_err(|renewal| {
+        json!({
+            "status": "error",
+            "path": credentials_path.display().to_string(),
+            "message": renewal.to_string(),
+        })
+    })
+}
+
+/// The `api` check, or the error of a renewal after a 401.
+fn check_api(client: &JiraClient) -> Result<Value, CliError> {
+    Ok(match client.get_myself() {
         Ok(user) => {
             let account = user["displayName"].as_str().unwrap_or("unknown").to_string();
             let email = user["emailAddress"].as_str().unwrap_or("unknown").to_string();
             let account_id = user["accountId"].as_str().unwrap_or("unknown").to_string();
             json!({"status": "ok", "account": account, "email": email, "account_id": account_id})
         }
+        Err(ClientError::Renewal(e)) => return Err(*e),
         Err(e) => json!({"status": "error", "message": e.to_string()}),
-    }
+    })
 }
 
 /// Lists the OAuth scopes granted to the token (the app-identity layer), via

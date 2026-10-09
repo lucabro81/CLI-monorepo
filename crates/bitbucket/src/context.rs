@@ -14,7 +14,7 @@
 use std::path::Path;
 
 use crate::auth::{self, AppConfig, Identity, LoginError, OAuthConfig, OAuthConfigError};
-use crate::client::BitbucketClient;
+use crate::client::{BitbucketClient, ClientError};
 use crate::error::CliError;
 
 /// XDG-style config directory (`$XDG_CONFIG_HOME` or `~/.config`), used on every platform
@@ -114,7 +114,33 @@ pub fn authenticated_client(identity: &Identity) -> Result<BitbucketClient, CliE
     let path = auth::credentials_path(&config_dir()?, identity);
     let credentials =
         auth::load_credentials(&oauth_config, &path, identity).map_err(|e| login_error_to_cli(e, &path, identity))?;
-    Ok(BitbucketClient::new(&credentials))
+    let client = BitbucketClient::new(&credentials);
+    Ok(client.with_renewer(rejected_token_renewer(oauth_config, path, identity.clone())))
+}
+
+/// What the client calls when Bitbucket answers 401 (issue #240): renews
+/// `identity`'s stored token under its lock and returns the new one. A
+/// person's refused refresh becomes `UserLoginExpired` (exit 3).
+pub(crate) fn rejected_token_renewer(
+    config: OAuthConfig,
+    path: std::path::PathBuf,
+    identity: Identity,
+) -> oauth_user_login::Renewer<CliError> {
+    Box::new(move |rejected| {
+        auth::renew_rejected(&config, &path, &identity, rejected)
+            .map(|credentials| credentials.access_token)
+            .map_err(|e| login_error_to_cli(e, &path, &identity))
+    })
+}
+
+/// Maps a [`ClientError`] to the user-facing [`CliError`]: a failed renewal
+/// after a 401 reaches the user as is (exit 3 for a person's expired login),
+/// anything else as `ApiRequestFailed`.
+pub fn client_error_to_cli(e: ClientError) -> CliError {
+    match e {
+        ClientError::Renewal(error) => *error,
+        other => CliError::ApiRequestFailed { reason: other.to_string() },
+    }
 }
 
 /// Prints `value` as pretty-printed JSON to stdout according to `select`.

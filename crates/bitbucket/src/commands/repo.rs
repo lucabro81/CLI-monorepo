@@ -4,7 +4,7 @@ use serde_json::{json, Value};
 
 use crate::cli::RepoCommand;
 use crate::auth::Identity;
-use crate::context::{authenticated_client, print_json, split_repository};
+use crate::context::{authenticated_client, print_json, split_repository, client_error_to_cli};
 use crate::error::CliError;
 
 /// Dispatches a `RepoCommand` variant to the appropriate Bitbucket API call.
@@ -14,18 +14,14 @@ pub fn run(command: RepoCommand, select: cli_fields::Select<'_>, identity: &Iden
             let (workspace, repo_slug) = split_repository(&repository)?;
             let value = authenticated_client(identity)?
                 .get_repository(workspace, repo_slug)
-                .map_err(|e| CliError::ApiRequestFailed {
-                    reason: e.to_string(),
-                })?;
+                .map_err(client_error_to_cli)?;
             // Exempt: a single repository object, fixed shape.
             print_json(&value, select.or_all())
         }
         RepoCommand::List { workspace, page } => {
             let value = authenticated_client(identity)?
                 .list_repositories(&workspace, page)
-                .map_err(|e| CliError::ApiRequestFailed {
-                    reason: e.to_string(),
-                })?;
+                .map_err(client_error_to_cli)?;
             print_json(&value, select)
         }
         RepoCommand::Create { repository, description, private, project } => {
@@ -33,9 +29,7 @@ pub fn run(command: RepoCommand, select: cli_fields::Select<'_>, identity: &Iden
             let body = build_create_body(description, private, project);
             let value = authenticated_client(identity)?
                 .create_repository(workspace, repo_slug, &body)
-                .map_err(|e| CliError::ApiRequestFailed {
-                    reason: e.to_string(),
-                })?;
+                .map_err(client_error_to_cli)?;
             // Exempt: a single repository object, fixed shape.
             print_json(&value, select.or_all())
         }
@@ -46,9 +40,7 @@ pub fn run(command: RepoCommand, select: cli_fields::Select<'_>, identity: &Iden
             let (workspace, repo_slug) = split_repository(&repository)?;
             authenticated_client(identity)?
                 .delete_repository(workspace, repo_slug)
-                .map_err(|e| CliError::ApiRequestFailed {
-                    reason: e.to_string(),
-                })?;
+                .map_err(client_error_to_cli)?;
             // Exempt: synthesized by us, always small.
             print_json(&json!({"deleted": true, "repository": repository}), select.or_all())
         }

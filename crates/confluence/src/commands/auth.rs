@@ -139,10 +139,17 @@ pub(crate) fn remote_login_error(error: LoginError, id: &UserId) -> CliError {
 pub fn run_whoami(select: cli_fields::Select<'_>, identity: &Identity) -> Result<(), CliError> {
     let value = authenticated_client(identity)?
         .get_current_user()
-        .map_err(|e| CliError::ApiRequestFailed {
-            reason: e.to_string(),
-        })?;
+        .map_err(whoami_error)?;
     print_json(&value, select.or_all())
+}
+
+/// A failed renewal after a 401 reaches the user as is (a person's expired
+/// login exits 3, issue #240); any other client error keeps whoami's message.
+pub(crate) fn whoami_error(e: crate::client::ClientError) -> CliError {
+    match e {
+        crate::client::ClientError::Renewal(error) => *error,
+        other => CliError::ApiRequestFailed { reason: other.to_string() },
+    }
 }
 
 /// Removes `identity`'s stored login and prints which one.

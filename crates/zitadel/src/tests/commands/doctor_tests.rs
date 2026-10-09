@@ -131,14 +131,67 @@ fn credentials_with_refresh_token_are_reported_as_human_user() {
     assert_eq!(report["api"]["type"], "human");
 }
 
-#[test]
-fn rejected_token_fails_api_and_skips_memberships() {
-    let dir = tempfile::tempdir().unwrap();
-    let (url, server) = mock_server(&[("401 Unauthorized", r#"{"message":"invalid token"}"#)]);
-    write_app_json(dir.path(), &url);
-    write_valid_credentials(dir.path(), None);
+fn write_native_app_json(config_dir: &Path, instance_url: &str) {
+    let dir = config_dir.join("zitadel-cli");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("app.json"), json!({"instance_url": instance_url, "client_id": "app-1"}).to_string())
+        .unwrap();
+}
 
-    let (report, all_ok) = run_doctor_in(dir.path(), &Identity::Service);
+const REVOKED: &str = r#"{"message":"invalid token"}"#;
+const FRESH_TOKEN: &str = r#"{"access_token":"at-fresh","refresh_token":"rt-2","expires_in":3600}"#;
+
+#[test]
+fn a_revoked_token_whose_refresh_is_refused_fails_the_credentials_check() {
+    // Issue #240: credentials used to be "ok" whenever expires_at was in the
+    // future, although ZITADEL had revoked the token with the person's session.
+    let dir = tempfile::tempdir().unwrap();
+    let (url, server) =
+        mock_server(&[("401 Unauthorized", REVOKED), ("400 Bad Request", r#"{"error":"invalid_grant"}"#)]);
+    write_native_app_json(dir.path(), &url);
+    write_valid_credentials(dir.path(), Some("rt"));
+
+    let (report, all_ok) = run_doctor_in(dir.path(), &alice());
+    let requests = server.join().unwrap();
+
+    assert!(!all_ok);
+    assert!(requests[1].contains("grant_type=refresh_token"), "got {}", requests[1]);
+    assert_eq!(statuses(&report), ["ok", "error", "skipped", "skipped"]);
+    let message = report["credentials"]["message"].as_str().unwrap();
+    assert!(message.starts_with("the login of user alice is no longer valid"), "got {message}");
+    assert!(message.contains("Run: zitadel auth login --user alice"), "got {message}");
+    assert!(report["credentials"]["path"].as_str().unwrap().ends_with("users/alice/credentials.json"));
+    assert_eq!(report["api"]["reason"], "credentials check failed");
+}
+
+#[test]
+fn a_revoked_token_that_renews_leaves_every_check_ok() {
+    let dir = tempfile::tempdir().unwrap();
+    let (url, server) = mock_server(&[
+        ("401 Unauthorized", REVOKED),
+        ("200 OK", FRESH_TOKEN),
+        ("200 OK", r#"{"user":{"id":"h-1","userName":"alice","details":{"resourceOwner":"org-1"},"human":{}}}"#),
+        ("200 OK", MEMBERSHIPS_ORG_OWNER),
+    ]);
+    write_native_app_json(dir.path(), &url);
+    write_valid_credentials(dir.path(), Some("rt"));
+
+    let (report, all_ok) = run_doctor_in(dir.path(), &alice());
+    server.join().unwrap();
+
+    assert!(all_ok, "{report}");
+    assert_eq!(statuses(&report), ["ok", "ok", "ok", "ok"]);
+}
+
+#[test]
+fn a_401_with_a_freshly_renewed_token_fails_the_api_check() {
+    let dir = tempfile::tempdir().unwrap();
+    let (url, server) =
+        mock_server(&[("401 Unauthorized", REVOKED), ("200 OK", FRESH_TOKEN), ("401 Unauthorized", REVOKED)]);
+    write_native_app_json(dir.path(), &url);
+    write_valid_credentials(dir.path(), Some("rt"));
+
+    let (report, all_ok) = run_doctor_in(dir.path(), &alice());
     server.join().unwrap();
 
     assert!(!all_ok);
@@ -147,6 +200,21 @@ fn rejected_token_fails_api_and_skips_memberships() {
         report["api"]["message"],
         r#"ZITADEL rejected the access token (401): {"message":"invalid token"}. Run: zitadel auth login (zitadel auth login --user <USER_ID> if the command was run with --user <USER_ID>)"#
     );
+}
+
+#[test]
+fn a_revoked_service_token_without_a_key_to_renew_it_fails_the_credentials_check() {
+    let dir = tempfile::tempdir().unwrap();
+    let (url, server) = mock_server(&[("401 Unauthorized", REVOKED)]);
+    write_app_json(dir.path(), &url);
+    write_valid_credentials(dir.path(), None);
+
+    let (report, all_ok) = run_doctor_in(dir.path(), &Identity::Service);
+    server.join().unwrap();
+
+    assert!(!all_ok);
+    assert_eq!(statuses(&report), ["ok", "error", "skipped", "skipped"]);
+    assert!(report["credentials"]["message"].as_str().unwrap().contains("zitadel init --key-file"), "{report}");
 }
 
 #[test]

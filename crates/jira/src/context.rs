@@ -7,7 +7,8 @@
 //!   `OAuthConfigError` to `CliError`.
 //! - `authenticated_client` — the standard sequence for commands that call the
 //!   Jira API as an identity (service account, or a person with `--user <id>`):
-//!   load its config section → load its credentials → refresh if expired → build client.
+//!   load its config section → load its credentials → refresh if expired → build client,
+//!   which renews once more and retries when the API answers 401 (`rejected_token_renewer`).
 //!   Centralised here so each command handler calls one function instead of
 //!   repeating the load/refresh/build chain.
 //! - `print_json` — renders a `serde_json::Value` via `cli_fields::render_json`
@@ -110,7 +111,23 @@ pub fn authenticated_client(identity: &Identity) -> Result<JiraClient, CliError>
     let path = auth::credentials_path(&config_dir()?, identity);
     let credentials =
         auth::load_credentials(&oauth_config, &path, identity).map_err(|e| login_error_to_cli(e, &path, identity))?;
-    Ok(JiraClient::new(&credentials))
+    let client = JiraClient::new(&credentials);
+    Ok(client.with_renewer(rejected_token_renewer(oauth_config, path, identity.clone())))
+}
+
+/// What the client calls when the API answers 401 (issue #240): renews
+/// `identity`'s stored token under its lock and returns the new one. A
+/// person's refused refresh becomes `UserLoginExpired` (exit 3).
+pub(crate) fn rejected_token_renewer(
+    config: OAuthConfig,
+    path: std::path::PathBuf,
+    identity: Identity,
+) -> oauth_user_login::Renewer<CliError> {
+    Box::new(move |rejected| {
+        auth::renew_rejected(&config, &path, &identity, rejected)
+            .map(|credentials| credentials.access_token)
+            .map_err(|e| login_error_to_cli(e, &path, &identity))
+    })
 }
 
 /// Prints `value` as pretty-printed JSON to stdout according to `select`.
@@ -128,6 +145,7 @@ pub fn client_error_to_cli(e: ClientError) -> CliError {
     match e {
         ClientError::Request(reason) => CliError::ApiRequestFailed { reason },
         ClientError::Status { status, body } => CliError::ApiError { status, body },
+        ClientError::Renewal(error) => *error,
     }
 }
 
