@@ -71,20 +71,14 @@ pub fn run_doctor(identity: &Identity) -> Result<(Value, bool), CliError> {
             let path = auth::credentials_path(&config_dir, identity);
             let client = JiraClient::new(creds)
                 .with_renewer(rejected_token_renewer(config.clone(), path.clone(), identity.clone()));
-            match check_api(&client) {
+            match api_or_credentials_error(&client, &path) {
                 Ok(check) => {
                     // Renewed after a 401: the later checks need the new token.
                     creds.access_token = client.access_token();
                     check
                 }
-                // Rejected and not renewable (issue #240: revoked before it
-                // expired): a credentials problem, not an API one.
-                Err(renewal) => {
-                    creds_check = json!({
-                        "status": "error",
-                        "path": path.display().to_string(),
-                        "message": renewal.to_string(),
-                    });
+                Err(check) => {
+                    creds_check = check;
                     creds_passed = false;
                     skipped("credentials check failed")
                 }
@@ -241,7 +235,20 @@ fn check_credentials(
     )
 }
 
-/// The `api` check, or the error of a renewal after a 401 (for `credentials`).
+/// The `api` check; `Err` is the `credentials` check to report instead when
+/// the API answered 401 and the token could not be renewed (issue #240: a
+/// token revoked before it expired is a credentials problem, not an API one).
+pub(crate) fn api_or_credentials_error(client: &JiraClient, credentials_path: &std::path::Path) -> Result<Value, Value> {
+    check_api(client).map_err(|renewal| {
+        json!({
+            "status": "error",
+            "path": credentials_path.display().to_string(),
+            "message": renewal.to_string(),
+        })
+    })
+}
+
+/// The `api` check, or the error of a renewal after a 401.
 fn check_api(client: &JiraClient) -> Result<Value, CliError> {
     Ok(match client.get_myself() {
         Ok(user) => {

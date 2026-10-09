@@ -84,6 +84,13 @@ impl JiraClient {
         self
     }
 
+    /// Sends every request to `base_url` instead of the real API (local test server).
+    #[cfg(test)]
+    pub(crate) fn with_base_url(mut self, base_url: &str) -> Self {
+        self.base_url = base_url.to_string();
+        self
+    }
+
     /// The token the next request will send (renewed after a 401).
     pub fn access_token(&self) -> String {
         self.token.current()
@@ -424,3 +431,7 @@ impl JiraClient {
         Ok(response)
     }
 }
+
+#[cfg(test)]
+#[path = "tests/client_tests.rs"]
+mod tests;
