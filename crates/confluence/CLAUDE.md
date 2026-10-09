@@ -58,6 +58,9 @@ src/
   tests/          — all *_tests.rs files, mirroring the src/ layout (see "Test
                     file convention" below). No e2e_tests.rs yet — see
                     "Known gaps" below.
+                    tests/test_support.rs = a local HTTP server for client_tests.rs (the
+                    retry after a 401, issue #240) and doctor's revoked-token tests;
+                    client.rs has a test-only with_base_url() seam for it.
   main.rs         — pure dispatch: resolve --select/--select-all into a
                     cli_fields::Select and --user <USER_ID> into an Identity once, match
                     Command, call commands::*.
@@ -84,9 +87,9 @@ command is a thin passthrough, covered entirely by `cli_tests.rs`. `auth.rs`
 is a thin wrapper over `atlassian_auth`
 (see "OAuth / auth design" below) — its own test file only guards this
 crate's config-dir name and SCOPES constant, not OAuth logic (covered by
-`atlassian_auth`'s own tests). `doctor.rs` has no dedicated test file, same
-reasoning as `jira`'s: every check either does live I/O or is trivially
-correct status-string logic, nothing pure enough to isolate.
+`atlassian_auth`'s own tests). `doctor.rs`'s tests cover its pure helpers and, against a local server,
+`api_or_credentials_error` (a revoked token whose renewal fails is reported in
+`credentials`, issue #240).
 
 ## OAuth / auth design
 

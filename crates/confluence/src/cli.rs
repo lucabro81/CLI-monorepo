@@ -91,7 +91,9 @@ pub enum Command {
     /// with `--user <USER_ID>`; `identities` (informational) shows whether the
     /// Service Account is logged in, lists the ids of the people logged in, and
     /// flags credentials files of earlier layouts (credentials.json,
-    /// credentials-user.json), no longer read. Always prints its full result
+    /// credentials-user.json), no longer read. A 401 from the live call renews the
+    /// token once and repeats it; if that renewal fails, `credentials` reports it
+    /// and the later checks are skipped. Always prints its full result
     /// regardless of --select — the report is generated internally and is always
     /// small and fixed-shape.
     #[command(after_help = "Examples:\n  confluence doctor\n  confluence doctor --user jane.doe\n  confluence doctor --select app_config.status,credentials.status,api.status\n\nEach check has a status field: \"ok\", \"error\", or \"skipped\".\nLater checks are skipped if an earlier one fails.")]
