@@ -7,7 +7,7 @@ use crate::test_support::one_shot_server;
 use super::{
     AppConfig, AppConfigError, Credentials, KeyFileError, LoginError, ServiceUserKey, app_config_path,
     build_assertion, credentials_path, is_expiring, Identity, jwt_claims, load_credentials,
-    load_credentials_with, login_service_user, pending_login_path, save_credentials, UserId,
+    load_credentials_with, login_service_user, pending_login_path, renew_rejected_with, save_credentials, UserId,
 };
 
 /// Throwaway RSA key pair generated only for these tests (PKCS#1, the format
@@ -598,4 +598,75 @@ fn expired_credentials_are_renewed_once_under_the_lock() {
     .unwrap();
 
     assert_eq!((calls, loaded), (1, renewed("fresh")));
+}
+
+// ── renewal after a 401 (issue #240) ──────────────────────────────────────
+
+#[test]
+fn a_rejected_token_still_stored_is_renewed_and_saved_even_though_it_has_not_expired() {
+    // Issue #240: a token revoked before expires_at (the person ended their
+    // session) was sent again and again; the 401 must trigger a renewal.
+    let dir = tempfile::tempdir().unwrap();
+    let path = credentials_path(dir.path(), &alice());
+    save_credentials(&path, &unexpired(Some("rt"))).unwrap();
+    let mut renewed_from = vec![];
+
+    let result = renew_rejected_with(&path, &alice(), "at", |stored| {
+        renewed_from.push(stored.clone());
+        Ok(renewed("fresh"))
+    })
+    .unwrap();
+
+    assert_eq!(result, renewed("fresh"));
+    assert_eq!(renewed_from, vec![unexpired(Some("rt"))]);
+    assert_eq!(super::read_credentials(&path, &alice()).unwrap(), renewed("fresh"));
+}
+
+#[test]
+fn a_token_already_replaced_by_another_call_is_reused_without_renewing() {
+    // Two parallel calls both get the 401: the second must not spend the
+    // refresh token the first one already rotated.
+    let dir = tempfile::tempdir().unwrap();
+    let path = credentials_path(dir.path(), &alice());
+    save_credentials(&path, &renewed("by-the-other-call")).unwrap();
+
+    let result =
+        renew_rejected_with(&path, &alice(), "at", |_| panic!("must not renew: already renewed")).unwrap();
+
+    assert_eq!(result, renewed("by-the-other-call"));
+}
+
+#[test]
+fn a_refused_renewal_after_a_401_is_returned_and_leaves_the_file_untouched() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = credentials_path(dir.path(), &alice());
+    save_credentials(&path, &unexpired(Some("rt"))).unwrap();
+
+    let err = renew_rejected_with(&path, &alice(), "at", |_| Err(LoginError::TokenRejected("400: invalid_grant".into())))
+        .unwrap_err();
+
+    assert!(matches!(err, LoginError::TokenRejected(ref d) if d == "400: invalid_grant"), "got {err:?}");
+    assert_eq!(super::read_credentials(&path, &alice()).unwrap(), unexpired(Some("rt")));
+}
+
+#[test]
+fn a_401_renewal_refuses_a_file_of_the_other_identity() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = credentials_path(dir.path(), &alice());
+    save_credentials(&path, &unexpired(None)).unwrap();
+
+    let err = renew_rejected_with(&path, &alice(), "at", |_| panic!("must not renew")).unwrap_err();
+
+    assert!(matches!(err, LoginError::WrongIdentity(_)), "got {err:?}");
+}
+
+#[test]
+fn a_401_renewal_without_a_credentials_file_is_an_io_not_found_error() {
+    // logout ran in between: the person is simply not logged in any more.
+    let dir = tempfile::tempdir().unwrap();
+    let path = credentials_path(dir.path(), &alice());
+
+    let err = renew_rejected_with(&path, &alice(), "at", |_| panic!("must not renew")).unwrap_err();
+
+    assert!(matches!(err, LoginError::Io(ref e) if e.kind() == std::io::ErrorKind::NotFound), "got {err:?}");
 }
