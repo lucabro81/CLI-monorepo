@@ -89,6 +89,16 @@ pub fn load_credentials(config: &OAuthConfig, path: &Path, identity: &Identity) 
     atlassian_auth::load_credentials(config, path, identity)
 }
 
+/// Renews `identity`'s credentials after the API answered 401 to `rejected_token` (issue #240).
+pub fn renew_rejected(
+    config: &OAuthConfig,
+    path: &Path,
+    identity: &Identity,
+    rejected_token: &str,
+) -> Result<Credentials, LoginError> {
+    atlassian_auth::renew_rejected(config, path, identity, rejected_token)
+}
+
 pub fn save_credentials(path: &Path, credentials: &Credentials) -> Result<(), LoginError> {
     atlassian_auth::save_credentials(path, credentials)
 }
