@@ -45,7 +45,7 @@ pub use oauth_user_login::Identity;
 
 /// One OAuth 2.0 app: a section of `app.json` (see [`AppConfig`]).
 /// Written by a crate's `init` command (or by hand); never modified by the CLI at runtime.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OAuthConfig {
     pub client_id: String,
     pub client_secret: String,
