@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [2.3.2](https://github.com/lucabro81/CLI-monorepo/compare/bitbucket-v2.3.1...bitbucket-v2.3.2) - 2026-10-09
+
+### Fixed
+- *(bitbucket)* renew a token answered 401 and retry, exit 3 when the person's login is gone (#240)
+
+### Other
+- *(bitbucket)* a revoked token renews after a 401, exit 3 when the login is gone (#240)
+- *(bitbucket)* client retry after a 401 and doctor's revoked-token check against a local server (#240)
+- *(bitbucket)* doctor --help names the renewal after a 401 (#240)
+- Merge pull request #241 from lucabro81/issue240 ([#241](https://github.com/lucabro81/CLI-monorepo/pull/241))
 ## [2.3.1](https://github.com/lucabro81/CLI-monorepo/compare/bitbucket-v2.3.0...bitbucket-v2.3.1) - 2026-10-07
 
 ### Fixed
