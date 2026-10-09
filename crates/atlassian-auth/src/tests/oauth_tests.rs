@@ -7,7 +7,7 @@ use oauth_user_login::{CallbackError, WaitError};
 use super::{
     app_config_path, authorization_code_body, authorization_url, complete_remote_login,
     complete_remote_login_at,
-    load_credentials, load_credentials_with, merge_scopes_for_cloud_id, refresh, request_token_at,
+    load_credentials, load_credentials_with, merge_scopes_for_cloud_id, refresh, renew_rejected_with, request_token_at,
     save_credentials, start_remote_login,
     AccessibleResource, AppConfig, Credentials, Identity, LoginError, OAuthConfig, OAuthConfigError,
 };
@@ -844,4 +844,72 @@ fn a_lock_that_cannot_be_taken_is_a_save_failure_not_a_missing_login() {
     let err = load_credentials_with(&path, &alice(), |_| panic!("must not renew without the lock")).unwrap_err();
 
     assert!(matches!(err, LoginError::SaveCredentials(_)), "got {err:?}");
+}
+
+// ── renewal after a 401 (issue #240) ──────────────────────────────────────
+
+#[test]
+fn a_rejected_token_still_stored_is_renewed_and_saved_even_though_it_has_not_expired() {
+    // Issue #240: a token revoked before expires_at was sent again and again;
+    // the 401 must trigger a renewal.
+    let dir = tempfile::tempdir().unwrap();
+    let path = saved(dir.path(), &alice(), &unexpired(Some("rt")));
+    let mut renewed_from = vec![];
+
+    let result = renew_rejected_with(&path, &alice(), "at", |old| {
+        renewed_from.push(old.clone());
+        Ok(renewed("fresh"))
+    })
+    .unwrap();
+
+    assert_eq!(result, renewed("fresh"));
+    assert_eq!(renewed_from, vec![unexpired(Some("rt"))]);
+    let on_disk: Credentials = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    assert_eq!(on_disk, renewed("fresh"));
+}
+
+#[test]
+fn a_token_already_replaced_by_another_call_is_reused_without_renewing() {
+    // Atlassian refresh tokens rotate: a second call that got the same 401
+    // must not spend the refresh token the first one already used.
+    let dir = tempfile::tempdir().unwrap();
+    let path = saved(dir.path(), &alice(), &renewed("by-the-other-call"));
+
+    let result = renew_rejected_with(&path, &alice(), "at", |_| panic!("must not renew: already renewed")).unwrap();
+
+    assert_eq!(result, renewed("by-the-other-call"));
+}
+
+#[test]
+fn a_refused_renewal_after_a_401_is_returned_and_leaves_the_file_untouched() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = saved(dir.path(), &alice(), &unexpired(Some("rt")));
+
+    let err = renew_rejected_with(&path, &alice(), "at", |_| Err(LoginError::TokenRejected("403: invalid_grant".into())))
+        .unwrap_err();
+
+    assert!(matches!(err, LoginError::TokenRejected(ref d) if d == "403: invalid_grant"), "got {err:?}");
+    let on_disk: Credentials = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    assert_eq!(on_disk, unexpired(Some("rt")));
+}
+
+#[test]
+fn a_401_renewal_refuses_a_file_of_the_other_identity() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = saved(dir.path(), &alice(), &unexpired(None));
+
+    let err = renew_rejected_with(&path, &alice(), "at", |_| panic!("must not renew")).unwrap_err();
+
+    assert!(matches!(err, LoginError::WrongIdentity(_)), "got {err:?}");
+}
+
+#[test]
+fn a_401_renewal_without_a_credentials_file_is_an_io_not_found_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = alice().credentials_path(dir.path(), "some-cli");
+
+    let err = renew_rejected_with(&path, &alice(), "at", |_| panic!("must not renew")).unwrap_err();
+
+    assert!(matches!(err, LoginError::Io(ref e) if e.kind() == std::io::ErrorKind::NotFound), "got {err:?}");
+    assert!(!path.parent().unwrap().exists(), "the logged-out person's folder was recreated");
 }
