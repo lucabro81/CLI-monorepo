@@ -34,7 +34,9 @@ src/
                     turn come from `oauth_user_login`)
                     (workspace-local, shared with `confluence` — see root
                     CLAUDE.md's "Shared library: crates/atlassian-auth")
-  client.rs       — JiraClient (blocking reqwest); get_json/post_json helpers;
+  client.rs       — JiraClient (blocking reqwest); get_json/post_json helpers over send(),
+                    which sends through oauth_user_login::BearerToken (with_renewer: a 401 renews
+                    once and repeats the request, issue #240; ClientError::Renewal);
                     all Jira API methods: get_issue, get_myself, get_my_permissions,
                     add_comment (takes pre-built ADF content nodes), delete_comment,
                     get_transitions, list_transitions_json, apply_transition,
@@ -43,7 +45,8 @@ src/
   cli.rs          — clap structs: Cli (--select, --select-all, --user <USER_ID> global), Command, AuthCommand,
                     IssueCommand, CommentCommand, UserCommand, ProjectCommand. No logic.
   context.rs      — config_dir(), load_app_config(), load_oauth_config(identity),
-                    authenticated_client(identity), login_command(identity),
+                    authenticated_client(identity) (client with rejected_token_renewer,
+                    issue #240), login_command(identity),
                     login_error_to_cli(e, identity), oauth_section(),
                     app_config_error(), print_json(value, select), client_error_to_cli(e) (shared
                     ClientError -> CliError mapping used by every command handler
@@ -131,6 +134,7 @@ Both grants resolve `cloud_id` via the accessible-resources endpoint after obtai
 The same accessible-resources entry also carries a `url` field (the site's browsable base URL, e.g. `https://mysite.atlassian.net`), captured as `Credentials::site_url` alongside `cloud_id`. `JiraClient::site_url()` exposes it; `commands::issue::build_browse_url` uses it to add a `browse_url` field to `issue get`/`issue create`'s JSON output. `None` for credentials stored before this field existed — re-run `auth login` to populate it, no lazy fallback.
 
 - **Refresh tokens rotate**: Atlassian invalidates the previous refresh token on every use. The new token pair must be written to the person's `users/<id>/credentials.json` immediately after each refresh, and the refresh runs under a lock on that file (re-read once the lock is held) so two parallel commands never spend the same refresh token.
+- **A 401 renews once and repeats the request** (issue #240, root `CLAUDE.md`): `atlassian_auth::renew_rejected` under the same lock; a person whose renewal is refused gets exit 3. `doctor`'s `api` check uses the same client, so a failed renewal fails `credentials` and the later checks use the renewed token.
 - **Transparent renewal**: `renew(config, credentials)` dispatches to `refresh()` (if `refresh_token` is `Some`) or re-runs `login_client_credentials()` (if `None`, service account). `refresh()` itself returns `LoginError::Internal` if called with `refresh_token: None`. Both `load_credentials()` and `doctor`'s `check_credentials` go through `renew()` (with a 60s expiry buffer) — never call `refresh()` directly on possibly-expired credentials.
 - **Scopes**: `read:jira-work read:jira-user write:jira-work offline_access` are what the 3LO authorization URL requests. `client_credentials` has no `scope` parameter in its own request body — it inherits whatever scopes were granted at credential-creation time: from the 3LO consent screen for a 3LO app, or from the scopes selected in admin.atlassian.com when the OAuth 2.0 credential was created for a Service Account.
 - The `client_credentials` grant only requires a prior human consent **when the `service` section holds a 3LO app's credentials**. With Service Account credentials it works immediately — site access was already assigned by an org admin in the console, not via a consent step this crate could observe or trigger.
