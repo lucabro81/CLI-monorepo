@@ -15,6 +15,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - *(confluence)* client retry after a 401 and doctor's revoked-token check against a local server (#240)
 - *(confluence)* doctor --help names the renewal after a 401 (#240)
 - Merge pull request #241 from lucabro81/issue240 ([#241](https://github.com/lucabro81/CLI-monorepo/pull/241))
+- Release
+- Merge pull request #245 from lucabro81/release/confluence ([#245](https://github.com/lucabro81/CLI-monorepo/pull/245))
+## [2.3.2](https://github.com/lucabro81/CLI-monorepo/compare/confluence-v2.3.1...confluence-v2.3.2) - 2026-10-09
+
+### Fixed
+- *(confluence)* renew a token answered 401 and retry, exit 3 when the person's login is gone (#240)
+- *(confluence)* auth whoami exits 3 when a revoked login cannot be renewed (#240)
+
+### Other
+- *(confluence)* a revoked token renews after a 401, exit 3 when the login is gone (#240)
+- *(confluence)* client retry after a 401 and doctor's revoked-token check against a local server (#240)
+- *(confluence)* doctor --help names the renewal after a 401 (#240)
+- Merge pull request #241 from lucabro81/issue240 ([#241](https://github.com/lucabro81/CLI-monorepo/pull/241))
 ## [2.3.1](https://github.com/lucabro81/CLI-monorepo/compare/confluence-v2.3.0...confluence-v2.3.1) - 2026-10-07
 
 ### Fixed
