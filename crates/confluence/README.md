@@ -64,6 +64,8 @@ cargo run -p confluence -- space list --select results.key                   # a
 cargo run -p confluence -- space list --select results.key --user jane.doe   # as jane.doe
 ```
 
+**A token revoked before it expires** (e.g. the person ended their session or revoked the app's access; issue #240) only shows up as a `401` from the API. The CLI then renews that identity's token once, under the same lock, and repeats the request (safe: a `401` means the request was not processed). If that renewal is refused, a person's command exits `3` (see [Exit codes](#exit-codes)); a `401` that persists with the fresh token is reported as is.
+
 ## How the OAuth flow works
 
 Identical mechanics to `jira` — same `auth.atlassian.com`/`api.atlassian.com` endpoints, same `client_credentials` (default, agent-driven, `"service"` section, `credentials-service.json`) and 3LO+PKCE (`--user <USER_ID>`, a person, `"user"` section, `users/<USER_ID>/credentials.json`) grants, same `cloud_id` resolution via the accessible-resources endpoint, same automatic token renewal before every API call. See `jira`'s README "How the OAuth flow works" section for the full step-by-step — this crate's `auth.rs` is a thin wrapper over the same `atlassian_auth` crate `jira` uses (see this crate's `CLAUDE.md`).
@@ -90,7 +92,7 @@ cargo run -p confluence -- init --user-app --client-id <ID> --client-secret <SEC
 
 ### `confluence doctor`
 
-Runs four checks for the selected identity (the Service Account, or the person with `--user <USER_ID>`) and prints a structured JSON report: `app_config` (app.json has the identity's section), `credentials` (that identity's tokens), `api` (live call to `/wiki/rest/api/user/current`), `oauth_scopes` (granted OAuth scopes via the accessible-resources endpoint). Exits non-zero if any check fails. Two informational keys never affect the exit code: `pending_login` (the selected person's remote login) and `identities` (which identity was checked, whether the Service Account is logged in, the ids of the people logged in under `users`, and credentials files of earlier layouts under `legacy_credentials_files`).
+Runs four checks for the selected identity (the Service Account, or the person with `--user <USER_ID>`) and prints a structured JSON report: `app_config` (app.json has the identity's section), `credentials` (that identity's tokens), `api` (live call to `/wiki/rest/api/user/current`), `oauth_scopes` (granted OAuth scopes via the accessible-resources endpoint). A token the `api` call gets a `401` for is renewed and the call repeated, as every command does; if that renewal fails, `credentials` reports the error (with the login command) and the later checks are `skipped`. Exits non-zero if any check fails. Two informational keys never affect the exit code: `pending_login` (the selected person's remote login) and `identities` (which identity was checked, whether the Service Account is logged in, the ids of the people logged in under `users`, and credentials files of earlier layouts under `legacy_credentials_files`).
 
 ```sh
 cargo run -p confluence -- doctor
@@ -275,6 +277,6 @@ Errors are typed with `thiserror` (`CliError` in `error.rs`). Internal module er
 ### Exit codes
 
 - `0` — success.
-- `3` — the selected identity needs a new login: nothing stored for it, or its credentials file holds the other identity's login (`not logged in ...` / `user <id> is not logged in ...`), or the person's refresh token was refused (`the login of user <id> is no longer valid ...`). Run the login command the message names. A caller (e.g. an agent acting for many people) can rely on this code instead of the message text.
+- `3` — the selected identity needs a new login: nothing stored for it, or its credentials file holds the other identity's login (`not logged in ...` / `user <id> is not logged in ...`), or the person's refresh token was refused (`the login of user <id> is no longer valid ...`), including when the API answered `401` to a token revoked before it expired and renewing it failed. Run the login command the message names. A caller (e.g. an agent acting for many people) can rely on this code instead of the message text.
 - `2` — invalid arguments (reported by clap).
-- `1` — every other failure, including a renewal that failed for a transient reason (network, 429, 5xx: retry), a refused renewal of the Service Account (its grant is its client id/secret in app.json, so a new login would not help), an app refused by the token endpoint (`invalid_client`: fix app.json, a new login through the same app would fail too), a credentials file that exists but can't be read or is corrupted, and `doctor` with a failing check.
+- `1` — every other failure, including a renewal that failed for a transient reason (network, 429, 5xx: retry), a refused renewal of the Service Account (its grant is its client id/secret in app.json, so a new login would not help), an app refused by the token endpoint (`invalid_client`: fix app.json, a new login through the same app would fail too), a credentials file that exists but can't be read or is corrupted, a `401` that persists with a freshly renewed token, and `doctor` with a failing check.
