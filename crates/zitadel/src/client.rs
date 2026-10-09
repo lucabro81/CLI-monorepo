@@ -2,8 +2,15 @@
 //! raw JSON response as `serde_json::Value`; shaping/projection happens in
 //! `context::print_json` via `--select`.
 
+use std::cell::RefCell;
+
 use crate::auth::Credentials;
 use crate::endpoints;
+use crate::error::CliError;
+
+/// Renews the token the API answered 401 to (the argument) and returns the new
+/// one; errors are already mapped for the user (issue #240).
+pub type Renewer = Box<dyn Fn(&str) -> Result<String, CliError>>;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ClientError {
@@ -11,11 +18,15 @@ pub enum ClientError {
     Request(String),
     #[error("status {status}: {body}")]
     Status { status: u16, body: String },
+    /// Renewing the token after a 401 failed; carries the error for the user.
+    #[error("{0}")]
+    Renewal(Box<CliError>),
 }
 
 pub struct ZitadelClient {
     instance_url: String,
-    access_token: String,
+    access_token: RefCell<String>,
+    renewer: Option<Renewer>,
     http: reqwest::blocking::Client,
 }
 
@@ -23,9 +34,20 @@ impl ZitadelClient {
     pub fn new(instance_url: &str, credentials: &Credentials) -> Self {
         Self {
             instance_url: instance_url.to_string(),
-            access_token: credentials.access_token.clone(),
+            access_token: RefCell::new(credentials.access_token.clone()),
+            renewer: None,
             http: reqwest::blocking::Client::new(),
         }
+    }
+
+    /// On a 401 the client calls `renewer` once with the rejected token and
+    /// repeats the request with the token it returns (issue #240: a token
+    /// revoked before it expires). A 401 means the request was not processed,
+    /// so repeating a POST is safe.
+    #[must_use]
+    pub fn with_renewer(mut self, renewer: Renewer) -> Self {
+        self.renewer = Some(renewer);
+        self
     }
 
     /// The authenticated identity (service user or human): `GET /auth/v1/users/me`.
@@ -93,30 +115,23 @@ impl ZitadelClient {
     #[cfg(test)]
     pub(crate) fn send_for_tests(
         &self,
-        method: reqwest::Method,
+        method: &reqwest::Method,
         path: &str,
         body: Option<&serde_json::Value>,
     ) -> Result<serde_json::Value, ClientError> {
-        let mut request = self
-            .http
-            .request(method, format!("{}{path}", self.instance_url))
-            .bearer_auth(&self.access_token)
-            .header(reqwest::header::ACCEPT, "application/json");
-        if let Some(body) = body {
-            request = request.json(body);
-        }
-        Self::into_json(request.send().map_err(|e| ClientError::Request(e.to_string()))?)
+        let url = format!("{}{path}", self.instance_url);
+        self.send(|| {
+            let request = self.http.request(method.clone(), &url);
+            match body {
+                Some(body) => request.json(body),
+                None => request,
+            }
+        })
     }
 
     fn get_json(&self, url: impl reqwest::IntoUrl) -> Result<serde_json::Value, ClientError> {
-        let response = self
-            .http
-            .get(url)
-            .bearer_auth(&self.access_token)
-            .header(reqwest::header::ACCEPT, "application/json")
-            .send()
-            .map_err(|e| ClientError::Request(e.to_string()))?;
-        Self::into_json(response)
+        let url = url.into_url().map_err(|e| ClientError::Request(e.to_string()))?;
+        self.send(|| self.http.get(url.clone()))
     }
 
     fn post_json(&self, path: &str, body: &serde_json::Value) -> Result<serde_json::Value, ClientError> {
@@ -124,15 +139,35 @@ impl ZitadelClient {
     }
 
     fn post_json_to(&self, url: impl reqwest::IntoUrl, body: &serde_json::Value) -> Result<serde_json::Value, ClientError> {
-        let response = self
-            .http
-            .post(url)
-            .bearer_auth(&self.access_token)
+        let url = url.into_url().map_err(|e| ClientError::Request(e.to_string()))?;
+        self.send(|| self.http.post(url.clone()).json(body))
+    }
+
+    /// Sends the request `build` makes with the current token; on a 401 renews
+    /// the token once (if a renewer is set) and sends a rebuilt request.
+    fn send(&self, build: impl Fn() -> reqwest::blocking::RequestBuilder) -> Result<serde_json::Value, ClientError> {
+        let response = self.send_once(&build)?;
+        if response.status() != reqwest::StatusCode::UNAUTHORIZED {
+            return Self::into_json(response);
+        }
+        let Some(renewer) = &self.renewer else {
+            return Self::into_json(response);
+        };
+        let rejected = self.access_token.borrow().clone();
+        let fresh_token = renewer(&rejected).map_err(|e| ClientError::Renewal(Box::new(e)))?;
+        *self.access_token.borrow_mut() = fresh_token;
+        Self::into_json(self.send_once(&build)?)
+    }
+
+    fn send_once(
+        &self,
+        build: &impl Fn() -> reqwest::blocking::RequestBuilder,
+    ) -> Result<reqwest::blocking::Response, ClientError> {
+        build()
+            .bearer_auth(self.access_token.borrow().as_str())
             .header(reqwest::header::ACCEPT, "application/json")
-            .json(body)
             .send()
-            .map_err(|e| ClientError::Request(e.to_string()))?;
-        Self::into_json(response)
+            .map_err(|e| ClientError::Request(e.to_string()))
     }
 
     fn into_json(response: reqwest::blocking::Response) -> Result<serde_json::Value, ClientError> {
