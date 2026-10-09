@@ -16,6 +16,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - *(zitadel)* a revoked token renews after a 401, exit 3 when the login is gone (#240)
 - *(zitadel)* doctor --help names the renewal after a 401 (#240)
 - Merge pull request #241 from lucabro81/issue240 ([#241](https://github.com/lucabro81/CLI-monorepo/pull/241))
+- Release
+- Merge pull request #242 from lucabro81/release/zitadel ([#242](https://github.com/lucabro81/CLI-monorepo/pull/242))
+## [2.6.1](https://github.com/lucabro81/CLI-monorepo/compare/zitadel-v2.6.0...zitadel-v2.6.1) - 2026-10-09
+
+### Fixed
+- *(zitadel)* renew_rejected renews a token answered 401 under the file lock (#240)
+- *(zitadel)* client renews once and retries a request answered 401 (#240)
+- *(zitadel)* commands and doctor renew a revoked token, exit 3 when the login is gone (#240)
+
+### Other
+- *(zitadel)* client retries a 401 through oauth_user_login::BearerToken (#240)
+- *(zitadel)* a revoked token renews after a 401, exit 3 when the login is gone (#240)
+- *(zitadel)* doctor --help names the renewal after a 401 (#240)
+- Merge pull request #241 from lucabro81/issue240 ([#241](https://github.com/lucabro81/CLI-monorepo/pull/241))
 ## [2.6.0](https://github.com/lucabro81/CLI-monorepo/compare/zitadel-v2.5.0...zitadel-v2.6.0) - 2026-10-08
 
 ### Added
