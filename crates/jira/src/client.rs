@@ -6,8 +6,10 @@
 //! structure to impose; the `--select` flag can then filter the output
 //! client-side without requiring typed response structs for every endpoint.
 //!
-//! Private helpers `get_json` and `post_json` handle auth headers, URL
-//! construction, and error mapping. DELETE operations build their URL inline.
+//! Private helpers `get_json` and `post_json` handle URL construction and JSON
+//! decoding; every request, DELETE and PUT included, goes through `send`, which
+//! adds the token, renews it once and repeats the request when Jira answers 401
+//! (issue #240: a token revoked before it expires), and maps a non-2xx answer.
 //!
 //! Search uses the current Atlassian endpoint `GET /rest/api/3/search/jql`
 //! with cursor-based pagination (`nextPageToken`). The deprecated
@@ -15,9 +17,12 @@
 
 use serde::Deserialize;
 
+use oauth_user_login::BearerToken;
+
 use crate::adf;
 use crate::auth::Credentials;
 use crate::endpoints;
+use crate::error::CliError;
 
 /// A workflow transition available for an issue.
 #[derive(Debug, Deserialize)]
@@ -36,6 +41,8 @@ pub enum ClientError {
     Request(String),
     /// The server responded but with a non-2xx status code.
     Status { status: u16, body: String },
+    /// Renewing the token after a 401 failed; carries the error for the user.
+    Renewal(Box<CliError>),
 }
 
 impl std::fmt::Display for ClientError {
@@ -45,6 +52,7 @@ impl std::fmt::Display for ClientError {
             ClientError::Status { status, body } => {
                 write!(f, "Jira returned status {status}: {body}")
             }
+            ClientError::Renewal(error) => write!(f, "{error}"),
         }
     }
 }
@@ -52,7 +60,7 @@ impl std::fmt::Display for ClientError {
 /// Blocking HTTP client for the Jira REST API v3.
 pub struct JiraClient {
     base_url: String,
-    access_token: String,
+    token: BearerToken<CliError>,
     site_url: Option<String>,
     http: reqwest::blocking::Client,
 }
@@ -62,10 +70,23 @@ impl JiraClient {
     pub fn new(credentials: &Credentials) -> Self {
         Self {
             base_url: format!("{}/{}", endpoints::JIRA_API_BASE_URL, credentials.cloud_id),
-            access_token: credentials.access_token.clone(),
+            token: BearerToken::new(credentials.access_token.clone()),
             site_url: credentials.site_url.clone(),
             http: reqwest::blocking::Client::new(),
         }
+    }
+
+    /// On a 401 the client calls `renewer` once with the rejected token and
+    /// repeats the request with the token it returns (issue #240).
+    #[must_use]
+    pub fn with_renewer(mut self, renewer: oauth_user_login::Renewer<CliError>) -> Self {
+        self.token = self.token.with_renewer(renewer);
+        self
+    }
+
+    /// The token the next request will send (renewed after a 401).
+    pub fn access_token(&self) -> String {
+        self.token.current()
     }
 
     /// The Atlassian site's browsable base URL, if resolved at login
@@ -291,22 +312,7 @@ impl JiraClient {
             delete_subtasks
         );
 
-        let response = self
-            .http
-            .delete(&url)
-            .bearer_auth(&self.access_token)
-            .send()
-            .map_err(|e| ClientError::Request(e.to_string()))?;
-
-        let status = response.status();
-        if !status.is_success() {
-            let body = response.text().unwrap_or_default();
-            return Err(ClientError::Status {
-                status: status.as_u16(),
-                body,
-            });
-        }
-
+        self.send(|| self.http.delete(&url))?;
         Ok(())
     }
 
@@ -335,24 +341,7 @@ impl JiraClient {
         let body = serde_json::json!({"transition": {"id": transition_id}});
         let url = format!("{}{}", self.base_url, endpoints::issue_transitions_path(key));
 
-        let response = self
-            .http
-            .post(&url)
-            .bearer_auth(&self.access_token)
-            .header("Accept", "application/json")
-            .json(&body)
-            .send()
-            .map_err(|e| ClientError::Request(e.to_string()))?;
-
-        let status = response.status();
-        if !status.is_success() {
-            let body = response.text().unwrap_or_default();
-            return Err(ClientError::Status {
-                status: status.as_u16(),
-                body,
-            });
-        }
-
+        self.send(|| self.http.post(&url).header("Accept", "application/json").json(&body))?;
         Ok(())
     }
 
@@ -365,24 +354,7 @@ impl JiraClient {
         let body = serde_json::json!({"accountId": account_id});
         let url = format!("{}{}", self.base_url, endpoints::issue_assignee_path(key));
 
-        let response = self
-            .http
-            .put(&url)
-            .bearer_auth(&self.access_token)
-            .header("Accept", "application/json")
-            .json(&body)
-            .send()
-            .map_err(|e| ClientError::Request(e.to_string()))?;
-
-        let status = response.status();
-        if !status.is_success() {
-            let body = response.text().unwrap_or_default();
-            return Err(ClientError::Status {
-                status: status.as_u16(),
-                body,
-            });
-        }
-
+        self.send(|| self.http.put(&url).header("Accept", "application/json").json(&body))?;
         Ok(())
     }
 
@@ -395,22 +367,7 @@ impl JiraClient {
             endpoints::issue_comment_id_path(key, comment_id)
         );
 
-        let response = self
-            .http
-            .delete(&url)
-            .bearer_auth(&self.access_token)
-            .send()
-            .map_err(|e| ClientError::Request(e.to_string()))?;
-
-        let status = response.status();
-        if !status.is_success() {
-            let body = response.text().unwrap_or_default();
-            return Err(ClientError::Status {
-                status: status.as_u16(),
-                body,
-            });
-        }
-
+        self.send(|| self.http.delete(&url))?;
         Ok(())
     }
 
@@ -421,25 +378,7 @@ impl JiraClient {
     ) -> Result<serde_json::Value, ClientError> {
         let url = format!("{}{path}", self.base_url);
 
-        let response = self
-            .http
-            .post(&url)
-            .bearer_auth(&self.access_token)
-            .header("Accept", "application/json")
-            .json(body)
-            .send()
-            .map_err(|e| ClientError::Request(e.to_string()))?;
-
-        let status = response.status();
-        if !status.is_success() {
-            let body = response.text().unwrap_or_default();
-            return Err(ClientError::Status {
-                status: status.as_u16(),
-                body,
-            });
-        }
-
-        response
+        self.send(|| self.http.post(&url).header("Accept", "application/json").json(body))?
             .json::<serde_json::Value>()
             .map_err(|e| ClientError::Request(e.to_string()))
     }
@@ -452,12 +391,26 @@ impl JiraClient {
     /// `base_url`. Used for endpoints that return absolute URLs to follow, such
     /// as project role actor lists.
     fn get_json_absolute(&self, url: &str) -> Result<serde_json::Value, ClientError> {
+        self.send(|| self.http.get(url).header("Accept", "application/json"))?
+            .json::<serde_json::Value>()
+            .map_err(|e| ClientError::Request(e.to_string()))
+    }
+
+    /// Sends the request `build` makes with the current token. On a 401 renews
+    /// the token once (if a renewer is set) and sends a rebuilt request: a 401
+    /// means Jira did not process it, so repeating a POST is safe. A non-2xx
+    /// answer becomes `Status`.
+    fn send(
+        &self,
+        build: impl Fn() -> reqwest::blocking::RequestBuilder,
+    ) -> Result<reqwest::blocking::Response, ClientError> {
         let response = self
-            .http
-            .get(url)
-            .bearer_auth(&self.access_token)
-            .header("Accept", "application/json")
-            .send()
+            .token
+            .send(
+                |token| build().bearer_auth(token).send(),
+                |response| matches!(response, Ok(r) if r.status() == reqwest::StatusCode::UNAUTHORIZED),
+            )
+            .map_err(|e| ClientError::Renewal(Box::new(e)))?
             .map_err(|e| ClientError::Request(e.to_string()))?;
 
         let status = response.status();
@@ -468,9 +421,6 @@ impl JiraClient {
                 body,
             });
         }
-
-        response
-            .json::<serde_json::Value>()
-            .map_err(|e| ClientError::Request(e.to_string()))
+        Ok(response)
     }
 }
