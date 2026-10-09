@@ -59,6 +59,9 @@ src/
                     wrapping cli_fields::RenderError.
   tests/          — all *_tests.rs files, mirroring the src/ layout (see "Test file
                     convention" below). tests/e2e_tests.rs holds the ignored e2e tests.
+                    tests/test_support.rs = a local HTTP server for client_tests.rs (the
+                    retry after a 401, issue #240) and doctor's revoked-token tests;
+                    client.rs has a test-only with_base_url() seam for it.
   main.rs         — pure dispatch: resolve --select/--select-all into a
                     cli_fields::Select and --user <USER_ID> into an Identity once, match
                     Command, call commands::*.
