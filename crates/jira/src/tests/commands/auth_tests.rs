@@ -130,3 +130,28 @@ fn every_other_step_two_failure_also_says_how_to_restart() {
         assert!(err.ends_with(RESTART), "got {err}");
     }
 }
+
+// ── issue #240: whoami is the agent's login probe ─────────────────────────
+
+#[test]
+fn whoami_reports_a_refused_renewal_after_a_401_as_is_with_exit_3() {
+    // Regression guard: whoami flattened every client error into
+    // ApiRequestFailed (exit 1), hiding a person's revoked login.
+    let renewal = crate::client::ClientError::Renewal(Box::new(crate::error::CliError::UserLoginExpired {
+        reason: "400: invalid_grant".to_string(),
+        id: "alice".to_string(),
+    }));
+
+    let err = super::whoami_error(renewal);
+
+    assert!(matches!(&err, crate::error::CliError::UserLoginExpired { id, .. } if id == "alice"), "got {err:?}");
+    assert_eq!(err.exit_code(), 3);
+}
+
+#[test]
+fn whoami_keeps_its_message_for_other_client_errors() {
+    let err = super::whoami_error(crate::client::ClientError::Status { status: 401, body: "{}".to_string() });
+
+    assert!(matches!(&err, crate::error::CliError::ApiRequestFailed { reason } if reason == "Jira returned status 401: {}"), "got {err:?}");
+    assert_eq!(err.exit_code(), 1);
+}
