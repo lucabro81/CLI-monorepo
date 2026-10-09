@@ -8,7 +8,9 @@
 //!    (`credentials-service.json`, or `users/<id>/credentials.json` with
 //!    `--user <id>`) holds a usable token (renewed first if expiring, under the
 //!    same lock as every command's); reports the identity kind
-//!    (`service_user` / `user`) and expiry.
+//!    (`service_user` / `user`) and expiry. A token the `api` call gets a 401
+//!    for is renewed and the call repeated, as every command does; if that
+//!    renewal fails, this check reports it (issue #240: a revoked token).
 //! 3. `api` — live `GET /auth/v1/users/me`: user id, name, type, organization.
 //! 4. `memberships` — the identity's administrator roles per instance /
 //!    organization / project / project grant. ZITADEL authorizes by these roles,
@@ -30,8 +32,8 @@ use std::path::Path;
 use serde_json::{Value, json};
 
 use crate::auth::{self, AppConfig, Credentials, Identity, LoginError};
-use crate::client::ZitadelClient;
-use crate::context::{client_error_to_cli, config_dir, login_command};
+use crate::client::{ClientError, ZitadelClient};
+use crate::context::{client_error_to_cli, config_dir, login_command, rejected_token_renewer};
 use crate::error::CliError;
 
 pub fn run_doctor(identity: &Identity) -> Result<(Value, bool), CliError> {
@@ -41,12 +43,23 @@ pub fn run_doctor(identity: &Identity) -> Result<(Value, bool), CliError> {
 /// Runs every check against `config_dir` for `identity`. Returns `(report, all_ok)`.
 pub(crate) fn run_doctor_in(config_dir: &Path, identity: &Identity) -> (Value, bool) {
     let (app_check, config) = check_app_config(config_dir);
-    let (creds_check, client) = match &config {
+    let (mut creds_check, client) = match &config {
         Some(config) => check_credentials(config, config_dir, identity),
         None => (skipped("app_config check failed"), None),
     };
     let identity_check = match &client {
-        Some(client) => check_api(client),
+        Some(client) => match check_api(client) {
+            Ok(check) => check,
+            // The token was rejected and could not be renewed (issue #240):
+            // a credentials problem, not an API one.
+            Err(renewal) => {
+                creds_check = error(
+                    Some(&auth::credentials_path(config_dir, identity)),
+                    &renewal.to_string(),
+                );
+                skipped("credentials check failed")
+            }
+        },
         None => skipped("credentials check failed"),
     };
     let memberships_check = match &client {
@@ -164,7 +177,10 @@ fn check_credentials(config: &AppConfig, config_dir: &Path, identity: &Identity)
                 "identity": identity_kind(&credentials),
                 "expires_at": credentials.expires_at,
             }),
-            Some(ZitadelClient::new(&config.instance_url, &credentials)),
+            Some(
+                ZitadelClient::new(&config.instance_url, &credentials)
+                    .with_renewer(rejected_token_renewer(config.clone(), path.clone(), identity.clone())),
+            ),
         ),
         Err(LoginError::Io(e)) if e.kind() == std::io::ErrorKind::NotFound => (
             error(Some(&path), &format!("no stored credentials. Run: {login}")),
@@ -181,8 +197,9 @@ fn identity_kind(credentials: &Credentials) -> &'static str {
     if credentials.refresh_token.is_some() { "user" } else { "service_user" }
 }
 
-fn check_api(client: &ZitadelClient) -> Value {
-    match client.get_current_user() {
+/// The `api` check, or the error of a renewal after a 401 (for `credentials`).
+fn check_api(client: &ZitadelClient) -> Result<Value, CliError> {
+    Ok(match client.get_current_user() {
         Ok(me) => {
             let user = &me["user"];
             let kind = if user.get("machine").is_some() {
@@ -200,8 +217,9 @@ fn check_api(client: &ZitadelClient) -> Value {
                 "organization_id": user["details"]["resourceOwner"],
             })
         }
+        Err(ClientError::Renewal(e)) => return Err(*e),
         Err(e) => error(None, &client_error_to_cli(e).to_string()),
-    }
+    })
 }
 
 fn check_memberships(client: &ZitadelClient) -> Value {

@@ -3,7 +3,8 @@
 //! - `config_dir` — resolves the XDG config directory (`$XDG_CONFIG_HOME` or `~/.config`).
 //! - `load_app_config` — loads and validates `app.json`, mapping `AppConfigError` to `CliError`.
 //! - `authenticated_client` — load config → load the selected identity's credentials
-//!   (the service user, or a person with `--user <id>`) → renew if expiring → build client.
+//!   (the service user, or a person with `--user <id>`) → renew if expiring → build client,
+//!   which renews once more and retries when ZITADEL answers 401 (`rejected_token_renewer`).
 //! - `login_error_to_cli` — maps credential-loading failures (incl. a failed save
 //!   after renewal, which must not be reported as "log in again").
 //! - `client_error_to_cli` — maps `ClientError` to an actionable `CliError` (401/403/404 hints).
@@ -12,7 +13,7 @@
 //!   method shared by every v2 search/list request body.
 
 use crate::auth::{self, AppConfig, AppConfigError, Identity, LoginError};
-use crate::client::{ClientError, ZitadelClient};
+use crate::client::{ClientError, Renewer, ZitadelClient};
 use crate::error::CliError;
 
 /// XDG-style config directory (`$XDG_CONFIG_HOME` or `~/.config`), used on every platform.
@@ -47,7 +48,19 @@ pub fn authenticated_client(identity: &Identity) -> Result<ZitadelClient, CliErr
     let path = auth::credentials_path(&config_dir()?, identity);
     let credentials =
         auth::load_credentials(&config, &path, identity).map_err(|e| login_error_to_cli(e, &path, identity))?;
-    Ok(ZitadelClient::new(&config.instance_url, &credentials))
+    let client = ZitadelClient::new(&config.instance_url, &credentials);
+    Ok(client.with_renewer(rejected_token_renewer(config, path, identity.clone())))
+}
+
+/// What the client calls when ZITADEL answers 401 (issue #240): renews
+/// `identity`'s stored token under its lock and returns the new one. A
+/// person's refused refresh becomes `UserLoginExpired` (exit 3).
+pub(crate) fn rejected_token_renewer(config: AppConfig, path: std::path::PathBuf, identity: Identity) -> Renewer {
+    Box::new(move |rejected| {
+        auth::renew_rejected(&config, &path, &identity, rejected)
+            .map(|credentials| credentials.access_token)
+            .map_err(|e| login_error_to_cli(e, &path, &identity))
+    })
 }
 
 /// Maps a credential-loading failure: unreadable/corrupted file → not
@@ -91,6 +104,7 @@ pub(crate) fn login_command(identity: &Identity) -> String {
 pub fn client_error_to_cli(error: ClientError) -> CliError {
     match error {
         ClientError::Request(reason) => CliError::ApiRequestFailed { reason },
+        ClientError::Renewal(error) => *error,
         ClientError::Status { status: 401, body } => CliError::ApiUnauthorized { body },
         ClientError::Status { status: 403, body } => CliError::ApiForbidden { body },
         ClientError::Status { status: 404, body } => CliError::ApiNotFound { body },
