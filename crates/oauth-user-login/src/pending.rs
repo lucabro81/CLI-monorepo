@@ -12,9 +12,9 @@ pub struct PendingLogin {
     pub state: String,
     /// `None` for providers without PKCE (Bitbucket).
     pub code_verifier: Option<String>,
-    /// Sent again, unchanged, with the code exchange. `None` for providers
-    /// with no `redirect_uri` parameter (Bitbucket uses the consumer's
-    /// registered callback URL).
+    /// Sent again, unchanged, with the code exchange. `None` when the
+    /// authorization request carried no `redirect_uri` (Bitbucket without
+    /// `--redirect-uri`: the consumer's only callback URL).
     pub redirect_uri: Option<String>,
     /// Unix timestamp (seconds).
     pub expires_at: u64,
