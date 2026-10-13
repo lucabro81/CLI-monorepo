@@ -347,7 +347,8 @@ pub fn login(config: &OAuthConfig) -> Result<Credentials, LoginError> {
     let params = oauth_user_login::wait_for_callback(&listener, endpoints::CALLBACK_PATH, &state)
         .map_err(LoginError::Callback)?;
 
-    let token = request_token(config, &authorization_code_form(&params.code, Some(endpoints::CALLBACK_URL)))?;
+    let form = authorization_code_form(&params.code, Some(endpoints::CALLBACK_URL));
+    let token = request_token(config, &form)?;
     Ok(credentials_from_token(token, now_unix(), None))
 }
 

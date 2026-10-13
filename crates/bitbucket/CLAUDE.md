@@ -164,9 +164,10 @@ Exit code (issue #194): `CliError::exit_code()` returns 3 for `NotAuthenticatedS
   `--redirect-uri` is optional (unlike jira/confluence): without it Bitbucket uses the
   consumer's only callback URL; a consumer with several callback URLs refuses a link
   without it. clap needs an explicit `conflicts_with_all = ["code", "state"]` on it:
-  `requires = "remote"` alone is dropped once `--code` is present. Verified live
-  end to end against the localhost consumer (copying `code`/`state` from the
-  browser's address bar). `doctor` reports it as `pending_login` (outside `all_ok`).
+  `requires = "remote"` alone is dropped once `--code` is present. The flow without
+  `redirect_uri` (#146) was verified live end to end against a single-callback localhost
+  consumer (copying `code`/`state` from the browser's address bar); the `--redirect-uri`
+  path (#250) is not verified live yet. `doctor` reports it as `pending_login` (outside `all_ok`).
 
 Config layout, mirroring jira (`$XDG_CONFIG_HOME/bitbucket-cli/`, falling back to
 `~/.config/bitbucket-cli/`):
