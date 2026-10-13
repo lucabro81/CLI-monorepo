@@ -110,8 +110,8 @@ consumer**, with two grants (one consumer per identity, possibly the same one):
   no refresh token. Every action is attributed to the OAuth app. **Intentional** for
   bot/agent usage: bot actions must be visibly a bot's.
 - `auth login --user <id>` — `authorization_code`: browser consent, callback on
-  `127.0.0.1:8080` (the consumer's callback URL must be
-  `http://localhost:8080/callback`), stores a `refresh_token`. Every action is
+  `127.0.0.1:8080` (sends `redirect_uri=http://localhost:8080/callback`,
+  `endpoints::CALLBACK_URL`, which must be one of the consumer's callback URLs), stores a `refresh_token`. Every action is
   attributed to the person who consented. For an agent acting as the person it works for.
 
 **The app and any number of people are stored side by side (issues #164, #175)** — see
@@ -130,7 +130,8 @@ Exit code (issue #194): `CliError::exit_code()` returns 3 for `NotAuthenticatedS
 
 - **OAuth consumer**: created in the Bitbucket workspace (Settings → OAuth consumers →
   Add consumer). Callback URL `http://localhost:8080/callback` is needed only for
-  `--user <id>`; it doesn't affect `client_credentials`. Produces a `Key` (client_id) and `Secret`
+  `--user <id>`; it doesn't affect `client_credentials`. A consumer can have several
+  callback URLs (issue #250). Produces a `Key` (client_id) and `Secret`
   (client_secret). The token's identity is whichever account created the consumer —
   in production this should be a dedicated `bot@<domain>` account added as a workspace
   member, not a personal account.
@@ -147,18 +148,23 @@ Exit code (issue #194): `CliError::exit_code()` returns 3 for `NotAuthenticatedS
   parallel commands for the same identity renew once. Access tokens last 1 hour; an unused refresh token expires after 3 months.
   A 401 renews once more (`auth::renew_rejected`, same lock) and repeats the request (issue #240):
   a person whose renewal is refused gets exit 3; `doctor` reports it in `credentials`.
-- **`--user <id>` specifics** (from Bitbucket's docs): no PKCE and no `redirect_uri`
-  parameter — Bitbucket always redirects to the consumer's callback URL. `state` is
+- **`--user <id>` specifics** (from Bitbucket's docs): no PKCE. `redirect_uri` is
+  optional and picks one of the consumer's callback URLs (needed when it has several,
+  issue #250); it goes in the authorization URL and again in the code exchange
+  (`authorization_url` / `authorization_code_form`). The browser login always sends
+  `http://localhost:8080/callback`. `state` is
   sent and checked for CSRF. The token response may name the scope field `scope` or
   `scopes`; both are accepted.
 - **`auth login --user <id> --remote` — the same grant in two steps** (issue #146), for a
   person not at this machine. Step 1 (`start_remote_login`) saves an
-  `oauth_user_login::PendingLogin` with **state only** (no PKCE, no redirect URI) to
+  `oauth_user_login::PendingLogin` with state and the optional `--redirect-uri` (no PKCE) to
   that person's `users/<id>/pending-login.json` (0600, 10 minutes) and prints `{authorize_url, state,
   expires_at}`; step 2 (`--code --state`, `complete_remote_login`) takes it (state
-  single-use) and exchanges the code. There is no `--redirect-uri`: Bitbucket always
-  redirects to the consumer's callback URL, so remote use needs a consumer whose
-  callback URL is the caller's endpoint, in the `user` section of its own config folder. Verified live
+  single-use) and exchanges the code, sending the stored redirect URI if there is one.
+  `--redirect-uri` is optional (unlike jira/confluence): without it Bitbucket uses the
+  consumer's only callback URL; a consumer with several callback URLs refuses a link
+  without it. clap needs an explicit `conflicts_with_all = ["code", "state"]` on it:
+  `requires = "remote"` alone is dropped once `--code` is present. Verified live
   end to end against the localhost consumer (copying `code`/`state` from the
   browser's address bar). `doctor` reports it as `pending_login` (outside `all_ok`).
 
@@ -176,7 +182,7 @@ Config layout, mirroring jira (`$XDG_CONFIG_HOME/bitbucket-cli/`, falling back t
   `credentials-user.json` (#164) are not read; `doctor`'s
   `identities.legacy_credentials_files` reports them.
 - `users/<id>/pending-login.json` — only between the two steps of `auth login --user <id> --remote`
-  (`state`, `expires_at`). Removed by step 2.
+  (`state`, `expires_at`, the optional `redirect_uri`). Removed by step 2.
 
 ## Implemented commands
 
@@ -186,7 +192,7 @@ Config layout, mirroring jira (`$XDG_CONFIG_HOME/bitbucket-cli/`, falling back t
 | `init --user-app [--client-id --client-secret]` | Writes only the `user` section, logs nobody in, prints `{"app_config": ...}` for it plus the next login commands; refuses `--user` (issue #195) |
 | `doctor [--user <id>]` | Cascading JSON health check for the selected identity (app_config, credentials, api, permissions); `credentials.identity` is `user` or `app`; informational `pending_login` and `identities`; exit non-zero on any failure |
 | `auth login [--user <id>]` | default: `client_credentials` exchange (the app) into `credentials-service.json`; `--user <id>`: browser `authorization_code` flow (that person) into `users/<id>/credentials.json` |
-| `auth login --user <id> --remote` / `--code --state` | two-step `authorization_code` for someone elsewhere: step 1 prints the consent URL (exempt from `--select`), step 2 exchanges the code and prints `auth whoami` |
+| `auth login --user <id> --remote [--redirect-uri]` / `--code --state` | two-step `authorization_code` for someone elsewhere: step 1 prints the consent URL (exempt from `--select`), step 2 exchanges the code and prints `auth whoami` |
 | `auth whoami [--user <id>]` | `GET /2.0/user` as the selected identity, supports `--select` |
 | `auth logout [--user <id>]` | removes the selected identity's stored login (local only); prints `{"logged_out": ...}` |
 | `repo get <workspace>/<repo_slug>` | `GET /2.0/repositories/{workspace}/{repo_slug}`, supports `--select` |
