@@ -13,11 +13,18 @@ fn alice() -> UserId {
 #[test]
 fn login_mode_follows_the_flags() {
     let user = Identity::User(alice());
-    assert_eq!(LoginMode::from_flags(&Identity::Service, false, None, None).unwrap(), LoginMode::App);
-    assert_eq!(LoginMode::from_flags(&user, false, None, None).unwrap(), LoginMode::UserBrowser(alice()));
-    assert_eq!(LoginMode::from_flags(&user, true, None, None).unwrap(), LoginMode::RemoteStart(alice()));
+    assert_eq!(LoginMode::from_flags(&Identity::Service, false, None, None, None).unwrap(), LoginMode::App);
+    assert_eq!(LoginMode::from_flags(&user, false, None, None, None).unwrap(), LoginMode::UserBrowser(alice()));
     assert_eq!(
-        LoginMode::from_flags(&user, false, Some("c".to_string()), Some("s".to_string())).unwrap(),
+        LoginMode::from_flags(&user, true, None, None, None).unwrap(),
+        LoginMode::RemoteStart { id: alice(), redirect_uri: None }
+    );
+    assert_eq!(
+        LoginMode::from_flags(&user, true, Some("https://m/cb".to_string()), None, None).unwrap(),
+        LoginMode::RemoteStart { id: alice(), redirect_uri: Some("https://m/cb".to_string()) }
+    );
+    assert_eq!(
+        LoginMode::from_flags(&user, false, None, Some("c".to_string()), Some("s".to_string())).unwrap(),
         LoginMode::RemoteComplete { id: alice(), code: "c".to_string(), state: "s".to_string() }
     );
 }
@@ -27,16 +34,20 @@ fn remote_login_without_user_is_rejected_with_the_corrected_command() {
     // Regression guard for issue #164: --user became global, and clap cannot
     // enforce `requires = "user"` when --user is written before the
     // subcommand, so the check moved here.
-    let start = LoginMode::from_flags(&Identity::Service, true, None, None).unwrap_err().to_string();
-    let complete = LoginMode::from_flags(&Identity::Service, false, Some("c".to_string()), Some("s".to_string()))
+    let start = LoginMode::from_flags(&Identity::Service, true, None, None, None).unwrap_err().to_string();
+    let complete = LoginMode::from_flags(&Identity::Service, false, None, Some("c".to_string()), Some("s".to_string()))
         .unwrap_err()
         .to_string();
 
     let expected = "a remote login (--remote, --code, --state) logs in a person and needs --user <USER_ID>. \
         Retry with: bitbucket auth login --user <USER_ID> --remote, \
         then bitbucket auth login --user <USER_ID> --code <CODE> --state <STATE>";
+    let start_with_redirect = LoginMode::from_flags(&Identity::Service, true, Some("https://m/cb".to_string()), None, None)
+        .unwrap_err()
+        .to_string();
     assert_eq!(start, expected);
     assert_eq!(complete, expected);
+    assert_eq!(start_with_redirect, expected);
 }
 
 #[test]
@@ -45,7 +56,7 @@ fn each_login_mode_saves_to_its_own_identity() {
     let user = Identity::User(alice());
     assert_eq!(LoginMode::App.identity(), Identity::Service);
     assert_eq!(LoginMode::UserBrowser(alice()).identity(), user);
-    assert_eq!(LoginMode::RemoteStart(alice()).identity(), user);
+    assert_eq!(LoginMode::RemoteStart { id: alice(), redirect_uri: None }.identity(), user);
     assert_eq!(
         LoginMode::RemoteComplete { id: alice(), code: "c".to_string(), state: "s".to_string() }.identity(),
         user

@@ -226,7 +226,7 @@ fn token(refresh_token: Option<&str>) -> TokenResponse {
 
 #[test]
 fn authorization_url_has_exact_bitbucket_params() {
-    let url = authorization_url(&test_config(), "state123").expect("should build");
+    let url = authorization_url(&test_config(), "state123", None).expect("should build");
 
     assert_eq!(
         url,
@@ -241,7 +241,7 @@ fn authorization_url_encodes_query_values() {
         client_secret: "ignored".to_string(),
     };
 
-    let url = authorization_url(&config, "s=1").expect("should build");
+    let url = authorization_url(&config, "s=1", None).expect("should build");
 
     assert_eq!(
         url,
@@ -288,9 +288,42 @@ fn a_busy_callback_port_names_the_port_and_the_retry_command() {
 #[test]
 fn authorization_code_form_has_grant_and_code() {
     assert_eq!(
-        authorization_code_form("XYZ"),
+        authorization_code_form("XYZ", None),
         vec![("grant_type", "authorization_code".to_string()), ("code", "XYZ".to_string())]
     );
+}
+
+// Issue #250: a consumer with several callback URLs needs `redirect_uri` in the
+// authorization request, and OAuth then requires the same value in the exchange.
+#[test]
+fn authorization_url_carries_the_redirect_uri_when_given() {
+    let url = authorization_url(&test_config(), "state123", Some("https://app.example.com/oauth/callback?x=1"))
+        .expect("should build");
+
+    assert_eq!(
+        url,
+        "https://bitbucket.org/site/oauth2/authorize?client_id=abc&response_type=code&state=state123\
+        &redirect_uri=https%3A%2F%2Fapp.example.com%2Foauth%2Fcallback%3Fx%3D1"
+    );
+}
+
+#[test]
+fn authorization_code_form_carries_the_redirect_uri_when_given() {
+    assert_eq!(
+        authorization_code_form("XYZ", Some("https://app.example.com/cb")),
+        vec![
+            ("grant_type", "authorization_code".to_string()),
+            ("code", "XYZ".to_string()),
+            ("redirect_uri", "https://app.example.com/cb".to_string()),
+        ]
+    );
+}
+
+#[test]
+fn the_browser_login_redirects_to_the_local_callback_it_listens_on() {
+    assert_eq!(crate::endpoints::CALLBACK_URL, "http://localhost:8080/callback");
+    assert!(crate::endpoints::CALLBACK_URL.ends_with(crate::endpoints::CALLBACK_PATH));
+    assert_eq!(crate::endpoints::CALLBACK_LISTEN_ADDRESS, "127.0.0.1:8080");
 }
 
 // ── token responses ────────────────────────────────────────────────────────
@@ -411,13 +444,25 @@ fn remote_start_saves_state_only_and_builds_the_consent_url() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("pending-login.json");
 
-    let (url, pending) = start_remote_login(&test_config(), &path, NOW).unwrap();
+    let (url, pending) = start_remote_login(&test_config(), None, &path, NOW).unwrap();
 
-    assert_eq!(url, authorization_url(&test_config(), &pending.state).unwrap());
+    assert_eq!(url, authorization_url(&test_config(), &pending.state, None).unwrap());
     assert_eq!(pending.redirect_uri, None);
     assert_eq!(pending.code_verifier, None);
     assert_eq!(pending.expires_at, NOW + 600);
     assert!(path.exists());
+}
+
+#[test]
+fn remote_start_with_a_redirect_uri_puts_it_in_the_url_and_the_pending_login() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("pending-login.json");
+
+    let (url, pending) = start_remote_login(&test_config(), Some("https://app.example.com/cb"), &path, NOW).unwrap();
+
+    assert_eq!(url, authorization_url(&test_config(), &pending.state, Some("https://app.example.com/cb")).unwrap());
+    assert_eq!(pending.redirect_uri.as_deref(), Some("https://app.example.com/cb"));
+    assert_eq!(pending.code_verifier, None);
 }
 
 #[test]
@@ -437,7 +482,7 @@ fn remote_complete_without_a_pending_login_fails_before_any_request() {
 fn remote_complete_with_a_wrong_state_keeps_the_pending_login() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("pending-login.json");
-    start_remote_login(&test_config(), &path, NOW).unwrap();
+    start_remote_login(&test_config(), None, &path, NOW).unwrap();
 
     let err = complete_remote_login(&test_config(), &path, "c", "stale", NOW).unwrap_err();
 
@@ -452,7 +497,7 @@ fn remote_complete_with_a_wrong_state_keeps_the_pending_login() {
 fn remote_complete_after_expiry_fails_and_removes_the_pending_login() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("pending-login.json");
-    let (_, pending) = start_remote_login(&test_config(), &path, NOW).unwrap();
+    let (_, pending) = start_remote_login(&test_config(), None, &path, NOW).unwrap();
 
     let err = complete_remote_login(&test_config(), &path, "c", &pending.state, NOW + 600).unwrap_err();
 
@@ -506,7 +551,7 @@ fn remote_complete_exchanges_the_code_and_consumes_the_pending_login() {
     );
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("pending-login.json");
-    let (_, pending) = start_remote_login(&test_config(), &path, NOW).unwrap();
+    let (_, pending) = start_remote_login(&test_config(), None, &path, NOW).unwrap();
 
     let creds = complete_remote_login_at(&test_config(), &path, "code-9", &pending.state, NOW, &url).unwrap();
 
@@ -518,11 +563,30 @@ fn remote_complete_exchanges_the_code_and_consumes_the_pending_login() {
 }
 
 #[test]
+fn remote_complete_sends_the_redirect_uri_of_step_1_in_the_exchange() {
+    let (url, server) = token_server(
+        "200 OK",
+        r#"{"access_token":"at","refresh_token":"rt","expires_in":7200,"scopes":"account"}"#,
+    );
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("pending-login.json");
+    let (_, pending) = start_remote_login(&test_config(), Some("https://app.example.com/cb"), &path, NOW).unwrap();
+
+    complete_remote_login_at(&test_config(), &path, "code-9", &pending.state, NOW, &url).unwrap();
+
+    let request = server.join().unwrap();
+    assert!(
+        request.ends_with("grant_type=authorization_code&code=code-9&redirect_uri=https%3A%2F%2Fapp.example.com%2Fcb"),
+        "got {request}"
+    );
+}
+
+#[test]
 fn remote_complete_with_a_refused_code_still_consumes_the_state() {
     let (url, server) = token_server("400 Bad Request", r#"{"error":"invalid_grant"}"#);
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("pending-login.json");
-    let (_, pending) = start_remote_login(&test_config(), &path, NOW).unwrap();
+    let (_, pending) = start_remote_login(&test_config(), None, &path, NOW).unwrap();
 
     let err = complete_remote_login_at(&test_config(), &path, "used", &pending.state, NOW, &url).unwrap_err();
     server.join().unwrap();

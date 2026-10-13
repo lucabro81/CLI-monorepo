@@ -15,7 +15,7 @@ fn parses_auth_login() {
     assert!(matches!(
         cli.command,
         Command::Auth {
-            command: AuthCommand::Login { remote: false, code: None, state: None }
+            command: AuthCommand::Login { remote: false, redirect_uri: None, code: None, state: None }
         }
     ));
 }
@@ -28,7 +28,7 @@ fn parses_auth_login_with_user() {
     assert!(matches!(
         cli.command,
         Command::Auth {
-            command: AuthCommand::Login { remote: false, code: None, state: None }
+            command: AuthCommand::Login { remote: false, redirect_uri: None, code: None, state: None }
         }
     ));
 }
@@ -41,7 +41,7 @@ fn parses_auth_login_remote_start_without_redirect_uri() {
     assert!(matches!(
         cli.command,
         Command::Auth {
-            command: AuthCommand::Login { remote: true, code: None, state: None }
+            command: AuthCommand::Login { remote: true, redirect_uri: None, code: None, state: None }
         }
     ));
 }
@@ -53,7 +53,8 @@ fn parses_auth_login_remote_complete() {
 
     assert_eq!(user(&cli), Some("alice"));
     match cli.command {
-        Command::Auth { command: AuthCommand::Login { remote, code, state } } => {
+        Command::Auth { command: AuthCommand::Login { remote, redirect_uri, code, state } } => {
+            assert_eq!(redirect_uri, None);
             assert!(!remote);
             assert_eq!((code.as_deref(), state.as_deref()), (Some("c1"), Some("s1")));
         }
@@ -72,8 +73,33 @@ fn auth_login_remote_flag_combinations_are_enforced() {
     assert_eq!(kind(&["--user", "alice", "--code", "c"]), MissingRequiredArgument);
     assert_eq!(kind(&["--user", "alice", "--state", "s"]), MissingRequiredArgument);
     assert_eq!(kind(&["--user", "alice", "--remote", "--code", "c", "--state", "s"]), ArgumentConflict);
-    // Bitbucket has no redirect_uri parameter: the consumer's callback URL decides.
-    assert_eq!(kind(&["--user", "alice", "--remote", "--redirect-uri", "https://m/cb"]), UnknownArgument);
+    // --redirect-uri belongs to step 1 only (issue #250).
+    assert_eq!(kind(&["--user", "alice", "--redirect-uri", "https://m/cb"]), MissingRequiredArgument);
+    // Regression guard: without an explicit conflict clap accepted this and
+    // step 2 silently ignored the flag.
+    assert_eq!(
+        kind(&["--user", "alice", "--redirect-uri", "https://m/cb", "--code", "c", "--state", "s"]),
+        ArgumentConflict
+    );
+    assert_eq!(kind(&["--user", "alice", "--remote", "-r", "https://m/cb"]), UnknownArgument);
+}
+
+#[test]
+fn parses_auth_login_remote_start_with_redirect_uri() {
+    let cli = Cli::try_parse_from([
+        "bitbucket", "auth", "login", "--user", "alice", "--remote", "--redirect-uri", "https://app.example.com/cb",
+    ])
+    .expect("should parse");
+
+    assert_eq!(user(&cli), Some("alice"));
+    match cli.command {
+        Command::Auth { command: AuthCommand::Login { remote, redirect_uri, code, state } } => {
+            assert!(remote);
+            assert_eq!(redirect_uri.as_deref(), Some("https://app.example.com/cb"));
+            assert_eq!((code, state), (None, None));
+        }
+        other => panic!("unexpected command: {other:?}"),
+    }
 }
 
 // --- global --user <id> (issues #164, #175) ---
