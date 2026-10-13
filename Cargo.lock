@@ -769,7 +769,7 @@ dependencies = [
 
 [[package]]
 name = "google-chat"
-version = "0.13.0"
+version = "0.13.1"
 dependencies = [
  "clap",
  "cli-fields",
