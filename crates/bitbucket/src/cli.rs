@@ -128,17 +128,19 @@ pub enum AuthCommand {
     /// app.json's "user" section (the consumer every person logs in through): opens the browser
     /// on Bitbucket's consent page, receives the callback on localhost:8080, and
     /// stores a `refresh_token` for automatic renewal. Every action is attributed
-    /// to the human Bitbucket account that approved the consent page. Requires the
-    /// OAuth consumer's callback URL to be `http://localhost:8080/callback`.
+    /// to the human Bitbucket account that approved the consent page. Sends
+    /// `redirect_uri=http://localhost:8080/callback`, so that must be one of the
+    /// OAuth consumer's callback URLs.
     ///
     /// With `--user <USER_ID> --remote`: a two-step login for a person who is not at this
     /// machine. Step 1 (--remote) opens no browser and listens on no port: it
     /// prints JSON `{authorize_url, state, expires_at}` for the caller to hand to
-    /// the person. Bitbucket has no redirect URI parameter: it always redirects
-    /// to the OAuth consumer's callback URL, so remote logins need a consumer
-    /// whose callback URL is the caller's own endpoint, in the "user" section (a
-    /// browser login on this machine instead needs the localhost callback). Step 2 (--code --state) exchanges
-    /// the code, saves the credentials, then prints what `auth whoami --user <USER_ID>`
+    /// the person. `--redirect-uri <URL>` picks which of the consumer's callback
+    /// URLs Bitbucket sends the person back to: it is needed when the consumer
+    /// has several (Bitbucket refuses the link otherwise), and without it
+    /// Bitbucket uses the consumer's only callback URL. Step 2 (--code --state)
+    /// exchanges the code, sending step 1's redirect URI again if there was one,
+    /// saves the credentials, then prints what `auth whoami --user <USER_ID>`
     /// prints. The pending login expires after 10 minutes, its state is single-use,
     /// and it lives in that person's folder of this config folder (`XDG_CONFIG_HOME`),
     /// so several people can be mid-login at once.
@@ -149,13 +151,18 @@ pub enum AuthCommand {
     /// `--user <USER_ID>`. Run this once per identity; tokens are renewed
     /// automatically after that (one renewal at a time per identity, so parallel
     /// calls are safe).
-    #[command(after_help = "Examples:\n  bitbucket auth login           # act as the OAuth app (bot)\n  bitbucket auth login --user jane.doe    # act as jane.doe, via browser consent\n  bitbucket auth login --user jane.doe --remote                           # step 1: prints the consent URL\n  bitbucket auth login --user jane.doe --code <CODE> --state <STATE>      # step 2\n\nRequires app.json at ~/.config/bitbucket-cli/app.json with the identity's section.\nRun `bitbucket init` (or `bitbucket init --user <USER_ID>`) first if it is missing.")]
+    #[command(after_help = "Examples:\n  bitbucket auth login           # act as the OAuth app (bot)\n  bitbucket auth login --user jane.doe    # act as jane.doe, via browser consent\n  bitbucket auth login --user jane.doe --remote                           # step 1: prints the consent URL\n  bitbucket auth login --user jane.doe --remote --redirect-uri https://app.example.com/oauth/callback   # step 1, consumer with several callback URLs\n  bitbucket auth login --user jane.doe --code <CODE> --state <STATE>      # step 2\n\nRequires app.json at ~/.config/bitbucket-cli/app.json with the identity's section.\nRun `bitbucket init` (or `bitbucket init --user <USER_ID>`) first if it is missing.")]
     Login {
         /// Step 1 of a two-step login for someone not at this machine: print the consent URL instead of opening a browser
         // "needs --user <USER_ID>" is checked in LoginMode::from_flags: clap's
         // `requires` cannot see a global --user written before the subcommand.
         #[arg(long, conflicts_with_all = ["code", "state"])]
         remote: bool,
+        /// Step 1 only: which of the OAuth consumer's callback URLs Bitbucket redirects the person to (needed when the consumer has several; without it, the consumer's only callback URL)
+        // The explicit conflict is needed: clap drops `requires = "remote"` once
+        // --code (which conflicts with --remote) is present.
+        #[arg(long, requires = "remote", conflicts_with_all = ["code", "state"])]
+        redirect_uri: Option<String>,
         /// Step 2: the `code` query parameter Bitbucket appended to the consumer's callback URL
         #[arg(long, requires = "state")]
         code: Option<String>,

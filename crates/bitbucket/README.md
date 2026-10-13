@@ -48,7 +48,7 @@ CLI for Bitbucket Cloud, designed to be driven by an LLM agent (output is JSON, 
 In your Bitbucket workspace, go to **Settings → Apps and features → OAuth clients → Create OAuth client**:
 
 - **Name**: anything descriptive, e.g. `bitbucket-cli`
-- **Callback URL**: `http://localhost:8080/callback` — needed only for `auth login --user <USER_ID>`; the default `client_credentials` login doesn't use it
+- **Callback URL**: `http://localhost:8080/callback` — needed only for `auth login --user <USER_ID>`; the default `client_credentials` login doesn't use it. The consumer can have other callback URLs too (e.g. a service's endpoint for remote logins, see `--redirect-uri` below)
 - **Permissions**: grant whatever scopes the commands you intend to use need (e.g. Account Read, Repositories Read/Write, Pull requests Read/Write)
 
 After saving, note down the consumer's **Key** (`client_id`) and **Secret** (`client_secret`).
@@ -126,17 +126,18 @@ The `permissions` check reports `granted_scopes` as-is from the token response �
 Logs in one identity and stores its credentials, leaving every other identity's untouched:
 
 - default — non-interactive `client_credentials` flow with the `"service"` consumer, no browser, saved to `credentials-service.json`. Commands run without `--user` are attributed to the **OAuth app** (bot identity): the mode for agents.
-- `--user <USER_ID>` — interactive `authorization_code` flow with the `"user"` consumer, saved to `users/<USER_ID>/credentials.json`: opens the browser on Bitbucket's consent page, receives the callback on `localhost:8080`, stores a refresh token. Commands run with `--user <USER_ID>` are attributed to **that person's account**. Requires the consumer's callback URL to be `http://localhost:8080/callback`.
-- `--user <USER_ID> --remote`, then `--user <USER_ID> --code <code> --state <state>` — the same `authorization_code` flow in two steps, for a person who is not at the CLI's machine (the CLI on a server, the person in a chat or a web page). Step 1 opens no browser and listens on no port: it stores a pending login for that person (`state` only; `users/<USER_ID>/pending-login.json`, mode `0600`, so several people can be mid-login at once) and prints `{"authorize_url", "state", "expires_at"}`. The person opens `authorize_url` and grants access; Bitbucket redirects them to the consumer's callback URL with `code` and `state`. Step 2 checks the state and the expiry, exchanges the code, saves `users/<USER_ID>/credentials.json`, and prints what `auth whoami --user <USER_ID>` prints. A pending login is valid for 10 minutes and its state is single-use. `--remote`, `--code` and `--state` always need `--user <USER_ID>` (before or after `auth login`).
+- `--user <USER_ID>` — interactive `authorization_code` flow with the `"user"` consumer, saved to `users/<USER_ID>/credentials.json`: opens the browser on Bitbucket's consent page, receives the callback on `localhost:8080`, stores a refresh token. Commands run with `--user <USER_ID>` are attributed to **that person's account**. Sends `redirect_uri=http://localhost:8080/callback`, so that must be one of the consumer's callback URLs.
+- `--user <USER_ID> --remote [--redirect-uri <URL>]`, then `--user <USER_ID> --code <code> --state <state>` — the same `authorization_code` flow in two steps, for a person who is not at the CLI's machine (the CLI on a server, the person in a chat or a web page). Step 1 opens no browser and listens on no port: it stores a pending login for that person (`state` and the optional redirect URI; `users/<USER_ID>/pending-login.json`, mode `0600`, so several people can be mid-login at once) and prints `{"authorize_url", "state", "expires_at"}`. The person opens `authorize_url` and grants access; Bitbucket redirects them to the callback URL picked by `--redirect-uri` (or, without it, the consumer's only callback URL) with `code` and `state`. Step 2 checks the state and the expiry, exchanges the code (sending step 1's redirect URI again, if there was one), saves `users/<USER_ID>/credentials.json`, and prints what `auth whoami --user <USER_ID>` prints. A pending login is valid for 10 minutes and its state is single-use. `--remote`, `--code` and `--state` always need `--user <USER_ID>` (before or after `auth login`).
 
 ```sh
 cargo run -p bitbucket -- auth login
 cargo run -p bitbucket -- auth login --user jane.doe
 cargo run -p bitbucket -- auth login --user jane.doe --remote                          # step 1
+cargo run -p bitbucket -- auth login --user jane.doe --remote --redirect-uri https://app.example.com/oauth/callback   # step 1, several callback URLs
 cargo run -p bitbucket -- auth login --user jane.doe --code <CODE> --state <STATE>     # step 2
 ```
 
-**Bitbucket has no `redirect_uri` parameter**: the person is always sent back to the consumer's single callback URL. So for remote logins through a service (e.g. one that receives the redirect at `https://service.example.com/oauth/callback`), the `"user"` section must hold a consumer whose callback URL is that endpoint; a config folder (`XDG_CONFIG_HOME`) whose `"user"` consumer calls back to `localhost:8080` is the one for local `--user` logins. `doctor --user <USER_ID>` shows that person's pending login under `pending_login`.
+**`--redirect-uri`** picks which of the consumer's callback URLs Bitbucket sends the person back to. A consumer can have several (e.g. `http://localhost:8080/callback` for browser logins on this machine and `https://service.example.com/oauth/callback` for a service receiving remote logins): then the remote login needs `--redirect-uri` with one of them, or Bitbucket refuses the link (`redirect_uri is invalid`). With a single callback URL it can be left out. `doctor --user <USER_ID>` shows that person's pending login under `pending_login`.
 
 Run each once per identity per machine, or again if that identity's credentials file is lost or revoked. `doctor` reports the checked credentials' kind as `credentials.identity` (`app` or `user`).
 

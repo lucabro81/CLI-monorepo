@@ -15,8 +15,8 @@
 //!   approved the consent page.
 //! - `--user <id> --remote` — the same grant in two steps, for a person not at this
 //!   machine: step 1 prints the consent URL and stores a pending login (state
-//!   only) in that person's folder, step 2 (`--code --state`) completes it and
-//!   prints the identity.
+//!   and the optional `--redirect-uri`) in that person's folder, step 2
+//!   (`--code --state`) completes it and prints the identity.
 //!
 //! `run_whoami` makes a single API call to `/2.0/user` as the selected
 //! identity and prints that account as JSON. It is the quickest sanity-check after login.
@@ -35,7 +35,7 @@ use crate::error::CliError;
 pub enum LoginMode {
     App,
     UserBrowser(UserId),
-    RemoteStart(UserId),
+    RemoteStart { id: UserId, redirect_uri: Option<String> },
     RemoteComplete { id: UserId, code: String, state: String },
 }
 
@@ -46,6 +46,7 @@ impl LoginMode {
     pub fn from_flags(
         identity: &Identity,
         remote: bool,
+        redirect_uri: Option<String>,
         code: Option<String>,
         state: Option<String>,
     ) -> Result<Self, CliError> {
@@ -54,7 +55,7 @@ impl LoginMode {
         };
         let id = id.clone();
         Ok(match (remote, code, state) {
-            (true, ..) => LoginMode::RemoteStart(id),
+            (true, ..) => LoginMode::RemoteStart { id, redirect_uri },
             (false, Some(code), Some(state)) => LoginMode::RemoteComplete { id, code, state },
             _ => LoginMode::UserBrowser(id),
         })
@@ -64,7 +65,7 @@ impl LoginMode {
     pub fn identity(&self) -> Identity {
         match self {
             LoginMode::App => Identity::Service,
-            LoginMode::UserBrowser(id) | LoginMode::RemoteStart(id) | LoginMode::RemoteComplete { id, .. } => {
+            LoginMode::UserBrowser(id) | LoginMode::RemoteStart { id, .. } | LoginMode::RemoteComplete { id, .. } => {
                 Identity::User(id.clone())
             }
         }
@@ -81,9 +82,10 @@ pub fn run_login(mode: LoginMode, select: cli_fields::Select<'_>) -> Result<(), 
     let (credentials, remote) = match mode {
         LoginMode::App => (auth::login_client_credentials(&oauth_config).map_err(login_failed)?, false),
         LoginMode::UserBrowser(_) => (auth::login(&oauth_config).map_err(login_failed)?, false),
-        LoginMode::RemoteStart(id) => {
+        LoginMode::RemoteStart { id, redirect_uri } => {
             let pending_path = auth::pending_login_path(&dir, &id);
-            let (url, pending) = auth::start_remote_login(&oauth_config, &pending_path, auth::now_unix())
+            let (url, pending) =
+                auth::start_remote_login(&oauth_config, redirect_uri.as_deref(), &pending_path, auth::now_unix())
                 .map_err(|e| remote_login_error(e, &id))?;
             // A small object synthesized here: exempt from mandatory --select.
             return print_json(&remote_start_output(&url, &pending), select.or_all());

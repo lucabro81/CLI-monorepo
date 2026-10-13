@@ -5,11 +5,14 @@
 //!   HTTP Basic auth, no browser or user interaction. Every action is attributed
 //!   to the OAuth app. No `refresh_token` — renewed by re-running the exchange.
 //! - **`authorization_code`** (`auth login --user`) — interactive: the browser
-//!   opens Bitbucket's consent page, Bitbucket redirects to the consumer's
-//!   callback URL (`http://localhost:8080/callback`), and the code is exchanged
-//!   for tokens. Every action is attributed to the human who consented. Issues
-//!   a `refresh_token`, which rotates on every use. Bitbucket documents no PKCE
-//!   and no `redirect_uri` parameter for this grant; `state` guards against CSRF.
+//!   opens Bitbucket's consent page, Bitbucket redirects to
+//!   `redirect_uri=http://localhost:8080/callback` (one of the consumer's
+//!   callback URLs), and the code is exchanged for tokens, sending the same
+//!   `redirect_uri`. Every action is attributed to the human who consented.
+//!   Issues a `refresh_token`, which rotates on every use. Bitbucket documents
+//!   no PKCE for this grant; `state` guards against CSRF. `redirect_uri` is
+//!   optional for Bitbucket (a consumer with one callback URL needs none), and
+//!   needed when the consumer has several (issue #250).
 //!   `state` and the callback listener come from `crates/oauth-user-login`.
 //!
 //! The app identity and any number of humans are stored side by side (issues
@@ -337,32 +340,36 @@ pub fn login(config: &OAuthConfig) -> Result<Credentials, LoginError> {
         .map_err(LoginError::CallbackListener)?;
 
     let state = oauth_user_login::generate_state();
-    let url = authorization_url(config, &state)?;
+    let url = authorization_url(config, &state, Some(endpoints::CALLBACK_URL))?;
     eprintln!("Opening the browser for Bitbucket consent. If it does not open, visit:\n{url}");
     let _ = webbrowser::open(&url);
 
     let params = oauth_user_login::wait_for_callback(&listener, endpoints::CALLBACK_PATH, &state)
         .map_err(LoginError::Callback)?;
 
-    let token = request_token(config, &authorization_code_form(&params.code))?;
+    let form = authorization_code_form(&params.code, Some(endpoints::CALLBACK_URL));
+    let token = request_token(config, &form)?;
     Ok(credentials_from_token(token, now_unix(), None))
 }
 
-/// Step 1 of the two-step (`--remote`) login: saves a pending login (state
-/// only: Bitbucket has no PKCE and no `redirect_uri`, it always redirects to
-/// the consumer's callback URL) and returns the consent URL. No browser, no port.
+/// Step 1 of the two-step (`--remote`) login: saves a pending login (state and
+/// the optional `redirect_uri`; Bitbucket has no PKCE) and returns the consent
+/// URL. Without `redirect_uri` Bitbucket redirects to the consumer's only
+/// callback URL. No browser, no port.
 pub fn start_remote_login(
     config: &OAuthConfig,
+    redirect_uri: Option<&str>,
     path: &Path,
     now: u64,
 ) -> Result<(String, oauth_user_login::PendingLogin), LoginError> {
-    let pending = oauth_user_login::PendingLogin::new(None, false, now);
-    let url = authorization_url(config, &pending.state)?;
+    let pending = oauth_user_login::PendingLogin::new(redirect_uri, false, now);
+    let url = authorization_url(config, &pending.state, redirect_uri)?;
     pending.save(path).map_err(LoginError::PendingLogin)?;
     Ok((url, pending))
 }
 
-/// Step 2: takes the pending login for `state` (single-use) and exchanges `code`.
+/// Step 2: takes the pending login for `state` (single-use) and exchanges `code`,
+/// with step 1's `redirect_uri` if it had one.
 pub fn complete_remote_login(
     config: &OAuthConfig,
     path: &Path,
@@ -383,30 +390,40 @@ pub(crate) fn complete_remote_login_at(
     now: u64,
     token_url: &str,
 ) -> Result<Credentials, LoginError> {
-    oauth_user_login::take_pending_login(path, state, now).map_err(LoginError::PendingLogin)?;
-    let token = request_token_at(token_url, config, &authorization_code_form(code))?;
+    let pending = oauth_user_login::take_pending_login(path, state, now).map_err(LoginError::PendingLogin)?;
+    let form = authorization_code_form(code, pending.redirect_uri.as_deref());
+    let token = request_token_at(token_url, config, &form)?;
     Ok(credentials_from_token(token, now, None))
 }
 
-/// Builds Bitbucket's authorization URL the user must open in a browser.
-pub fn authorization_url(config: &OAuthConfig, state: &str) -> Result<String, LoginError> {
-    let params = [
+/// Builds Bitbucket's authorization URL the user must open in a browser, with
+/// `redirect_uri` when given (one of the consumer's callback URLs).
+pub fn authorization_url(config: &OAuthConfig, state: &str, redirect_uri: Option<&str>) -> Result<String, LoginError> {
+    let mut params = vec![
         ("client_id", config.client_id.as_str()),
         ("response_type", "code"),
         ("state", state),
     ];
+    if let Some(redirect_uri) = redirect_uri {
+        params.push(("redirect_uri", redirect_uri));
+    }
 
     let query = serde_urlencoded::to_string(params)
         .map_err(|e| LoginError::Internal(format!("failed to encode authorization URL: {e}")))?;
     Ok(format!("{}?{query}", endpoints::BITBUCKET_AUTHORIZE_URL))
 }
 
-/// Form body exchanging an authorization code for tokens.
-fn authorization_code_form(code: &str) -> Vec<(&'static str, String)> {
-    vec![
+/// Form body exchanging an authorization code for tokens. `redirect_uri` must
+/// be the one the authorization request carried, if any.
+fn authorization_code_form(code: &str, redirect_uri: Option<&str>) -> Vec<(&'static str, String)> {
+    let mut form = vec![
         ("grant_type", "authorization_code".to_string()),
         ("code", code.to_string()),
-    ]
+    ];
+    if let Some(redirect_uri) = redirect_uri {
+        form.push(("redirect_uri", redirect_uri.to_string()));
+    }
+    form
 }
 
 /// Form body renewing `credentials`: the `refresh_token` grant for `--user`

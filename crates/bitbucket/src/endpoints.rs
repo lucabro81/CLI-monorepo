@@ -9,15 +9,18 @@
 pub const BITBUCKET_TOKEN_URL: &str = "https://bitbucket.org/site/oauth2/access_token";
 
 /// Authorization endpoint for the `authorization_code` grant (`auth login --user`).
-/// Bitbucket redirects back to the consumer's configured callback URL — there
-/// is no `redirect_uri` parameter.
+/// An optional `redirect_uri` parameter picks one of the consumer's callback
+/// URLs (needed when it has several); without it Bitbucket redirects to the
+/// consumer's only callback URL (issue #250).
 pub const BITBUCKET_AUTHORIZE_URL: &str = "https://bitbucket.org/site/oauth2/authorize";
 
 /// Local address `auth login --user` listens on for the authorization callback.
-/// The OAuth consumer's callback URL must point here: `http://localhost:8080/callback`.
 pub const CALLBACK_LISTEN_ADDRESS: &str = "127.0.0.1:8080";
-/// Path of the consumer's callback URL (`http://localhost:8080/callback`).
+/// Path of [`CALLBACK_URL`].
 pub const CALLBACK_PATH: &str = "/callback";
+/// `redirect_uri` the browser login (`auth login --user`) sends: it must be one
+/// of the OAuth consumer's callback URLs.
+pub const CALLBACK_URL: &str = "http://localhost:8080/callback";
 
 // ── Bitbucket REST API v2.0 (client.rs) ────────────────────────────────────
 
