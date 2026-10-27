@@ -140,11 +140,17 @@ cargo run -p confluence -- auth whoami --user jane.doe
 
 ### `confluence page get <ID>`
 
-Fetches a single page by its numeric ID, including its body in storage format, and prints the full API response as JSON.
+Fetches a single page by its numeric ID, including its body, and prints the API response as JSON.
 
 ```sh
-cargo run -p confluence -- page get 123456 --select title,body.storage.value,version.number
+cargo run -p confluence -- page get 123456 --select title,body.markdown.value
+cargo run -p confluence -- page get 123456 --body-format storage --select title,body.storage.value,version.number
 ```
+
+**`--body-format <markdown|storage>`** (default `markdown`):
+
+- `markdown` — the page as rendered (macros expanded, Confluence's `export_view`) converted to Markdown, in `body.markdown = {"representation": "markdown", "value": "..."}`. For reading: storage XHTML is full of `ac:`/`ri:` tags that cost context and carry little. Tables become GFM tables, the code and noformat macros fenced code blocks; panels and status lozenges keep only their text.
+- `storage` — Confluence's storage XHTML, in `body.storage`, as returned by the API. The format `page create`/`page update` `--body` take, so use it to edit a page.
 
 The response includes a read-only `position` field (a page's order among its siblings). Confluence Cloud has **no public API to change it** — only the UI's drag-and-drop can reorder pages (this is a longstanding, still-open Atlassian feature request: [CONFCLOUD-40101](https://jira.atlassian.com/browse/CONFCLOUD-40101)). This crate has no `page move`/reorder command as a result — there's nothing for it to call.
 
@@ -158,7 +164,7 @@ cargo run -p confluence -- page create --space-id 98765 --title "Runbook" --body
 cargo run -p confluence -- page create --space-id 98765 --title "Retro" --template-id 4321 --parent-id 111222
 ```
 
-`--body`/`--body-file` are raw Confluence **storage format** (XHTML) — the same format `page get`'s `body.storage.value` returns. Plain text with no markup is also valid storage format. `--body-file` is just `--body` read from a local file instead of the command line (handy for longer content) — it has no relation to Confluence's own Template feature, unlike `--template-id`.
+`--body`/`--body-file` are raw Confluence **storage format** (XHTML) — the same format `page get --body-format storage` returns in `body.storage.value`. Plain text with no markup is also valid storage format. `--body-file` is just `--body` read from a local file instead of the command line (handy for longer content) — it has no relation to Confluence's own Template feature, unlike `--template-id`.
 
 ### `confluence page update <ID>`
 
