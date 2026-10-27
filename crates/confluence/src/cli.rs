@@ -297,6 +297,17 @@ pub enum PageCommand {
 
 #[derive(Debug, Subcommand)]
 pub enum SpaceCommand {
+    /// Get one space by its key (e.g. ENG) and print it as JSON
+    ///
+    /// Prints the space object: id (what page create --space-id takes), key,
+    /// name, type, status and homepageId (the space's root page, a starting
+    /// point for browsing it with page get). Always prints its full result
+    /// regardless of --select — a single, small object.
+    #[command(after_help = "Examples:\n  confluence space get ENG\n  confluence space get ENG --select id,homepageId\n\nSpace keys are what CQL and people use (space=ENG); v2 endpoints take the\nnumeric id this command returns.")]
+    Get {
+        /// Space key, e.g. ENG (personal spaces: ~ followed by an account id)
+        key: String,
+    },
     /// List Confluence spaces and print them as JSON
     #[command(after_help = "Examples:\n  confluence space list\n  confluence space list --limit 10\n  confluence space list --cursor <cursor-from-previous-response>\n\nPagination: the response's _links.next field (if present) contains a cursor\nquery parameter — pass its value to --cursor to fetch the next page.")]
     List {

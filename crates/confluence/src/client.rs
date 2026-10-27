@@ -171,6 +171,15 @@ impl ConfluenceClient {
         self.get_json(&format!("{}?{query}", endpoints::PATH_SEARCH))
     }
 
+    /// Lists the spaces whose key is `key` (v2 reads a single space only by id;
+    /// by key it is a filter on the list) and returns the raw JSON response
+    /// (`{"results": [...], "_links": {...}}`).
+    pub fn get_space_by_key(&self, key: &str) -> Result<serde_json::Value, ClientError> {
+        let query = serde_urlencoded::to_string([("keys", key)])
+            .map_err(|e| ClientError::Request(format!("failed to encode query params: {e}")))?;
+        self.get_json(&format!("{}?{query}", endpoints::PATH_SPACES))
+    }
+
     /// Lists spaces, cursor-paginated, and returns the raw JSON response
     /// (`{"results": [...], "_links": {"next": "..."}}`).
     pub fn list_spaces(
