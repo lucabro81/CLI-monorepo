@@ -455,7 +455,7 @@ pub enum TemplateCommand {
 /// How `page get` prints the page body, and `page comments` each comment body.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum BodyFormat {
-    /// The rendered page converted to Markdown, in body.markdown
+    /// The body converted to Markdown, in body.markdown (page get: from the rendered page; page comments: from storage)
     Markdown,
     /// Confluence storage XHTML, in body.storage
     Storage,

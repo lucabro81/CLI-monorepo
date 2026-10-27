@@ -131,7 +131,7 @@ pub enum CliError {
 
     #[error(
         "Confluence refused to list the comments (403): {body}. The login may lack the read:comment:confluence \
-        scope (added in confluence 3.0.0), or this identity can't see the page. For the Service Account: add \
+        scope (logins made before it was added lack it), or this identity can't see the page. For the Service Account: add \
         the scope to its OAuth 2.0 credential in admin.atlassian.com, then run confluence auth login. For a \
         person: add it to the 3LO app in the developer console, then run confluence auth login --user <USER_ID>."
     )]

@@ -261,3 +261,16 @@ fn storage_links_also_become_absolute_with_the_site_url() {
 
     assert_eq!(storage_to_markdown(xhtml, Some(SITE)).unwrap(), "[doc](https://example.atlassian.net/wiki/spaces/ENG/pages/2)");
 }
+
+#[test]
+fn several_cdata_sections_keep_their_text_escaped_as_text() {
+    let xhtml = r#"<p><ac:link><ac:plain-text-link-body><![CDATA[a & b]]></ac:plain-text-link-body></ac:link> then <ac:link><ac:plain-text-link-body><![CDATA[<c>]]></ac:plain-text-link-body></ac:link></p>"#;
+
+    // htmd escapes a literal `<` in text as `\\<` (valid Markdown for `<`).
+    assert_eq!(storage(xhtml), "a & b then \\<c>");
+}
+
+#[test]
+fn an_unterminated_cdata_section_keeps_the_rest_as_text() {
+    assert_eq!(storage("<p>start <![CDATA[cut <here"), "start cut \\<here");
+}

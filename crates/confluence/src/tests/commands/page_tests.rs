@@ -525,3 +525,27 @@ fn page_comments_refused_403_names_the_comment_scope_and_how_to_get_it() {
         assert!(message.contains(needle), "{needle}: {message}");
     }
 }
+
+#[test]
+fn page_comments_leaves_a_comment_without_body_unchanged_and_empties_a_non_string_value() {
+    let response = json!({
+        "results": [
+            {"id": "c1"},
+            {"id": "c2", "body": {"storage": {"value": 42}}}
+        ]
+    });
+    let (url, server) = mock_server(&[("200 OK", &response.to_string())]);
+
+    let value = page_comments(&client(&url), "123", 25, None, BodyFormat::Markdown).unwrap();
+
+    server.join().unwrap();
+    assert_eq!(
+        value,
+        json!({
+            "results": [
+                {"id": "c1"},
+                {"id": "c2", "body": {"markdown": {"representation": "markdown", "value": ""}}}
+            ]
+        })
+    );
+}
