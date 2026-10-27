@@ -16,6 +16,8 @@ CLI for Confluence Cloud, designed to be driven by an LLM agent (output is JSON,
   - [`confluence page create`](#confluence-page-create)
   - [`confluence page update <ID>`](#confluence-page-update-id)
   - [`confluence page search --cql <QUERY>`](#confluence-page-search---cql-query)
+  - [`confluence page children <ID>`](#confluence-page-children-id)
+  - [`confluence page ancestors <ID>`](#confluence-page-ancestors-id)
   - [`confluence page delete <ID>`](#confluence-page-delete-id)
   - [`confluence space get <KEY>`](#confluence-space-get-key)
   - [`confluence space list`](#confluence-space-list)
@@ -50,7 +52,7 @@ Each `init`/`auth login` touches only its own section and file; `confluence auth
   cargo run -p confluence -- init --client-id <ID> --client-secret <SECRET>
   ```
 
-- **People (`--user <USER_ID>`)**: register one OAuth 2.0 app for everybody at developer.atlassian.com/console/myapps, **Resource-level** access, callback URL `http://localhost:8080/callback`, Confluence API scopes `read:confluence-user` and `search:confluence` under Classic scopes and `read:page:confluence`, `write:page:confluence`, `read:space:confluence` under Granular scopes (`offline_access` is requested by the CLI and needs no setting). Then, with one browser consent:
+- **People (`--user <USER_ID>`)**: register one OAuth 2.0 app for everybody at developer.atlassian.com/console/myapps, **Resource-level** access, callback URL `http://localhost:8080/callback`, Confluence API scopes `read:confluence-user`, `search:confluence`, `read:confluence-content.summary` and `write:confluence-content` under Classic scopes and `read:page:confluence`, `write:page:confluence`, `read:space:confluence`, `read:hierarchical-content:confluence`, `read:content.metadata:confluence` under Granular scopes (`offline_access` is requested by the CLI and needs no setting). Then, with one browser consent:
 
   ```sh
   cargo run -p confluence -- init --user jane.doe --client-id <ID> --client-secret <SECRET>
@@ -186,6 +188,29 @@ cargo run -p confluence -- page search --cql "type=page AND space=ENG" --limit 1
 ```
 
 **Flags:** `--limit <N>` (default 25), `--start <N>` (offset for pagination, default 0).
+
+### `confluence page children <ID>`
+
+Lists a page's direct children: pages, folders, whiteboards, databases and embeds. Each child has `id`, `title`, `type`, `status`, `spaceId` and `childPosition` (its order under the parent). Cursor-paginated like `space list`; a space's root page is `space get`'s `homepageId`. `--select` is required.
+
+```sh
+cargo run -p confluence -- page children 123456 --select results.id,results.title,results.type
+cargo run -p confluence -- page children 123456 --limit 50 --cursor <cursor-from-previous-response> --select results.id,results.title,_links.next
+```
+
+**Flags:** `--limit <N>` (default 25), `--cursor <CURSOR>` (from the previous response's `_links.next`).
+
+### `confluence page ancestors <ID>`
+
+Lists a page's ancestors, from the top of the space down to its parent (an empty list for a top-level page). Confluence returns only `id` and `type` per ancestor; the CLI adds the `title` of each page ancestor (one request each), while a folder keeps `id` and `type` only. `--select` is required.
+
+```sh
+cargo run -p confluence -- page ancestors 123456 --select results.id,results.title,results.type
+```
+
+Both commands report an unknown page (or one this identity can't see) with an error pointing at `page search`.
+
+**New scopes (#256).** `page children` needs `read:hierarchical-content:confluence`, `page ancestors` needs `read:content.metadata:confluence` (both granular); the `template` commands' classic scopes `read:confluence-content.summary` and `write:confluence-content` were added to `SCOPES` at the same time. A login made before them gets a 403 on those commands: for the Service Account, add the scopes to its credential in admin.atlassian.com, then run `confluence auth login`; for people, add them to the 3LO app in the developer console, then each person runs `confluence auth login --user <USER_ID>` again to consent.
 
 ### `confluence page delete <ID>`
 
