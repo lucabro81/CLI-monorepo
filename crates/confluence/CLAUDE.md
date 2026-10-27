@@ -91,7 +91,9 @@ cli_tests/commands split. `page.rs` has a dedicated
 and `validate_update_target` (the "at least one of --title/--body" runtime
 check for `page update` — clap's `conflicts_with_all` only rules out passing
 more than one body source on `create`, and there's no way to declare "at
-least one of two optional flags" for `update` at all). `template.rs` has its
+least one of two optional flags" for `update` at all), plus the request and
+output of `get_page`/`markdown_body` (#254), `search_pages` (#255) and
+`page_children`/`page_ancestors` (#256) against the local test server. `template.rs` has its
 own `tests/commands/template_tests.rs` covering `resolve_body` (same
 `--body`/`--body-file` resolution shape as `page.rs`'s, minus the
 `--template-id` branch) and `resolve_optional_body` (the `template update`
@@ -166,6 +168,7 @@ Kept separate so automatic token writes never clobber the app identity, and one 
   | Command | Exempt? | Why |
   |---|---|---|
   | `doctor` | yes | internally-generated report, fixed/small |
+  | `auth login` | yes | prints `auth whoami`'s result, or the remote-login start `{authorize_url, state, expires_at}` |
   | `auth whoami` | yes | identity check, fixed/small |
   | `auth logout` | yes | synthesized by us: `{"logged_out": "service"}` / `{"logged_out": "user:<id>"}` |
   | `page get` | **no** | page bodies are arbitrary-length content, can be large |

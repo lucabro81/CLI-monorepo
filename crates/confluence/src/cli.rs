@@ -19,7 +19,7 @@ pub struct Cli {
     /// Required on most commands: if both this and --select-all are omitted, the
     /// command fails with an error reporting the byte size of the full response and
     /// its top-level field names, so you can retry with an informed --select. A few
-    /// commands whose output is always small and fixed-shape (doctor, auth whoami, auth logout, page delete, template delete, space get)
+    /// commands whose output is always small and fixed-shape (doctor, auth login, auth whoami, auth logout, page delete, template delete, space get)
     /// are exempt and print in full regardless — see that command's own --help.
     /// This description is shared across every command and has no single
     /// correct path syntax. IMPORTANT: do NOT guess a path from this text —
@@ -291,6 +291,7 @@ pub enum PageCommand {
     /// List a page's ancestors, from the top of the space down to its parent, and print them as JSON
     ///
     /// The order is Confluence's own (documented as root first); the CLI does not reorder.
+    /// At most 250 ancestors (v2's maximum, one request).
     /// Each ancestor has id and type; page ancestors also have title (looked up
     /// by this CLI, one request per page ancestor). A folder ancestor, or a page
     /// ancestor whose lookup answers 404 (restricted or deleted), has id and

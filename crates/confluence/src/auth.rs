@@ -21,8 +21,9 @@ const CLI_DIR: &str = "confluence-cli";
 /// Confluence REST API versions: the v2 page/space endpoints have no classic
 /// scope equivalent (always need the granular form), while `auth whoami`
 /// (`GET /wiki/rest/api/user/current`) and CQL search are v1-only and use
-/// classic scopes. Not yet live-verified against a real 3LO app — see this
-/// crate's CLAUDE.md "OAuth / auth design" section.
+/// classic scopes. Five of them are verified against a real Service Account
+/// credential, the rest (#256) only granted — see this crate's CLAUDE.md
+/// "OAuth / auth design" section.
 pub const SCOPES: &str =
     "read:page:confluence write:page:confluence read:space:confluence \
      read:hierarchical-content:confluence read:content.metadata:confluence \

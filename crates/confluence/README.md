@@ -73,7 +73,7 @@ cargo run -p confluence -- space list --select results.key --user jane.doe   # a
 
 Identical mechanics to `jira` — same `auth.atlassian.com`/`api.atlassian.com` endpoints, same `client_credentials` (default, agent-driven, `"service"` section, `credentials-service.json`) and 3LO+PKCE (`--user <USER_ID>`, a person, `"user"` section, `users/<USER_ID>/credentials.json`) grants, same `cloud_id` resolution via the accessible-resources endpoint, same automatic token renewal before every API call. See `jira`'s README "How the OAuth flow works" section for the full step-by-step — this crate's `auth.rs` is a thin wrapper over the same `atlassian_auth` crate `jira` uses (see this crate's `CLAUDE.md`).
 
-The one difference worth calling out: this crate's OAuth scopes are **not yet live-verified** against a real Confluence site (unlike `jira`'s, which were confirmed end-to-end). See this crate's `CLAUDE.md` "OAuth / auth design" for the scope table and what to check if a command 403s despite `doctor` reporting `oauth_scopes: ok`.
+The one difference worth calling out: only five of this crate's OAuth scopes (`read:confluence-user`, `search:confluence`, `read:page:confluence`, `write:page:confluence`, `read:space:confluence`) were checked against a real Service Account credential, and only `auth whoami`/`doctor` were run live; the scopes added in #256 and the page/space/template commands are not live-verified (unlike `jira`'s, confirmed end-to-end). See this crate's `CLAUDE.md` "OAuth / auth design" for the scope table and what to check if a command 403s despite `doctor` reporting `oauth_scopes: ok`.
 
 ## Usage
 
@@ -202,7 +202,7 @@ cargo run -p confluence -- page children 123456 --limit 50 --cursor <cursor-from
 
 ### `confluence page ancestors <ID>`
 
-Lists a page's ancestors in the order Confluence returns them, documented as from the top of the space down to its parent (an empty list for a top-level page). Confluence returns only `id` and `type` per ancestor; the CLI adds the `title` of each page ancestor (one request each), while a folder, or a page ancestor whose lookup answers 404 (restricted or deleted), keeps `id` and `type` only; any other failed lookup (for example a 403) fails the command. `--select` is required.
+Lists up to 250 of a page's ancestors (v2's maximum, one request; deeper paths are cut) in the order Confluence returns them, documented as from the top of the space down to its parent (an empty list for a top-level page). Confluence returns only `id` and `type` per ancestor; the CLI adds the `title` of each page ancestor (one request each), while a folder, or a page ancestor whose lookup answers 404 (restricted or deleted), keeps `id` and `type` only; any other failed lookup (for example a 403) fails the command. `--select` is required.
 
 ```sh
 cargo run -p confluence -- page ancestors 123456 --select results.id,results.title,results.type
@@ -284,7 +284,7 @@ Prints `{"deleted": true, "id": "4321"}` on success.
 
 ### `--select <PATHS>` (global flag)
 
-Same client-side field-projection flag as every other crate in this workspace — see root `CLAUDE.md`'s "Shared library: crates/cli-fields". Mandatory on every command in this crate except `doctor`, `auth whoami`, `auth logout`, `page delete`, `template delete` and `space get` (see this crate's `CLAUDE.md` for the full table) — omitting both `--select` and `--select-all` fails with the response's byte size and top-level field names instead of printing.
+Same client-side field-projection flag as every other crate in this workspace — see root `CLAUDE.md`'s "Shared library: crates/cli-fields". Mandatory on every command in this crate except `doctor`, `auth login`, `auth whoami`, `auth logout`, `page delete`, `template delete` and `space get` (see this crate's `CLAUDE.md` for the full table) — omitting both `--select` and `--select-all` fails with the response's byte size and top-level field names instead of printing.
 
 ```sh
 cargo run -p confluence -- page get 123456 --select title,version.number

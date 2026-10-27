@@ -1,4 +1,4 @@
-//! Handlers for the `page` command group (`get`, `create`, `update`, `search`, `delete`).
+//! Handlers for the `page` command group (`get`, `create`, `update`, `search`, `children`, `ancestors`, `delete`).
 //!
 //! `page get` prints the body as Markdown by default (`--body-format storage`
 //! for the raw storage XHTML, issue #254); `run_update` always reads storage.
