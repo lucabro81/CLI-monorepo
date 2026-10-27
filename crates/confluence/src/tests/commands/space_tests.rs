@@ -3,7 +3,7 @@
 
 use serde_json::json;
 
-use super::get_space;
+use super::{get_space, list_spaces};
 use crate::auth::Credentials;
 use crate::client::ConfluenceClient;
 use crate::error::CliError;
@@ -78,4 +78,19 @@ fn get_space_keeps_api_errors() {
 
     server.join().unwrap();
     assert!(matches!(error, CliError::ApiError { status: 403, .. }), "{error:?}");
+}
+
+#[test]
+fn list_spaces_passes_limit_and_cursor_and_adds_next_cursor() {
+    // Issue #271: nextCursor is `_links.next`'s cursor, ready for `--cursor`.
+    let response = json!({"results": [{"id": "1", "key": "ENG"}], "_links": {"next": "/wiki/api/v2/spaces?limit=2&cursor=n2"}});
+    let (url, server) = mock_server(&[("200 OK", &response.to_string())]);
+
+    let value = list_spaces(&client(&url), 2, Some("n1")).unwrap();
+
+    let requests = server.join().unwrap();
+    assert_eq!(request_line(&requests[0]), "GET /wiki/api/v2/spaces?limit=2&cursor=n1 HTTP/1.1");
+    let mut expected = response;
+    expected["nextCursor"] = json!("n2");
+    assert_eq!(value, expected);
 }
