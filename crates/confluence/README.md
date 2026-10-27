@@ -17,6 +17,7 @@ CLI for Confluence Cloud, designed to be driven by an LLM agent (output is JSON,
   - [`confluence page update <ID>`](#confluence-page-update-id)
   - [`confluence page search --cql <QUERY>`](#confluence-page-search---cql-query)
   - [`confluence page delete <ID>`](#confluence-page-delete-id)
+  - [`confluence space get <KEY>`](#confluence-space-get-key)
   - [`confluence space list`](#confluence-space-list)
   - [`confluence template create`](#confluence-template-create)
   - [`confluence template list`](#confluence-template-list)
@@ -196,6 +197,15 @@ cargo run -p confluence -- page delete 123456 --confirm --purge
 ```
 
 Prints `{"deleted": true, "id": "123456", "purged": false}` on success (synthesized by the CLI — Confluence itself returns 204 No Content).
+
+### `confluence space get <KEY>`
+
+Gets one space by its key (`ENG`, the form CQL and people use) and prints the space object: `id` (the numeric id `page create --space-id` takes), `key`, `name`, `type`, `status` and `homepageId` (the space's root page, a starting point for `page get`). An unknown key fails with an error pointing at `space list`. Always prints the full object; `--select` is optional.
+
+```sh
+cargo run -p confluence -- space get ENG
+cargo run -p confluence -- space get ENG --select id,homepageId
+```
 
 ### `confluence space list`
 
