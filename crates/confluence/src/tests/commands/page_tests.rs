@@ -151,6 +151,43 @@ fn page_get_as_storage_requests_storage_and_prints_the_page_unchanged() {
 }
 
 #[test]
+fn page_get_adds_the_absolute_link_from_links_webui_in_both_body_formats() {
+    // Issue #275: `_links.webui` is relative to the site's /wiki; `link` can be followed as is.
+    for (body_format, view) in [(BodyFormat::Markdown, "export_view"), (BodyFormat::Storage, "storage")] {
+        let page = json!({
+            "id": "123",
+            "body": {view: {"value": "<p>x</p>"}},
+            "_links": {"webui": "/spaces/ENG/pages/123/Doc", "base": "https://api.atlassian.com/ex/confluence/cid/wiki"}
+        });
+        let (url, server) = mock_server(&[("200 OK", &page.to_string())]);
+
+        let value = get_page(&client_for_site(&url, Some("https://example.atlassian.net/")), "123", body_format).unwrap();
+
+        server.join().unwrap();
+        assert_eq!(value["link"], json!("https://example.atlassian.net/wiki/spaces/ENG/pages/123/Doc"), "{body_format:?}");
+        assert_eq!(value["_links"], page["_links"], "{body_format:?}");
+    }
+}
+
+#[test]
+fn page_get_adds_no_link_without_a_site_url_or_a_string_links_webui() {
+    let cases = [
+        (None, json!({"id": "123", "_links": {"webui": "/spaces/ENG/pages/123/Doc"}})),
+        (Some("https://example.atlassian.net"), json!({"id": "123", "_links": {"base": "x"}})),
+        (Some("https://example.atlassian.net"), json!({"id": "123", "_links": {"webui": null}})),
+        (Some("https://example.atlassian.net"), json!({"id": "123"})),
+    ];
+    for (site_url, page) in cases {
+        let (url, server) = mock_server(&[("200 OK", &page.to_string())]);
+
+        let value = get_page(&client_for_site(&url, site_url), "123", BodyFormat::Storage).unwrap();
+
+        server.join().unwrap();
+        assert_eq!(value, page, "{site_url:?}");
+    }
+}
+
+#[test]
 fn markdown_body_leaves_a_page_without_body_unchanged() {
     let page = json!({"id": "123", "title": "Doc"});
 

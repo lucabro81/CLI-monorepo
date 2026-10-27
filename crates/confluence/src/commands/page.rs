@@ -178,16 +178,23 @@ fn search_pages(client: &ConfluenceClient, cql: &str, limit: u32, start: u32) ->
                     *text = strip_highlight(text);
                 }
             }
-            let link = match (client.site_url(), result.get("url").and_then(Value::as_str)) {
-                (Some(site_url), Some(url)) => Some(format!("{}/wiki{url}", site_url.trim_end_matches('/'))),
-                _ => None,
-            };
-            if let (Some(link), Some(fields)) = (link, result.as_object_mut()) {
-                fields.insert("link".to_string(), Value::String(link));
-            }
+            add_wiki_link(result, "/url", client.site_url());
         }
     }
     Ok(value)
+}
+
+/// Adds `link` = `<site_url>/wiki<path>` to `item`, `path` being the string
+/// at `pointer` (relative to the site's `/wiki`): `page search`'s `url` (#261),
+/// `page get`'s `_links.webui` (#275). Nothing without `site_url` or a string there.
+fn add_wiki_link(item: &mut Value, pointer: &str, site_url: Option<&str>) {
+    let link = match (site_url, item.pointer(pointer).and_then(Value::as_str)) {
+        (Some(site_url), Some(path)) => format!("{}/wiki{path}", site_url.trim_end_matches('/')),
+        _ => return,
+    };
+    if let Some(fields) = item.as_object_mut() {
+        fields.insert("link".to_string(), Value::String(link));
+    }
 }
 
 /// Removes the `@@@hl@@@` / `@@@endhl@@@` markers `excerpt=highlight` puts
@@ -197,14 +204,17 @@ fn strip_highlight(excerpt: &str) -> String {
 }
 
 /// `page get`: Markdown comes from the rendered `export_view` body (macros
-/// expanded), converted and put back as `body.markdown`.
+/// expanded), converted and put back as `body.markdown`. Both formats get
+/// `link` from `_links.webui` (#275).
 fn get_page(client: &ConfluenceClient, id: &str, body_format: BodyFormat) -> Result<Value, CliError> {
-    match body_format {
-        BodyFormat::Storage => client.get_page(id, "storage").map_err(client_error_to_cli),
+    let mut page = match body_format {
+        BodyFormat::Storage => client.get_page(id, "storage").map_err(client_error_to_cli)?,
         BodyFormat::Markdown => {
-            markdown_body(client.get_page(id, "export_view").map_err(client_error_to_cli)?, client.site_url())
+            markdown_body(client.get_page(id, "export_view").map_err(client_error_to_cli)?, client.site_url())?
         }
-    }
+    };
+    add_wiki_link(&mut page, "/_links/webui", client.site_url());
+    Ok(page)
 }
 
 /// Replaces `body.export_view` with `body.markdown = {"representation": "markdown", "value": ...}`,
