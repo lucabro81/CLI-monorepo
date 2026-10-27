@@ -303,6 +303,26 @@ pub enum PageCommand {
         /// Page ID
         id: String,
     },
+    /// List a page's footer comments and print them as JSON, bodies as Markdown by default
+    ///
+    /// Each comment has id, status, pageId, version (number, authorId,
+    /// createdAt) and body: body.markdown.value by default, the storage XHTML
+    /// in body.storage.value with --body-format storage. Footer comments only
+    /// (inline comments are not listed). Needs the read:comment:confluence scope.
+    #[command(after_help = "Examples:\n  confluence page comments 123456 --select results.id,results.version.authorId,results.version.createdAt,results.body.markdown.value\n  confluence page comments 123456 --limit 50 --cursor <cursor-from-previous-response> --select results.id,results.body.markdown.value,_links.next\n  confluence page comments 123456 --body-format storage --select results.id,results.body.storage.value\n\nPagination: the response's _links.next field (if present) contains a cursor\nquery parameter — pass its value to --cursor to fetch the next page.")]
+    Comments {
+        /// Page ID
+        id: String,
+        /// Maximum number of comments to return (default: 25)
+        #[arg(long, default_value = "25")]
+        limit: u32,
+        /// Cursor token for the next page, from the _links.next field of a previous response
+        #[arg(long)]
+        cursor: Option<String>,
+        /// How to print each comment body: markdown (converted from storage) or storage (raw XHTML)
+        #[arg(long, value_enum, default_value_t = BodyFormat::Markdown)]
+        body_format: BodyFormat,
+    },
     /// Delete a page — requires --confirm
     ///
     /// By default moves the page to the trash, where it can be restored —
@@ -432,10 +452,10 @@ pub enum TemplateCommand {
     },
 }
 
-/// How `page get` prints the page body.
+/// How `page get` prints the page body, and `page comments` each comment body.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum BodyFormat {
-    /// The rendered page converted to Markdown, in body.markdown
+    /// The body converted to Markdown, in body.markdown (page get: from the rendered page; page comments: from storage)
     Markdown,
     /// Confluence storage XHTML, in body.storage
     Storage,

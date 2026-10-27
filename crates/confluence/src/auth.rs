@@ -26,7 +26,7 @@ const CLI_DIR: &str = "confluence-cli";
 /// "OAuth / auth design" section.
 pub const SCOPES: &str =
     "read:page:confluence write:page:confluence read:space:confluence \
-     read:hierarchical-content:confluence read:content.metadata:confluence \
+     read:hierarchical-content:confluence read:content.metadata:confluence read:comment:confluence \
      read:confluence-user search:confluence read:confluence-content.summary write:confluence-content \
      offline_access";
 

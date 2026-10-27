@@ -129,6 +129,14 @@ pub enum CliError {
     )]
     PageNotFound { id: String },
 
+    #[error(
+        "Confluence refused to list the comments (403): {body}. The login may lack the read:comment:confluence \
+        scope (logins made before it was added lack it), or this identity can't see the page. For the Service Account: add \
+        the scope to its OAuth 2.0 credential in admin.atlassian.com, then run confluence auth login. For a \
+        person: add it to the 3LO app in the developer console, then run confluence auth login --user <USER_ID>."
+    )]
+    CommentsForbidden { body: String },
+
     #[error("no space with key \"{key}\". Find space keys with: confluence space list --select results.key,results.name")]
     SpaceNotFound { key: String },
 

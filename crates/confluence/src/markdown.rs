@@ -13,6 +13,11 @@
 //!     authentication);
 //!   - a `|` in a table cell is GFM's `\|`, not htmd's `&#124;`;
 //!   - with a site URL, a link to `/wiki/...` becomes absolute.
+//! - Storage format (comment bodies, issue #258, [`storage_to_markdown`]):
+//!   CDATA is unwrapped first (an HTML parser drops it, and storage keeps macro
+//!   text there), `ac:parameter` values are skipped, and a code/noformat body
+//!   (`ac:plain-text-body`) is a fenced block. Other `ac:`/`ri:` tags keep
+//!   their text only.
 
 use std::rc::Rc;
 
@@ -31,8 +36,9 @@ const CELL_PIPE: &str = "\u{E000}\u{E001}";
 pub fn html_to_markdown(html: &str, site_url: Option<&str>) -> Result<String, CliError> {
     let site_url = site_url.map(|url| url.trim_end_matches('/').to_string());
     let markdown = HtmlToMarkdown::builder()
-        .skip_tags(vec!["script", "style"])
+        .skip_tags(vec!["script", "style", "ac:parameter"])
         .add_handler(vec!["pre"], pre_handler)
+        .add_handler(vec!["ac:plain-text-body"], plain_text_body_handler)
         .add_handler(vec!["div"], panel_handler)
         .add_handler(vec!["img"], image_handler)
         .add_handler(vec!["td", "th"], cell_handler)
@@ -44,6 +50,37 @@ pub fn html_to_markdown(html: &str, site_url: Option<&str>) -> Result<String, Cl
         // html5ever reads from the in-memory string: its I/O error cannot happen.
         .map_err(|e| CliError::Internal(format!("converting the page body to Markdown failed: {e}")))?;
     Ok(markdown.replace(CELL_PIPE, "\\|"))
+}
+
+/// A storage-format body (XHTML with `ac:`/`ri:` macro tags) as Markdown;
+/// `site_url` as for [`html_to_markdown`].
+pub fn storage_to_markdown(storage: &str, site_url: Option<&str>) -> Result<String, CliError> {
+    html_to_markdown(&unwrap_cdata(storage), site_url)
+}
+
+/// `<![CDATA[a<b]]>` → `a&lt;b`: the text an HTML parser would otherwise drop.
+fn unwrap_cdata(storage: &str) -> String {
+    let mut out = String::with_capacity(storage.len());
+    let mut rest = storage;
+    while let Some(start) = rest.find("<![CDATA[") {
+        out.push_str(&rest[..start]);
+        let inner = &rest[start + "<![CDATA[".len()..];
+        let (text, after) = inner.split_once("]]>").unwrap_or((inner, ""));
+        out.push_str(&text.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;"));
+        rest = after;
+    }
+    out.push_str(rest);
+    out
+}
+
+/// A storage code/noformat macro body: its raw text as a fenced block (the
+/// language sits in an `ac:parameter`, skipped).
+// The signature is htmd's handler type.
+#[allow(clippy::needless_pass_by_value, clippy::unnecessary_wraps)]
+fn plain_text_body_handler(_handlers: &dyn Handlers, element: Element) -> Option<HandlerResult> {
+    let mut text = String::new();
+    collect_text(element.node, &mut text);
+    Some(fenced(text.trim_matches('\n'), "").into())
 }
 
 /// Panel macros and the label their blockquote starts with.
@@ -156,8 +193,13 @@ fn pre_handler(handlers: &dyn Handlers, element: Element) -> Option<HandlerResul
     collect_text(element.node, &mut text);
     let text = text.trim_matches('\n');
     let language = brush_language(&element).unwrap_or_default();
+    Some(fenced(text, &language).into())
+}
+
+/// `text` in a fence longer than any backtick run inside it.
+fn fenced(text: &str, language: &str) -> String {
     let fence = "`".repeat(longest_backtick_run(text).max(2) + 1);
-    Some(format!("\n\n{fence}{language}\n{text}\n{fence}\n\n").into())
+    format!("\n\n{fence}{language}\n{text}\n{fence}\n\n")
 }
 
 fn collect_text(node: &Node, out: &mut String) {

@@ -945,3 +945,39 @@ fn page_children_and_ancestors_need_an_id() {
         assert_eq!(error.kind(), clap::error::ErrorKind::MissingRequiredArgument, "{command}");
     }
 }
+
+// --- page comments (issue #258) ---
+
+#[test]
+fn parses_page_comments_with_defaults() {
+    let cli = Cli::try_parse_from(["confluence", "page", "comments", "123"]).expect("should parse");
+
+    match cli.command {
+        Command::Page { command: PageCommand::Comments { id, limit, cursor, body_format } } => {
+            assert_eq!((id.as_str(), limit, cursor, body_format), ("123", 25, None, BodyFormat::Markdown));
+        }
+        other => panic!("expected page comments, got {other:?}"),
+    }
+}
+
+#[test]
+fn parses_page_comments_with_every_flag() {
+    let cli = Cli::try_parse_from([
+        "confluence", "page", "comments", "123", "--limit", "5", "--cursor", "abc", "--body-format", "storage",
+    ])
+    .expect("should parse");
+
+    match cli.command {
+        Command::Page { command: PageCommand::Comments { limit, cursor, body_format, .. } } => {
+            assert_eq!((limit, cursor.as_deref(), body_format), (5, Some("abc"), BodyFormat::Storage));
+        }
+        other => panic!("expected page comments, got {other:?}"),
+    }
+}
+
+#[test]
+fn rejects_page_comments_without_an_id() {
+    let error = Cli::try_parse_from(["confluence", "page", "comments"]).unwrap_err();
+
+    assert_eq!(error.kind(), clap::error::ErrorKind::MissingRequiredArgument);
+}

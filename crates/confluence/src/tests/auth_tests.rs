@@ -40,11 +40,12 @@ fn app_config_path_is_under_confluence_cli_dir() {
 #[test]
 fn scopes_are_exactly_what_the_commands_need() {
     // Issue #256: page children/ancestors need the two granular scopes, and the
-    // template commands' two classic scopes were missing until then.
+    // template commands' two classic scopes were missing until then. Issue
+    // #258: page comments needs read:comment:confluence.
     assert_eq!(
         SCOPES,
         "read:page:confluence write:page:confluence read:space:confluence \
-         read:hierarchical-content:confluence read:content.metadata:confluence \
+         read:hierarchical-content:confluence read:content.metadata:confluence read:comment:confluence \
          read:confluence-user search:confluence read:confluence-content.summary write:confluence-content \
          offline_access"
     );
