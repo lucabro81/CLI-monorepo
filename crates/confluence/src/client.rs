@@ -151,9 +151,10 @@ impl ConfluenceClient {
         self.get_json(&format!("{}?{query}", endpoints::PATH_TEMPLATE_PAGE))
     }
 
-    /// Runs a CQL content search (v1 — no v2 equivalent yet) and returns the raw
-    /// JSON response (`{"results": [...], "size": N, "_links": {...}}`).
-    pub fn search_content(
+    /// Runs a CQL search (v1 — no v2 equivalent yet) with highlighted excerpts
+    /// and returns the raw JSON response (`{"results": [{"content", "excerpt",
+    /// "url", "resultGlobalContainer", "lastModified"}], "size": N, "_links": {"base"}}`).
+    pub fn search(
         &self,
         cql: &str,
         limit: u32,
@@ -163,10 +164,11 @@ impl ConfluenceClient {
             ("cql", cql.to_string()),
             ("limit", limit.to_string()),
             ("start", start.to_string()),
+            ("excerpt", "highlight".to_string()),
         ];
         let query = serde_urlencoded::to_string(params)
             .map_err(|e| ClientError::Request(format!("failed to encode query params: {e}")))?;
-        self.get_json(&format!("{}?{query}", endpoints::PATH_CONTENT_SEARCH))
+        self.get_json(&format!("{}?{query}", endpoints::PATH_SEARCH))
     }
 
     /// Lists spaces, cursor-paginated, and returns the raw JSON response

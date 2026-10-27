@@ -177,11 +177,11 @@ cargo run -p confluence -- page update 123456 --body "<p>New agenda</p>"
 
 ### `confluence page search --cql <QUERY>`
 
-Searches content using CQL (Confluence Query Language). Raw query passed straight through, same approach as `jira issue search --jql`.
+Searches content using CQL (Confluence Query Language). Raw query passed straight through, same approach as `jira issue search --jql`. A page result carries `content` (`id`, `type`, `title`), `excerpt` (plain text around the match, highlight markers removed), `url` (relative to the response's `_links.base`), `resultGlobalContainer` (the space) and `lastModified`; a CQL not limited to `type=page` can also return spaces, users or attachments, which have no `content`. An invalid CQL query (Confluence answers 400) fails with Confluence's own message. `--select` is required.
 
 ```sh
-cargo run -p confluence -- page search --cql "type=page AND space=ENG AND title~\"Runbook\""
-cargo run -p confluence -- page search --cql "type=page AND space=ENG" --limit 10
+cargo run -p confluence -- page search --cql "type=page AND space=ENG AND text~\"deploy\"" --select results.content.id,results.content.title,results.excerpt,results.url
+cargo run -p confluence -- page search --cql "type=page AND space=ENG" --limit 10 --select results.content.id,results.content.title,_links.base
 ```
 
 **Flags:** `--limit <N>` (default 25), `--start <N>` (offset for pagination, default 0).

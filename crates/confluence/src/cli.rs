@@ -256,7 +256,12 @@ pub enum PageCommand {
         body: Option<String>,
     },
     /// Search Confluence content using CQL (Confluence Query Language) and print matches as JSON
-    #[command(after_help = "Examples:\n  confluence page search --cql \"type=page AND space=ENG AND title~\\\"Runbook\\\"\"\n  confluence page search --cql \"type=page AND space=ENG\" --limit 10\n  confluence page search --cql \"type=page\" --start 25\n\nPagination: the response's size field tells you how many results this page\nreturned; pass --start <previous start + limit> to fetch the next page.")]
+    ///
+    /// A page result has content (id, type, title), excerpt (plain text around
+    /// the match), url (relative to _links.base), resultGlobalContainer (the
+    /// space) and lastModified; a CQL not limited to type=page can also return
+    /// spaces, users or attachments, which have no content. An invalid CQL query fails with Confluence's own message.
+    #[command(after_help = "Examples:\n  confluence page search --cql \"type=page AND space=ENG AND text~\\\"deploy\\\"\" --select results.content.id,results.content.title,results.excerpt,results.url\n  confluence page search --cql \"type=page AND space=ENG\" --limit 10 --select results.content.id,results.content.title,_links.base\n  confluence page search --cql \"type=page\" --start 25 --select results.content.id,results.content.title,size\n\nPagination: the response's size field tells you how many results this page\nreturned; pass --start <previous start + limit> to fetch the next page.\nA result's full link is _links.base followed by its url.")]
     Search {
         /// CQL query string, e.g. "type=page AND space=ENG"
         #[arg(long)]

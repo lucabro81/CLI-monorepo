@@ -26,7 +26,7 @@
 use serde_json::{json, Value};
 
 use crate::cli::{BodyFormat, PageCommand};
-use crate::client::ConfluenceClient;
+use crate::client::{ClientError, ConfluenceClient};
 use crate::auth::Identity;
 use crate::context::{authenticated_client, client_error_to_cli, print_json};
 use crate::error::CliError;
@@ -54,13 +54,36 @@ pub fn run(command: PageCommand, select: cli_fields::Select<'_>, identity: &Iden
             run_update(&id, title.as_deref(), body.as_deref(), select, identity)
         }
         PageCommand::Search { cql, limit, start } => {
-            let value = authenticated_client(identity)?
-                .search_content(&cql, limit, start)
-                .map_err(client_error_to_cli)?;
-            print_json(&value, select)
+            print_json(&search_pages(&authenticated_client(identity)?, &cql, limit, start)?, select)
         }
         PageCommand::Delete { id, confirm, purge } => run_delete(&id, confirm, purge, select, identity),
     }
+}
+
+/// `page search`: a 400 is the CQL's fault, reported as such; each result's
+/// `excerpt`, `title` and `resultGlobalContainer.title` lose their highlight
+/// markers (`content.title` never has them).
+fn search_pages(client: &ConfluenceClient, cql: &str, limit: u32, start: u32) -> Result<Value, CliError> {
+    let mut value = client.search(cql, limit, start).map_err(|e| match e {
+        ClientError::Status { status: 400, body } => CliError::InvalidCql { cql: cql.to_string(), body },
+        other => client_error_to_cli(other),
+    })?;
+    if let Some(results) = value.get_mut("results").and_then(Value::as_array_mut) {
+        for result in results {
+            for pointer in ["/excerpt", "/title", "/resultGlobalContainer/title"] {
+                if let Some(Value::String(text)) = result.pointer_mut(pointer) {
+                    *text = strip_highlight(text);
+                }
+            }
+        }
+    }
+    Ok(value)
+}
+
+/// Removes the `@@@hl@@@` / `@@@endhl@@@` markers `excerpt=highlight` puts
+/// around matched words.
+fn strip_highlight(excerpt: &str) -> String {
+    excerpt.replace("@@@hl@@@", "").replace("@@@endhl@@@", "")
 }
 
 /// `page get`: Markdown comes from the rendered `export_view` body (macros

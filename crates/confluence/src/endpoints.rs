@@ -18,8 +18,9 @@ pub const CONFLUENCE_API_BASE_URL: &str = "https://api.atlassian.com/ex/confluen
 /// Current-user identity check (`auth whoami`). v1 — no v2 equivalent exists.
 pub const PATH_USER_CURRENT: &str = "/wiki/rest/api/user/current";
 
-/// CQL content search (`page search`). v1 — no v2 equivalent exists yet.
-pub const PATH_CONTENT_SEARCH: &str = "/wiki/rest/api/content/search";
+/// CQL search (`page search`), with excerpts, URLs and spaces. v1 — no v2
+/// equivalent exists yet.
+pub const PATH_SEARCH: &str = "/wiki/rest/api/search";
 
 /// Template lookup (`page create --template-id`) and creation (`template create`).
 /// v1 — no v2 equivalent exists.

@@ -116,6 +116,12 @@ pub enum CliError {
     #[error("Confluence API returned status {status}: {body}")]
     ApiError { status: u16, body: String },
 
+    #[error(
+        "Confluence rejected the CQL query \"{cql}\" (400): {body}. Fix the query and retry, e.g. \
+        confluence page search --cql \"type=page AND space=ENG AND text~\\\"deploy\\\"\""
+    )]
+    InvalidCql { cql: String, body: String },
+
     #[error("failed to serialize response to JSON: {reason}")]
     JsonSerialize { reason: String },
 
