@@ -193,7 +193,9 @@ pub enum PageCommand {
     /// rendered (macros expanded) converted to Markdown, for reading. Pass
     /// --body-format storage for body.storage.value, Confluence's storage
     /// XHTML: the format page create/update --body take, to edit a page.
-    #[command(after_help = "Examples:\n  confluence page get 123456 --select title,body.markdown.value\n  confluence page get 123456 --body-format storage --select title,body.storage.value,version.number")]
+    /// In both formats, link is the page's absolute URL (from _links.webui and
+    /// the site URL saved at login; absent if the login didn't record one).
+    #[command(after_help = "Examples:\n  confluence page get 123456 --select title,body.markdown.value,link\n  confluence page get 123456 --body-format storage --select title,body.storage.value,version.number")]
     Get {
         /// Page ID
         id: String,
