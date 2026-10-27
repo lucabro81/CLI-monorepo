@@ -278,15 +278,16 @@ pub enum PageCommand {
     /// List a page's direct children (pages, folders, whiteboards, ...) and print them as JSON
     ///
     /// Each child has id, title, type (page, folder, whiteboard, database,
-    /// embed), status, spaceId and childPosition (its order under the parent).
-    #[command(after_help = "Examples:\n  confluence page children 123456 --select results.id,results.title,results.type\n  confluence page children 123456 --limit 50 --select results.id,results.title,_links.next\n  confluence page children 123456 --cursor <cursor-from-previous-response> --select results.id,results.title\n\nPagination: the response's _links.next field (if present) contains a cursor\nquery parameter — pass its value to --cursor to fetch the next page.\nA space's root page is space get's homepageId.")]
+    /// embed), status, spaceId and childPosition (its order under the parent);
+    /// a page child also has link (its absolute URL), when the login recorded the site URL.
+    #[command(after_help = "Examples:\n  confluence page children 123456 --select results.id,results.title,results.type,results.link\n  confluence page children 123456 --limit 50 --select results.id,results.title,nextCursor\n  confluence page children 123456 --cursor <nextCursor-from-previous-response> --select results.id,results.title\n\nPagination: nextCursor (present only when there is a next page) is the value\nto pass to --cursor to fetch the next page.\nA space's root page is space get's homepageId.")]
     Children {
         /// Page ID
         id: String,
         /// Maximum number of children to return (default: 25)
         #[arg(long, default_value = "25")]
         limit: u32,
-        /// Cursor token for the next page, from the _links.next field of a previous response
+        /// Cursor for the next page: the nextCursor field of a previous response
         #[arg(long)]
         cursor: Option<String>,
     },
@@ -298,7 +299,8 @@ pub enum PageCommand {
     /// by this CLI, one request per page ancestor). A folder ancestor, or a page
     /// ancestor whose lookup answers 404 (restricted or deleted), has id and
     /// type only; any other failed lookup (e.g. a 403) fails the command. A top-level page has an empty results list.
-    #[command(after_help = "Examples:\n  confluence page ancestors 123456 --select results.id,results.title,results.type\n  confluence page ancestors 123456 --select results.title")]
+    /// Page ancestors also have link (their absolute URL), when the login recorded the site URL.
+    #[command(after_help = "Examples:\n  confluence page ancestors 123456 --select results.id,results.title,results.type,results.link\n  confluence page ancestors 123456 --select results.title")]
     Ancestors {
         /// Page ID
         id: String,
@@ -309,14 +311,14 @@ pub enum PageCommand {
     /// createdAt) and body: body.markdown.value by default, the storage XHTML
     /// in body.storage.value with --body-format storage. Footer comments only
     /// (inline comments are not listed). Needs the read:comment:confluence scope.
-    #[command(after_help = "Examples:\n  confluence page comments 123456 --select results.id,results.version.authorId,results.version.createdAt,results.body.markdown.value\n  confluence page comments 123456 --limit 50 --cursor <cursor-from-previous-response> --select results.id,results.body.markdown.value,_links.next\n  confluence page comments 123456 --body-format storage --select results.id,results.body.storage.value\n\nPagination: the response's _links.next field (if present) contains a cursor\nquery parameter — pass its value to --cursor to fetch the next page.")]
+    #[command(after_help = "Examples:\n  confluence page comments 123456 --select results.id,results.version.authorId,results.version.createdAt,results.body.markdown.value\n  confluence page comments 123456 --limit 50 --cursor <nextCursor-from-previous-response> --select results.id,results.body.markdown.value,nextCursor\n  confluence page comments 123456 --body-format storage --select results.id,results.body.storage.value\n\nPagination: nextCursor (present only when there is a next page) is the value\nto pass to --cursor to fetch the next page.")]
     Comments {
         /// Page ID
         id: String,
         /// Maximum number of comments to return (default: 25)
         #[arg(long, default_value = "25")]
         limit: u32,
-        /// Cursor token for the next page, from the _links.next field of a previous response
+        /// Cursor for the next page: the nextCursor field of a previous response
         #[arg(long)]
         cursor: Option<String>,
         /// How to print each comment body: markdown (converted from storage) or storage (raw XHTML)
@@ -360,12 +362,12 @@ pub enum SpaceCommand {
         key: String,
     },
     /// List Confluence spaces and print them as JSON
-    #[command(after_help = "Examples:\n  confluence space list --select results.id,results.key,results.name,_links.next\n  confluence space list --limit 10 --select results.id,results.key,results.name,_links.next\n  confluence space list --cursor <cursor-from-previous-response> --select results.id,results.key,results.name,_links.next\n\nPagination: the response's _links.next field (if present) contains a cursor\nquery parameter — pass its value to --cursor to fetch the next page.")]
+    #[command(after_help = "Examples:\n  confluence space list --select results.id,results.key,results.name,nextCursor\n  confluence space list --limit 10 --select results.id,results.key,results.name,nextCursor\n  confluence space list --cursor <nextCursor-from-previous-response> --select results.id,results.key,results.name,nextCursor\n\nPagination: nextCursor (present only when there is a next page) is the value\nto pass to --cursor to fetch the next page.")]
     List {
         /// Maximum number of spaces to return (default: 25)
         #[arg(long, default_value = "25")]
         limit: u32,
-        /// Cursor token for the next page, from the _links.next field of a previous response
+        /// Cursor for the next page: the nextCursor field of a previous response
         #[arg(long)]
         cursor: Option<String>,
     },

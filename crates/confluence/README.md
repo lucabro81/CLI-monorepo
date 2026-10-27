@@ -192,21 +192,21 @@ cargo run -p confluence -- page search --cql "type=page AND space=ENG" --limit 1
 
 ### `confluence page children <ID>`
 
-Lists a page's direct children: pages, folders, whiteboards, databases and embeds. Each child has `id`, `title`, `type`, `status`, `spaceId` and `childPosition` (its order under the parent). Cursor-paginated like `space list`; a space's root page is `space get`'s `homepageId`. `--select` is required.
+Lists a page's direct children: pages, folders, whiteboards, databases and embeds. Each child has `id`, `title`, `type`, `status`, `spaceId` and `childPosition` (its order under the parent); a page child also has `link`, its absolute `https://<site>.atlassian.net/wiki/pages/viewpage.action?pageId=<id>` (absent if the login didn't record the site URL). Cursor-paginated like `space list`; a space's root page is `space get`'s `homepageId`. `--select` is required.
 
 ```sh
-cargo run -p confluence -- page children 123456 --select results.id,results.title,results.type
-cargo run -p confluence -- page children 123456 --limit 50 --cursor <cursor-from-previous-response> --select results.id,results.title,_links.next
+cargo run -p confluence -- page children 123456 --select results.id,results.title,results.type,results.link
+cargo run -p confluence -- page children 123456 --limit 50 --cursor <nextCursor-from-previous-response> --select results.id,results.title,nextCursor
 ```
 
-**Flags:** `--limit <N>` (default 25), `--cursor <CURSOR>` (from the previous response's `_links.next`).
+**Flags:** `--limit <N>` (default 25), `--cursor <CURSOR>` (the previous response's `nextCursor`).
 
 ### `confluence page ancestors <ID>`
 
-Lists up to 250 of a page's ancestors (v2's maximum, one request; deeper paths are cut) in the order Confluence returns them, documented as from the top of the space down to its parent (an empty list for a top-level page). Confluence returns only `id` and `type` per ancestor; the CLI adds the `title` of each page ancestor (one request each), while a folder, or a page ancestor whose lookup answers 404 (restricted or deleted), keeps `id` and `type` only; any other failed lookup (for example a 403) fails the command. `--select` is required.
+Lists up to 250 of a page's ancestors (v2's maximum, one request; deeper paths are cut) in the order Confluence returns them, documented as from the top of the space down to its parent (an empty list for a top-level page). Confluence returns only `id` and `type` per ancestor; the CLI adds the `title` of each page ancestor (one request each), while a folder, or a page ancestor whose lookup answers 404 (restricted or deleted), keeps `id` and `type` only; any other failed lookup (for example a 403) fails the command. Each page ancestor also has `link`, as in `page children`. `--select` is required.
 
 ```sh
-cargo run -p confluence -- page ancestors 123456 --select results.id,results.title,results.type
+cargo run -p confluence -- page ancestors 123456 --select results.id,results.title,results.type,results.link
 ```
 
 Both commands report an unknown page (or one this identity can't see) with an error pointing at `page search`.
@@ -222,7 +222,7 @@ cargo run -p confluence -- page comments 123456 --select results.id,results.vers
 cargo run -p confluence -- page comments 123456 --body-format storage --select results.id,results.body.storage.value
 ```
 
-**Flags:** `--limit <N>` (default 25), `--cursor <CURSOR>` (from the previous response's `_links.next`), `--body-format <markdown|storage>` (default `markdown`).
+**Flags:** `--limit <N>` (default 25), `--cursor <CURSOR>` (the previous response's `nextCursor`), `--body-format <markdown|storage>` (default `markdown`).
 
 **New scope (#258):** `read:comment:confluence` (granular). A login made before it gets a 403, reported with the steps to fix it: for the Service Account, add the scope to its credential in admin.atlassian.com, then run `confluence auth login`; for people, add it to the 3LO app, then each person runs `confluence auth login --user <USER_ID>` again.
 
@@ -248,12 +248,14 @@ cargo run -p confluence -- space get ENG --select id,homepageId
 
 ### `confluence space list`
 
-Lists Confluence spaces, cursor-paginated.
+Lists Confluence spaces, cursor-paginated: a response with a next page has a top-level `nextCursor`, the value to pass to `--cursor` (`page children` and `page comments` paginate the same way). `--select` is required.
+
+**Flags:** `--limit <N>` (default 25), `--cursor <CURSOR>` (the previous response's `nextCursor`).
 
 ```sh
-cargo run -p confluence -- space list --select results.id,results.key,results.name,_links.next
-cargo run -p confluence -- space list --limit 10 --select results.id,results.key,results.name,_links.next
-cargo run -p confluence -- space list --cursor <cursor-from-previous-response> --select results.id,results.key,results.name,_links.next
+cargo run -p confluence -- space list --select results.id,results.key,results.name,nextCursor
+cargo run -p confluence -- space list --limit 10 --select results.id,results.key,results.name,nextCursor
+cargo run -p confluence -- space list --cursor <nextCursor-from-previous-response> --select results.id,results.key,results.name,nextCursor
 ```
 
 ### `confluence template create`
