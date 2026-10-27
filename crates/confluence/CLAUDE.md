@@ -105,7 +105,7 @@ check for `page update` — clap's `conflicts_with_all` only rules out passing
 more than one body source on `create`, and there's no way to declare "at
 least one of two optional flags" for `update` at all), plus the request and
 output of `get_page`/`markdown_body` (#254), `search_pages` (#255) and
-`page_children`/`page_ancestors` (#256) and `page_comments` (#258) against the local test server. `template.rs` has its
+`page_children`/`page_ancestors` (#256), `page_comments` (#258) and their `nextCursor`/`link` (#271; `space_tests.rs` for `space list`, `context_tests.rs` for `add_next_cursor`) against the local test server. `template.rs` has its
 own `tests/commands/template_tests.rs` covering `resolve_body` (same
 `--body`/`--body-file` resolution shape as `page.rs`'s, minus the
 `--template-id` branch) and `resolve_optional_body` (the `template update`
