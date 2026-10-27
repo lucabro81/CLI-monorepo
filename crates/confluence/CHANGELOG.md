@@ -12,6 +12,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Other
 - *(confluence)* link on page get (#275)
 - Merge pull request #276 from lucabro81/issue275 ([#276](https://github.com/lucabro81/CLI-monorepo/pull/276))
+- Release
+- Merge pull request #273 from lucabro81/release/confluence ([#273](https://github.com/lucabro81/CLI-monorepo/pull/273))
+## [3.2.0](https://github.com/lucabro81/CLI-monorepo/compare/confluence-v3.1.0...confluence-v3.2.0) - 2026-10-27
+
+### Added
+- *(confluence)* link on page get from _links.webui (#275)
+
+### Other
+- *(confluence)* link on page get (#275)
+- Merge pull request #276 from lucabro81/issue275 ([#276](https://github.com/lucabro81/CLI-monorepo/pull/276))
 ## [3.1.0](https://github.com/lucabro81/CLI-monorepo/compare/confluence-v3.0.0...confluence-v3.1.0) - 2026-10-27
 
 ### Added
