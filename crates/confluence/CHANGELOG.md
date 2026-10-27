@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [3.2.0](https://github.com/lucabro81/CLI-monorepo/compare/confluence-v3.1.0...confluence-v3.2.0) - 2026-10-27
+
+### Added
+- *(confluence)* link on page get from _links.webui (#275)
+
+### Other
+- *(confluence)* link on page get (#275)
+- Merge pull request #276 from lucabro81/issue275 ([#276](https://github.com/lucabro81/CLI-monorepo/pull/276))
 ## [3.1.0](https://github.com/lucabro81/CLI-monorepo/compare/confluence-v3.0.0...confluence-v3.1.0) - 2026-10-27
 
 ### Added
