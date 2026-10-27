@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [3.1.0](https://github.com/lucabro81/CLI-monorepo/compare/confluence-v3.0.0...confluence-v3.1.0) - 2026-10-27
+
+### Added
+- *(confluence)* nextCursor on paginated lists, link on page children and ancestors (#271)
+
+### Other
+- *(confluence)* nextCursor and children/ancestors link (#271)
+- *(confluence)* page ancestors 404 keeps link; nextCursor in children/comments text (#271)
+- *(confluence)* list #271 tests in the test convention (#271)
+- Merge pull request #272 from lucabro81/issue271 ([#272](https://github.com/lucabro81/CLI-monorepo/pull/272))
 ## [3.0.0](https://github.com/lucabro81/CLI-monorepo/compare/confluence-v2.3.2...confluence-v3.0.0) - 2026-10-27
 
 ### Added
