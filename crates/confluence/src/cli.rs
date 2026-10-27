@@ -293,7 +293,8 @@ pub enum PageCommand {
     /// The order is Confluence's own (documented as root first); the CLI does not reorder.
     /// Each ancestor has id and type; page ancestors also have title (looked up
     /// by this CLI, one request per page ancestor). A folder ancestor, or a page
-    /// ancestor this identity can't read, has id and type only. A top-level page has an empty results list.
+    /// ancestor whose lookup answers 404 (restricted or deleted), has id and
+    /// type only; any other failed lookup (e.g. a 403) fails the command. A top-level page has an empty results list.
     #[command(after_help = "Examples:\n  confluence page ancestors 123456 --select results.id,results.title,results.type\n  confluence page ancestors 123456 --select results.title")]
     Ancestors {
         /// Page ID

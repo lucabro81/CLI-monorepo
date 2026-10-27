@@ -202,7 +202,7 @@ cargo run -p confluence -- page children 123456 --limit 50 --cursor <cursor-from
 
 ### `confluence page ancestors <ID>`
 
-Lists a page's ancestors in the order Confluence returns them, documented as from the top of the space down to its parent (an empty list for a top-level page). Confluence returns only `id` and `type` per ancestor; the CLI adds the `title` of each page ancestor (one request each), while a folder, or a page ancestor this identity can't read, keeps `id` and `type` only. `--select` is required.
+Lists a page's ancestors in the order Confluence returns them, documented as from the top of the space down to its parent (an empty list for a top-level page). Confluence returns only `id` and `type` per ancestor; the CLI adds the `title` of each page ancestor (one request each), while a folder, or a page ancestor whose lookup answers 404 (restricted or deleted), keeps `id` and `type` only; any other failed lookup (for example a 403) fails the command. `--select` is required.
 
 ```sh
 cargo run -p confluence -- page ancestors 123456 --select results.id,results.title,results.type
