@@ -91,9 +91,11 @@ impl ConfluenceClient {
         self.get_json(endpoints::PATH_USER_CURRENT)
     }
 
-    /// Fetches a page by ID, including its storage-format body, as raw JSON.
-    pub fn get_page(&self, id: &str) -> Result<serde_json::Value, ClientError> {
-        self.get_json(&format!("{}?body-format=storage", endpoints::page_path(id)))
+    /// Fetches a page by ID, including its body in `body_format` (`storage` or
+    /// `export_view`, v2's `body-format` values), as raw JSON. v2 omits the body
+    /// entirely unless a `body-format` is requested.
+    pub fn get_page(&self, id: &str, body_format: &str) -> Result<serde_json::Value, ClientError> {
+        self.get_json(&format!("{}?body-format={body_format}", endpoints::page_path(id)))
     }
 
     /// Creates a page from a pre-built request body (`spaceId`, `title`, `body`,
