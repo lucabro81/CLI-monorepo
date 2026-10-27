@@ -264,7 +264,7 @@ fn storage_links_also_become_absolute_with_the_site_url() {
 
 #[test]
 fn several_cdata_sections_keep_their_text_escaped_as_text() {
-    let xhtml = r#"<p><ac:link><ac:plain-text-link-body><![CDATA[a & b]]></ac:plain-text-link-body></ac:link> then <ac:link><ac:plain-text-link-body><![CDATA[<c>]]></ac:plain-text-link-body></ac:link></p>"#;
+    let xhtml = r"<p><ac:link><ac:plain-text-link-body><![CDATA[a & b]]></ac:plain-text-link-body></ac:link> then <ac:link><ac:plain-text-link-body><![CDATA[<c>]]></ac:plain-text-link-body></ac:link></p>";
 
     // htmd escapes a literal `<` in text as `\\<` (valid Markdown for `<`).
     assert_eq!(storage(xhtml), "a & b then \\<c>");
