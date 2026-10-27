@@ -61,7 +61,8 @@ pub fn run(command: PageCommand, select: cli_fields::Select<'_>, identity: &Iden
 }
 
 /// `page search`: a 400 is the CQL's fault, reported as such; each result's
-/// `excerpt` loses its highlight markers.
+/// `excerpt`, `title` and `resultGlobalContainer.title` lose their highlight
+/// markers (`content.title` never has them).
 fn search_pages(client: &ConfluenceClient, cql: &str, limit: u32, start: u32) -> Result<Value, CliError> {
     let mut value = client.search(cql, limit, start).map_err(|e| match e {
         ClientError::Status { status: 400, body } => CliError::InvalidCql { cql: cql.to_string(), body },
@@ -69,8 +70,10 @@ fn search_pages(client: &ConfluenceClient, cql: &str, limit: u32, start: u32) ->
     })?;
     if let Some(results) = value.get_mut("results").and_then(Value::as_array_mut) {
         for result in results {
-            if let Some(Value::String(excerpt)) = result.get_mut("excerpt") {
-                *excerpt = strip_highlight(excerpt);
+            for pointer in ["/excerpt", "/title", "/resultGlobalContainer/title"] {
+                if let Some(Value::String(text)) = result.pointer_mut(pointer) {
+                    *text = strip_highlight(text);
+                }
             }
         }
     }

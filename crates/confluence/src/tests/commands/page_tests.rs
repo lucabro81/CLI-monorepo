@@ -185,14 +185,15 @@ fn page_update_reads_and_writes_storage_even_though_page_get_defaults_to_markdow
 // --- page search (issue #255) ---
 
 #[test]
-fn search_pages_asks_v1_search_with_highlighted_excerpts_and_strips_the_markers() {
+fn search_pages_asks_v1_search_with_highlighted_excerpts_and_strips_the_markers_from_excerpt_and_titles() {
     let response = json!({
         "results": [
             {
                 "content": {"id": "11", "type": "page", "title": "Runbook"},
+                "title": "@@@hl@@@Runbook@@@endhl@@@",
                 "excerpt": "restart the @@@hl@@@api@@@endhl@@@ with @@@hl@@@care@@@endhl@@@",
                 "url": "/spaces/ENG/pages/11/Runbook",
-                "resultGlobalContainer": {"title": "Engineering", "displayUrl": "/spaces/ENG"},
+                "resultGlobalContainer": {"title": "@@@hl@@@Eng@@@endhl@@@ineering", "displayUrl": "/spaces/ENG"},
                 "lastModified": "2026-10-01T10:00:00.000Z"
             },
             {"content": {"id": "12", "type": "page", "title": "Plain"}, "excerpt": "no markers here"}
@@ -213,6 +214,8 @@ fn search_pages_asks_v1_search_with_highlighted_excerpts_and_strips_the_markers(
     );
     let mut expected = response;
     expected["results"][0]["excerpt"] = json!("restart the api with care");
+    expected["results"][0]["title"] = json!("Runbook");
+    expected["results"][0]["resultGlobalContainer"]["title"] = json!("Engineering");
     assert_eq!(value, expected);
 }
 
