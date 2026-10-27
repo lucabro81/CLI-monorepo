@@ -17,6 +17,7 @@ CLI for Confluence Cloud, designed to be driven by an LLM agent (output is JSON,
   - [`confluence page update <ID>`](#confluence-page-update-id)
   - [`confluence page search --cql <QUERY>`](#confluence-page-search---cql-query)
   - [`confluence page delete <ID>`](#confluence-page-delete-id)
+  - [`confluence space get <KEY>`](#confluence-space-get-key)
   - [`confluence space list`](#confluence-space-list)
   - [`confluence template create`](#confluence-template-create)
   - [`confluence template list`](#confluence-template-list)
@@ -197,6 +198,15 @@ cargo run -p confluence -- page delete 123456 --confirm --purge
 
 Prints `{"deleted": true, "id": "123456", "purged": false}` on success (synthesized by the CLI — Confluence itself returns 204 No Content).
 
+### `confluence space get <KEY>`
+
+Gets one space by its key (`ENG`, the form CQL and people use) and prints the space object: `id` (the numeric id `page create --space-id` takes), `key`, `name`, `type`, `status` and `homepageId` (the space's root page, a starting point for `page get`). An unknown key fails with an error pointing at `space list`. `--select` is optional: without it the whole object is printed, with it only the listed fields.
+
+```sh
+cargo run -p confluence -- space get ENG
+cargo run -p confluence -- space get ENG --select id,homepageId
+```
+
 ### `confluence space list`
 
 Lists Confluence spaces, cursor-paginated.
@@ -249,7 +259,7 @@ Prints `{"deleted": true, "id": "4321"}` on success.
 
 ### `--select <PATHS>` (global flag)
 
-Same client-side field-projection flag as every other crate in this workspace — see root `CLAUDE.md`'s "Shared library: crates/cli-fields". Mandatory on every command in this crate except `doctor` and `auth whoami` — omitting both `--select` and `--select-all` fails with the response's byte size and top-level field names instead of printing.
+Same client-side field-projection flag as every other crate in this workspace — see root `CLAUDE.md`'s "Shared library: crates/cli-fields". Mandatory on every command in this crate except `doctor`, `auth whoami`, `auth logout`, `page delete` and `space get` (see this crate's `CLAUDE.md` for the full table) — omitting both `--select` and `--select-all` fails with the response's byte size and top-level field names instead of printing.
 
 ```sh
 cargo run -p confluence -- page get 123456 --select title,version.number

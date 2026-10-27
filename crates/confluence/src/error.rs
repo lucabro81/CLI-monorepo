@@ -122,6 +122,9 @@ pub enum CliError {
     )]
     InvalidCql { cql: String, body: String },
 
+    #[error("no space with key \"{key}\". Find space keys with: confluence space list --select results.key,results.name")]
+    SpaceNotFound { key: String },
+
     #[error("failed to serialize response to JSON: {reason}")]
     JsonSerialize { reason: String },
 

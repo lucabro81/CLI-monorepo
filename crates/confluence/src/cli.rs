@@ -19,7 +19,7 @@ pub struct Cli {
     /// Required on most commands: if both this and --select-all are omitted, the
     /// command fails with an error reporting the byte size of the full response and
     /// its top-level field names, so you can retry with an informed --select. A few
-    /// commands whose output is always small and fixed-shape (doctor, auth whoami, auth logout)
+    /// commands whose output is always small and fixed-shape (doctor, auth whoami, auth logout, page delete, space get)
     /// are exempt and print in full regardless — see that command's own --help.
     /// This description is shared across every command and has no single
     /// correct path syntax. IMPORTANT: do NOT guess a path from this text —
@@ -297,6 +297,18 @@ pub enum PageCommand {
 
 #[derive(Debug, Subcommand)]
 pub enum SpaceCommand {
+    /// Get one space by its key (e.g. ENG) and print it as JSON
+    ///
+    /// Prints the space object: id (what page create --space-id takes), key,
+    /// name, type, status and homepageId (the space's root page, a starting
+    /// point for browsing it with page get). --select is optional here: without
+    /// it the whole object is printed (a single, small object); with it, the
+    /// listed fields only.
+    #[command(after_help = "Examples:\n  confluence space get ENG\n  confluence space get ENG --select id,homepageId\n\nSpace keys are what CQL and people use (space=ENG); v2 endpoints take the\nnumeric id this command returns.")]
+    Get {
+        /// Space key, e.g. ENG
+        key: String,
+    },
     /// List Confluence spaces and print them as JSON
     #[command(after_help = "Examples:\n  confluence space list\n  confluence space list --limit 10\n  confluence space list --cursor <cursor-from-previous-response>\n\nPagination: the response's _links.next field (if present) contains a cursor\nquery parameter — pass its value to --cursor to fetch the next page.")]
     List {

@@ -880,3 +880,22 @@ fn page_get_rejects_an_unknown_body_format() {
 
     assert_eq!(error.kind(), clap::error::ErrorKind::InvalidValue);
 }
+
+// --- space get (issue #257) ---
+
+#[test]
+fn parses_space_get_with_a_key() {
+    let cli = Cli::try_parse_from(["confluence", "space", "get", "ENG"]).expect("should parse");
+
+    match cli.command {
+        Command::Space { command: SpaceCommand::Get { key } } => assert_eq!(key, "ENG"),
+        other => panic!("expected space get, got {other:?}"),
+    }
+}
+
+#[test]
+fn rejects_space_get_without_a_key() {
+    let error = Cli::try_parse_from(["confluence", "space", "get"]).unwrap_err();
+
+    assert_eq!(error.kind(), clap::error::ErrorKind::MissingRequiredArgument);
+}
