@@ -5,8 +5,10 @@
 use super::html_to_markdown;
 
 fn md(html: &str) -> String {
-    html_to_markdown(html).unwrap()
+    html_to_markdown(html, None).unwrap()
 }
+
+const SITE: &str = "https://example.atlassian.net";
 
 #[test]
 fn headings_keep_their_level_and_drop_confluence_anchor_ids() {
@@ -21,8 +23,9 @@ fn a_confluence_table_with_its_header_row_in_tbody_becomes_a_gfm_table() {
 
     assert_eq!(
         md(html),
-        // Column width is measured before `|` is escaped: still a valid GFM table.
-        "| **Name** | Owner  |\n| -------- | ------ |\n| api      | team a |\n| web      | x &#124; y |"
+        // Issue #261: `|` in a cell is GFM's `\|`, not htmd's `&#124;`, and the
+        // column width counts the escape.
+        "| **Name** | Owner  |\n| -------- | ------ |\n| api      | team a |\n| web      | x \\| y |"
     );
 }
 
@@ -58,14 +61,34 @@ fn a_pre_code_block_keeps_htmd_handling() {
 }
 
 #[test]
-fn info_and_warning_panels_keep_their_text_and_drop_the_icon_and_panel_type() {
-    for (class, macro_name, icon) in [("information", "info", "info"), ("warning", "warning", "error")] {
+fn panels_become_blockquotes_that_name_their_type() {
+    // Issue #261: a warning read as a plain paragraph loses its meaning.
+    for (class, macro_name, icon, label) in [
+        ("information", "info", "info", "Info"),
+        ("note", "note", "warning", "Note"),
+        ("warning", "warning", "error", "Warning"),
+        ("tip", "tip", "approve", "Tip"),
+    ] {
         let html = format!(
             r#"<div class="confluence-information-macro confluence-information-macro-{class} conf-macro output-block" data-hasbody="true" data-macro-name="{macro_name}"><span class="aui-icon aui-icon-small aui-iconfont-{icon} confluence-information-macro-icon"> </span><div class="confluence-information-macro-body"><p>Read this first.</p></div></div>"#
         );
 
-        assert_eq!(md(&html), "Read this first.", "{macro_name} panel");
+        assert_eq!(md(&html), format!("> **{label}:** Read this first."), "{macro_name} panel");
     }
+}
+
+#[test]
+fn a_panel_with_several_paragraphs_quotes_every_line() {
+    let html = r#"<p>Before</p><div class="confluence-information-macro confluence-information-macro-warning conf-macro output-block" data-macro-name="warning"><span class="aui-icon confluence-information-macro-icon"> </span><div class="confluence-information-macro-body"><p>Not in production.</p><p>Ask the team first.</p></div></div><p>After</p>"#;
+
+    assert_eq!(md(html), "Before\n\n> **Warning:** Not in production.\n>\n> Ask the team first.\n\nAfter");
+}
+
+#[test]
+fn a_div_of_another_macro_keeps_htmd_handling() {
+    let html = r#"<div class="expand-container conf-macro output-block" data-macro-name="expand"><div class="expand-content"><p>Hidden text</p></div></div>"#;
+
+    assert_eq!(md(html), "Hidden text");
 }
 
 #[test]
@@ -76,10 +99,17 @@ fn a_status_lozenge_becomes_its_text() {
 }
 
 #[test]
-fn an_embedded_image_becomes_a_markdown_image() {
-    let html = r#"<p><span class="confluence-embedded-file-wrapper"><img class="confluence-embedded-image" src="https://example.atlassian.net/wiki/download/attachments/1/diagram.png?api=v2" alt="diagram"/></span></p>"#;
+fn an_embedded_image_becomes_its_alt_text_without_the_attachment_url() {
+    // Issue #261: the attachment URL needs authentication, noise for a model.
+    let html = r#"<p>See <span class="confluence-embedded-file-wrapper"><img class="confluence-embedded-image" src="https://example.atlassian.net/wiki/download/attachments/1/diagram.png?api=v2" alt="diagram"/></span> above.</p>"#;
 
-    assert_eq!(md(html), "![diagram](https://example.atlassian.net/wiki/download/attachments/1/diagram.png?api=v2)");
+    assert_eq!(md(html), "See [image: diagram] above.");
+}
+
+#[test]
+fn an_image_without_alt_text_is_a_bare_marker() {
+    assert_eq!(md(r#"<p><img src="/wiki/download/x.png"/></p>"#), "[image]");
+    assert_eq!(md(r#"<p><img src="/wiki/download/x.png" alt=" "/></p>"#), "[image]");
 }
 
 #[test]
@@ -94,6 +124,29 @@ fn links_and_inline_code_are_kept() {
     let html = r#"<p>See <a href="https://example.atlassian.net/wiki/spaces/ENG/pages/2/Other" data-linked-resource-id="2">Other page</a> and <code>inline</code>.</p>"#;
 
     assert_eq!(md(html), "See [Other page](https://example.atlassian.net/wiki/spaces/ENG/pages/2/Other) and `inline`.");
+}
+
+#[test]
+fn relative_wiki_links_become_absolute_with_the_site_url() {
+    // Issue #261: a relative link can't be followed by a model or a formatter.
+    let html = r##"<p><a href="/wiki/spaces/ENG/pages/2/Other">Other</a>, <a href="https://example.com/x">ext</a>, <a href="#Doc-Sub">anchor</a></p>"##;
+
+    assert_eq!(
+        html_to_markdown(html, Some(SITE)).unwrap(),
+        "[Other](https://example.atlassian.net/wiki/spaces/ENG/pages/2/Other), [ext](https://example.com/x), [anchor](#Doc-Sub)"
+    );
+    assert_eq!(
+        html_to_markdown(html, Some("https://example.atlassian.net/")).unwrap(),
+        "[Other](https://example.atlassian.net/wiki/spaces/ENG/pages/2/Other), [ext](https://example.com/x), [anchor](#Doc-Sub)",
+        "a trailing slash on the site URL is dropped"
+    );
+}
+
+#[test]
+fn without_a_site_url_relative_links_are_left_as_they_are() {
+    let html = r#"<p><a href="/wiki/spaces/ENG/pages/2/Other">Other</a></p>"#;
+
+    assert_eq!(md(html), "[Other](/wiki/spaces/ENG/pages/2/Other)");
 }
 
 #[test]

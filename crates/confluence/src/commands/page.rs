@@ -104,7 +104,8 @@ fn page_ancestors(client: &ConfluenceClient, id: &str) -> Result<Value, CliError
 
 /// `page search`: a 400 is the CQL's fault, reported as such; each result's
 /// `excerpt`, `title` and `resultGlobalContainer.title` lose their highlight
-/// markers (`content.title` never has them).
+/// markers (`content.title` never has them), and a result with a `url` gets
+/// `link` = `<site_url>/wiki<url>` when the credentials know the site (#261).
 fn search_pages(client: &ConfluenceClient, cql: &str, limit: u32, start: u32) -> Result<Value, CliError> {
     let mut value = client.search(cql, limit, start).map_err(|e| match e {
         ClientError::Status { status: 400, body } => CliError::InvalidCql { cql: cql.to_string(), body },
@@ -116,6 +117,13 @@ fn search_pages(client: &ConfluenceClient, cql: &str, limit: u32, start: u32) ->
                 if let Some(Value::String(text)) = result.pointer_mut(pointer) {
                     *text = strip_highlight(text);
                 }
+            }
+            let link = match (client.site_url(), result.get("url").and_then(Value::as_str)) {
+                (Some(site_url), Some(url)) => Some(format!("{}/wiki{url}", site_url.trim_end_matches('/'))),
+                _ => None,
+            };
+            if let (Some(link), Some(fields)) = (link, result.as_object_mut()) {
+                fields.insert("link".to_string(), Value::String(link));
             }
         }
     }
@@ -133,18 +141,20 @@ fn strip_highlight(excerpt: &str) -> String {
 fn get_page(client: &ConfluenceClient, id: &str, body_format: BodyFormat) -> Result<Value, CliError> {
     match body_format {
         BodyFormat::Storage => client.get_page(id, "storage").map_err(client_error_to_cli),
-        BodyFormat::Markdown => markdown_body(client.get_page(id, "export_view").map_err(client_error_to_cli)?),
+        BodyFormat::Markdown => {
+            markdown_body(client.get_page(id, "export_view").map_err(client_error_to_cli)?, client.site_url())
+        }
     }
 }
 
 /// Replaces `body.export_view` with `body.markdown = {"representation": "markdown", "value": ...}`,
 /// so `--select body.markdown.value` reads like `body.storage.value`.
-fn markdown_body(mut page: Value) -> Result<Value, CliError> {
+fn markdown_body(mut page: Value, site_url: Option<&str>) -> Result<Value, CliError> {
     let Some(body) = page.get_mut("body").and_then(Value::as_object_mut) else {
         return Ok(page);
     };
     let html = body.remove("export_view").and_then(|view| view["value"].as_str().map(str::to_string));
-    let markdown = html_to_markdown(&html.unwrap_or_default())?;
+    let markdown = html_to_markdown(&html.unwrap_or_default(), site_url)?;
     body.insert("markdown".to_string(), json!({"representation": "markdown", "value": markdown}));
     Ok(page)
 }
