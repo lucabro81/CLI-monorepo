@@ -1,5 +1,8 @@
 //! Handlers for the `page` command group (`get`, `create`, `update`, `search`, `delete`).
 //!
+//! `page get` prints the body as Markdown by default (`--body-format storage`
+//! for the raw storage XHTML, issue #254); `run_update` always reads storage.
+//!
 //! `run_create`'s body content comes from exactly one of three sources —
 //! `--body` (raw text), `--body-file` (the same kind of content, read from a
 //! local file — unrelated to Confluence's own Template feature), or
@@ -20,19 +23,19 @@
 //! `run_delete` moves a page to the trash by default; `--purge` permanently
 //! removes it, but only works on a page that's already trashed.
 
-use serde_json::json;
+use serde_json::{json, Value};
 
-use crate::cli::PageCommand;
+use crate::cli::{BodyFormat, PageCommand};
+use crate::client::ConfluenceClient;
 use crate::auth::Identity;
 use crate::context::{authenticated_client, client_error_to_cli, print_json};
 use crate::error::CliError;
+use crate::markdown::html_to_markdown;
 
 pub fn run(command: PageCommand, select: cli_fields::Select<'_>, identity: &Identity) -> Result<(), CliError> {
     match command {
-        PageCommand::Get { id } => {
-            let value = authenticated_client(identity)?
-                .get_page(&id)
-                .map_err(client_error_to_cli)?;
+        PageCommand::Get { id, body_format } => {
+            let value = get_page(&authenticated_client(identity)?, &id, body_format)?;
             print_json(&value, select)
         }
         PageCommand::Create {
@@ -58,6 +61,27 @@ pub fn run(command: PageCommand, select: cli_fields::Select<'_>, identity: &Iden
         }
         PageCommand::Delete { id, confirm, purge } => run_delete(&id, confirm, purge, select, identity),
     }
+}
+
+/// `page get`: Markdown comes from the rendered `export_view` body (macros
+/// expanded), converted and put back as `body.markdown`.
+fn get_page(client: &ConfluenceClient, id: &str, body_format: BodyFormat) -> Result<Value, CliError> {
+    match body_format {
+        BodyFormat::Storage => client.get_page(id, "storage").map_err(client_error_to_cli),
+        BodyFormat::Markdown => markdown_body(client.get_page(id, "export_view").map_err(client_error_to_cli)?),
+    }
+}
+
+/// Replaces `body.export_view` with `body.markdown = {"representation": "markdown", "value": ...}`,
+/// so `--select body.markdown.value` reads like `body.storage.value`.
+fn markdown_body(mut page: Value) -> Result<Value, CliError> {
+    let Some(body) = page.get_mut("body").and_then(Value::as_object_mut) else {
+        return Ok(page);
+    };
+    let html = body.remove("export_view").and_then(|view| view["value"].as_str().map(str::to_string));
+    let markdown = html_to_markdown(&html.unwrap_or_default())?;
+    body.insert("markdown".to_string(), json!({"representation": "markdown", "value": markdown}));
+    Ok(page)
 }
 
 /// Exactly one content source for a new page's body.
@@ -152,9 +176,17 @@ fn run_update(
     identity: &Identity,
 ) -> Result<(), CliError> {
     validate_update_target(title, body)?;
+    let value = update_page(&authenticated_client(identity)?, id, title, body)?;
+    print_json(&value, select)
+}
 
-    let client = authenticated_client(identity)?;
-    let current = client.get_page(id).map_err(client_error_to_cli)?;
+fn update_page(
+    client: &ConfluenceClient,
+    id: &str,
+    title: Option<&str>,
+    body: Option<&str>,
+) -> Result<Value, CliError> {
+    let current = client.get_page(id, "storage").map_err(client_error_to_cli)?;
 
     let current_title = current["title"].as_str().unwrap_or_default();
     let current_body = current["body"]["storage"]["value"].as_str().unwrap_or_default();
@@ -171,10 +203,7 @@ fn run_update(
         "version": {"number": current_version + 1},
     });
 
-    let value = client
-        .update_page(id, &request_body)
-        .map_err(client_error_to_cli)?;
-    print_json(&value, select)
+    client.update_page(id, &request_body).map_err(client_error_to_cli)
 }
 
 /// Deletes (or, with `purge`, permanently removes) a page. The `--confirm`

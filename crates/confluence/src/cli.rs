@@ -8,7 +8,7 @@
 //! include `after_help` examples so an LLM can infer usage from a worked
 //! example rather than reconstructing it from abstract parameter descriptions.
 
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use oauth_user_login::UserId;
 
 /// Confluence Cloud CLI for LLM agents — read and write Confluence pages from the command line.
@@ -188,16 +188,24 @@ pub enum AuthCommand {
 #[derive(Debug, Subcommand)]
 pub enum PageCommand {
     /// Fetch a single page by ID, including its body, and print it as JSON
-    #[command(after_help = "Examples:\n  confluence page get 123456\n  confluence page get 123456 --select title,body.storage.value,version.number")]
+    ///
+    /// The body is Markdown by default, in body.markdown.value: the page as
+    /// rendered (macros expanded) converted to Markdown, for reading. Pass
+    /// --body-format storage for body.storage.value, Confluence's storage
+    /// XHTML: the format page create/update --body take, to edit a page.
+    #[command(after_help = "Examples:\n  confluence page get 123456 --select title,body.markdown.value\n  confluence page get 123456 --body-format storage --select title,body.storage.value,version.number")]
     Get {
         /// Page ID
         id: String,
+        /// How to print the page body
+        #[arg(long, value_enum, default_value_t = BodyFormat::Markdown)]
+        body_format: BodyFormat,
     },
     /// Create a new page in a space
     ///
     /// Exactly one of --body, --body-file, or --template-id supplies the
     /// page content. --body is raw Confluence storage-format XHTML (the same
-    /// format `page get`'s body.storage.value returns) — plain text with no
+    /// format `page get --body-format storage` returns in body.storage.value) — plain text with no
     /// markup is also valid storage format. --body-file reads that same kind
     /// of content from a local file instead of a command-line argument — a
     /// convenience for longer content, unrelated to Confluence's own
@@ -375,6 +383,15 @@ pub enum TemplateCommand {
         #[arg(long)]
         confirm: bool,
     },
+}
+
+/// How `page get` prints the page body.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum BodyFormat {
+    /// The rendered page converted to Markdown, in body.markdown
+    Markdown,
+    /// Confluence storage XHTML, in body.storage
+    Storage,
 }
 
 #[cfg(test)]

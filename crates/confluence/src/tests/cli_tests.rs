@@ -2,7 +2,7 @@
 
 use clap::Parser;
 
-use super::{AuthCommand, Cli, Command, PageCommand, SpaceCommand, TemplateCommand};
+use super::{AuthCommand, BodyFormat, Cli, Command, PageCommand, SpaceCommand, TemplateCommand};
 
 fn user(cli: &Cli) -> Option<&str> {
     cli.user.as_ref().map(oauth_user_login::UserId::as_str)
@@ -293,7 +293,7 @@ fn parses_page_get_with_id() {
 
     match cli.command {
         Command::Page {
-            command: PageCommand::Get { id },
+            command: PageCommand::Get { id, .. },
         } => assert_eq!(id, "123456"),
         other => panic!("unexpected command: {other:?}"),
     }
@@ -848,4 +848,35 @@ fn parses_init_user_app() {
         }
         other => panic!("unexpected: {other:?}"),
     }
+}
+
+fn page_get_body_format(args: &[&str]) -> BodyFormat {
+    match Cli::try_parse_from(args).expect("should parse").command {
+        Command::Page { command: PageCommand::Get { body_format, .. } } => body_format,
+        other => panic!("unexpected command: {other:?}"),
+    }
+}
+
+#[test]
+fn page_get_prints_markdown_by_default() {
+    assert_eq!(page_get_body_format(&["confluence", "page", "get", "123456"]), BodyFormat::Markdown);
+}
+
+#[test]
+fn page_get_accepts_both_body_formats() {
+    assert_eq!(
+        page_get_body_format(&["confluence", "page", "get", "123456", "--body-format", "markdown"]),
+        BodyFormat::Markdown
+    );
+    assert_eq!(
+        page_get_body_format(&["confluence", "page", "get", "123456", "--body-format", "storage"]),
+        BodyFormat::Storage
+    );
+}
+
+#[test]
+fn page_get_rejects_an_unknown_body_format() {
+    let error = Cli::try_parse_from(["confluence", "page", "get", "123456", "--body-format", "html"]).unwrap_err();
+
+    assert_eq!(error.kind(), clap::error::ErrorKind::InvalidValue);
 }

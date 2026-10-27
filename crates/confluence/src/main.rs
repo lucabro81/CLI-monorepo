@@ -16,6 +16,7 @@ mod commands;
 mod context;
 mod endpoints;
 mod error;
+mod markdown;
 #[cfg(test)]
 #[path = "tests/test_support.rs"]
 mod test_support;
