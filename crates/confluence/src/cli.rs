@@ -290,6 +290,7 @@ pub enum PageCommand {
     },
     /// List a page's ancestors, from the top of the space down to its parent, and print them as JSON
     ///
+    /// The order is Confluence's own (documented as root first); the CLI does not reorder.
     /// Each ancestor has id and type; page ancestors also have title (looked up
     /// by this CLI, one request per page ancestor). A folder ancestor, or a page
     /// ancestor this identity can't read, has id and type only. A top-level page has an empty results list.

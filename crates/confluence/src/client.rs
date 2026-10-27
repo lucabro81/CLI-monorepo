@@ -121,7 +121,7 @@ impl ConfluenceClient {
         self.get_json(&format!("{}?{query}", endpoints::page_direct_children_path(id)))
     }
 
-    /// Lists a page's ancestors, top-down, and returns the raw JSON response
+    /// Lists a page's ancestors (top-down per the v2 spec, as returned), and returns the raw JSON response
     /// (`{"results": [{"id", "type"}]}`). Asks for 250 (v2's maximum), so a
     /// page's whole path comes in one response.
     pub fn list_page_ancestors(&self, id: &str) -> Result<serde_json::Value, ClientError> {
