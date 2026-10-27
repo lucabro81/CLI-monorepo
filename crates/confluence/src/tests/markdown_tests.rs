@@ -30,6 +30,13 @@ fn a_confluence_table_with_its_header_row_in_tbody_becomes_a_gfm_table() {
 }
 
 #[test]
+fn a_pipe_in_a_header_cell_is_escaped_too() {
+    let html = r"<table><tbody><tr><th>a | b</th></tr><tr><td>c</td></tr></tbody></table>";
+
+    assert_eq!(md(html), "| a \\| b |\n| ------ |\n| c      |");
+}
+
+#[test]
 fn the_code_macro_becomes_a_fenced_block_with_the_brush_language() {
     let html = r#"<div class="code panel pdl conf-macro output-block" data-hasbody="true" data-macro-name="code"><div class="codeContent panelContent pdl"><pre class="syntaxhighlighter-pre" data-syntaxhighlighter-params="brush: bash; gutter: false; theme: Confluence" data-theme="Confluence">cargo build
 cargo test</pre></div></div>"#;
@@ -68,6 +75,8 @@ fn panels_become_blockquotes_that_name_their_type() {
         ("note", "note", "warning", "Note"),
         ("warning", "warning", "error", "Warning"),
         ("tip", "tip", "approve", "Tip"),
+        ("success", "success", "approve", "Success"),
+        ("error", "error", "error", "Error"),
     ] {
         let html = format!(
             r#"<div class="confluence-information-macro confluence-information-macro-{class} conf-macro output-block" data-hasbody="true" data-macro-name="{macro_name}"><span class="aui-icon aui-icon-small aui-iconfont-{icon} confluence-information-macro-icon"> </span><div class="confluence-information-macro-body"><p>Read this first.</p></div></div>"#
@@ -82,6 +91,44 @@ fn a_panel_with_several_paragraphs_quotes_every_line() {
     let html = r#"<p>Before</p><div class="confluence-information-macro confluence-information-macro-warning conf-macro output-block" data-macro-name="warning"><span class="aui-icon confluence-information-macro-icon"> </span><div class="confluence-information-macro-body"><p>Not in production.</p><p>Ask the team first.</p></div></div><p>After</p>"#;
 
     assert_eq!(md(html), "Before\n\n> **Warning:** Not in production.\n>\n> Ask the team first.\n\nAfter");
+}
+
+#[test]
+fn a_panel_starting_with_a_list_or_code_puts_the_label_on_its_own_line() {
+    // A label glued to "*   a" would turn the first list item into plain text.
+    let list = r#"<div class="confluence-information-macro" data-macro-name="note"><div class="confluence-information-macro-body"><ul><li>a</li><li>b</li></ul></div></div>"#;
+    let code = r#"<div class="confluence-information-macro" data-macro-name="warning"><div class="confluence-information-macro-body"><pre>rm -rf x</pre></div></div>"#;
+
+    assert_eq!(md(list), "> **Note:**\n>\n> *   a\n> *   b");
+    assert_eq!(md(code), "> **Warning:**\n>\n> ```\n> rm -rf x\n> ```");
+}
+
+#[test]
+fn an_empty_panel_is_its_label_alone() {
+    let html = r#"<div class="confluence-information-macro" data-macro-name="warning"><div class="confluence-information-macro-body"><p> </p></div></div>"#;
+
+    assert_eq!(md(html), "> **Warning:**");
+}
+
+#[test]
+fn a_panel_without_a_macro_name_is_recognised_by_its_class() {
+    let html = r#"<div class="confluence-information-macro confluence-information-macro-note"><div class="confluence-information-macro-body"><p>Careful.</p></div></div>"#;
+
+    assert_eq!(md(html), "> **Note:** Careful.");
+}
+
+#[test]
+fn an_unknown_panel_type_keeps_only_its_text() {
+    let html = r#"<div class="confluence-information-macro confluence-information-macro-custom" data-macro-name="custom"><div class="confluence-information-macro-body"><p>Plain.</p></div></div>"#;
+
+    assert_eq!(md(html), "Plain.");
+}
+
+#[test]
+fn a_panel_inside_a_list_item_stays_in_the_item() {
+    let html = r#"<ul><li>step<div class="confluence-information-macro" data-macro-name="tip"><div class="confluence-information-macro-body"><p>Faster.</p></div></div></li></ul>"#;
+
+    assert_eq!(md(html), "*   step\n\n    > **Tip:** Faster.");
 }
 
 #[test]
@@ -140,6 +187,20 @@ fn relative_wiki_links_become_absolute_with_the_site_url() {
         "[Other](https://example.atlassian.net/wiki/spaces/ENG/pages/2/Other), [ext](https://example.com/x), [anchor](#Doc-Sub)",
         "a trailing slash on the site URL is dropped"
     );
+}
+
+#[test]
+fn a_relative_link_with_a_space_becomes_absolute_too() {
+    let html = r#"<p><a href="/wiki/a b/c">x</a></p>"#;
+
+    assert_eq!(html_to_markdown(html, Some(SITE)).unwrap(), "[x](<https://example.atlassian.net/wiki/a b/c>)");
+}
+
+#[test]
+fn link_like_text_inside_code_is_not_rewritten() {
+    let html = r"<pre>see [a](/wiki/x)</pre>";
+
+    assert_eq!(html_to_markdown(html, Some(SITE)).unwrap(), "```\nsee [a](/wiki/x)\n```");
 }
 
 #[test]

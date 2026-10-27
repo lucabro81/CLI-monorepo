@@ -29,39 +29,67 @@ const CELL_PIPE: &str = "\u{E000}\u{E001}";
 /// `site_url` is the site's `https://<site>.atlassian.net` (the credentials'
 /// `site_url`); `None` leaves relative links as they are.
 pub fn html_to_markdown(html: &str, site_url: Option<&str>) -> Result<String, CliError> {
+    let site_url = site_url.map(|url| url.trim_end_matches('/').to_string());
     let markdown = HtmlToMarkdown::builder()
         .skip_tags(vec!["script", "style"])
         .add_handler(vec!["pre"], pre_handler)
         .add_handler(vec!["div"], panel_handler)
         .add_handler(vec!["img"], image_handler)
         .add_handler(vec!["td", "th"], cell_handler)
+        .add_handler(vec!["a"], move |handlers: &dyn Handlers, element: Element| {
+            link_handler(handlers, element, site_url.as_deref())
+        })
         .build()
         .convert(html)
         // html5ever reads from the in-memory string: its I/O error cannot happen.
-        .map_err(|e| CliError::Internal(format!("converting the page body to Markdown failed: {e}")))?
-        .replace(CELL_PIPE, "\\|");
-    Ok(match site_url {
-        Some(site_url) => markdown.replace("](/wiki/", &format!("]({}/wiki/", site_url.trim_end_matches('/'))),
-        None => markdown,
-    })
+        .map_err(|e| CliError::Internal(format!("converting the page body to Markdown failed: {e}")))?;
+    Ok(markdown.replace(CELL_PIPE, "\\|"))
 }
 
 /// Panel macros and the label their blockquote starts with.
 const PANELS: [(&str, &str); 6] =
     [("info", "Info"), ("note", "Note"), ("warning", "Warning"), ("tip", "Tip"), ("success", "Success"), ("error", "Error")];
 
+/// The older panel markup's `confluence-information-macro-<type>` class, for a
+/// panel `div` without `data-macro-name`.
+const PANEL_CLASSES: [(&str, &str); 4] = [
+    ("confluence-information-macro-information", "Info"),
+    ("confluence-information-macro-note", "Note"),
+    ("confluence-information-macro-warning", "Warning"),
+    ("confluence-information-macro-tip", "Tip"),
+];
+
+fn panel_label(element: &Element) -> Option<&'static str> {
+    if let Some(name) = attr(element, "data-macro-name") {
+        return PANELS.iter().find(|(macro_name, _)| *macro_name == name).map(|(_, label)| *label);
+    }
+    let classes = attr(element, "class")?;
+    PANEL_CLASSES
+        .iter()
+        .find(|(class, _)| classes.split_whitespace().any(|c| c == *class))
+        .map(|(_, label)| *label)
+}
+
 fn panel_handler(handlers: &dyn Handlers, element: Element) -> Option<HandlerResult> {
-    let label = attr(&element, "data-macro-name")
-        .and_then(|name| PANELS.iter().find(|(macro_name, _)| *macro_name == name))
-        .map(|(_, label)| *label);
-    let Some(label) = label else {
+    let Some(label) = panel_label(&element) else {
         return handlers.fallback(element);
     };
     // The panel's text, without its icon (an empty <span>, outside the body div).
     let body = find_child_with_class(element.node, "confluence-information-macro-body")
         .unwrap_or_else(|| Rc::clone(element.node));
     let content = handlers.walk_children(&body).content;
-    let quoted: Vec<String> = format!("**{label}:** {}", content.trim())
+    let content = content.trim();
+    // A label glued to a list item or a fence would break that block.
+    let starts_a_block = content.starts_with(['*', '-', '+', '`', '~', '#', '>', '|'])
+        || content.split_once(". ").is_some_and(|(number, _)| !number.is_empty() && number.chars().all(|c| c.is_ascii_digit()));
+    let text = if content.is_empty() {
+        format!("**{label}:**")
+    } else if starts_a_block {
+        format!("**{label}:**\n\n{content}")
+    } else {
+        format!("**{label}:** {content}")
+    };
+    let quoted: Vec<String> = text
         .lines()
         .map(|line| if line.is_empty() { ">".to_string() } else { format!("> {line}") })
         .collect();
@@ -77,6 +105,20 @@ fn image_handler(_handlers: &dyn Handlers, element: Element) -> Option<HandlerRe
         None => "[image]".to_string(),
     }
     .into())
+}
+
+/// A link to `/wiki/...` made absolute with `site_url`; other links, or no
+/// site URL, keep htmd's handling. Done on the element, not on the output
+/// text, so code blocks are never touched.
+fn link_handler(handlers: &dyn Handlers, element: Element, site_url: Option<&str>) -> Option<HandlerResult> {
+    let absolute = match (site_url, attr(&element, "href")) {
+        (Some(site_url), Some(href)) if href.starts_with("/wiki/") => format!("{site_url}{href}"),
+        _ => return handlers.fallback(element),
+    };
+    let text = handlers.walk_children(element.node).content;
+    // CommonMark: a destination with spaces or parentheses goes in <...>.
+    let destination = if absolute.contains([' ', '(', ')']) { format!("<{absolute}>") } else { absolute };
+    Some(format!("[{}]({destination})", text.trim()).into())
 }
 
 fn cell_handler(handlers: &dyn Handlers, element: Element) -> Option<HandlerResult> {
