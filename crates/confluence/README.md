@@ -144,10 +144,10 @@ cargo run -p confluence -- auth whoami --user jane.doe
 
 ### `confluence page get <ID>`
 
-Fetches a single page by its numeric ID, including its body, and prints the API response as JSON.
+Fetches a single page by its numeric ID, including its body, and prints the API response as JSON, plus `link`: the page's absolute `https://<site>.atlassian.net/wiki<_links.webui>`, built from the site URL saved at login (absent if the login didn't record one, or if the response has no `_links.webui`), in both body formats.
 
 ```sh
-cargo run -p confluence -- page get 123456 --select title,body.markdown.value
+cargo run -p confluence -- page get 123456 --select title,body.markdown.value,link
 cargo run -p confluence -- page get 123456 --body-format storage --select title,body.storage.value,version.number
 ```
 
