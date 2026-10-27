@@ -3,7 +3,7 @@
 use serde_json::json;
 
 use super::{
-    get_page, page_ancestors, page_children, markdown_body, parse_body_source, search_pages, strip_highlight, update_page, validate_update_target,
+    get_page, page_ancestors, page_children, page_comments, markdown_body, parse_body_source, search_pages, strip_highlight, update_page, validate_update_target,
     BodySource,
 };
 use crate::auth::Credentials;
@@ -453,4 +453,75 @@ fn search_pages_adds_no_link_without_a_site_url() {
 
     server.join().unwrap();
     assert_eq!(value, response);
+}
+
+// --- page comments (issue #258) ---
+
+#[test]
+fn page_comments_as_markdown_reads_storage_and_replaces_each_body() {
+    let response = json!({
+        "results": [
+            {
+                "id": "c1",
+                "status": "current",
+                "pageId": "123",
+                "version": {"number": 1, "authorId": "acc-1", "createdAt": "2026-10-01T10:00:00.000Z"},
+                "body": {"storage": {"representation": "storage", "value": "<p>Use <code>v2</code>.</p>"}}
+            },
+            {"id": "c2", "body": {}}
+        ],
+        "_links": {"next": "/wiki/api/v2/pages/123/footer-comments?cursor=xyz"}
+    });
+    let (url, server) = mock_server(&[("200 OK", &response.to_string())]);
+
+    let value = page_comments(&client(&url), "123", 25, None, BodyFormat::Markdown).unwrap();
+
+    let requests = server.join().unwrap();
+    assert_eq!(
+        request_line(&requests[0]),
+        "GET /wiki/api/v2/pages/123/footer-comments?body-format=storage&limit=25 HTTP/1.1"
+    );
+    let mut expected = response;
+    expected["results"][0]["body"] = json!({"markdown": {"representation": "markdown", "value": "Use `v2`."}});
+    expected["results"][1]["body"] = json!({"markdown": {"representation": "markdown", "value": ""}});
+    assert_eq!(value, expected);
+}
+
+#[test]
+fn page_comments_as_storage_prints_the_response_unchanged_and_passes_the_cursor() {
+    let response = json!({"results": [{"id": "c1", "body": {"storage": {"value": "<p>x</p>"}}}]});
+    let (url, server) = mock_server(&[("200 OK", &response.to_string())]);
+
+    let value = page_comments(&client(&url), "123", 5, Some("xyz="), BodyFormat::Storage).unwrap();
+
+    let requests = server.join().unwrap();
+    assert_eq!(
+        request_line(&requests[0]),
+        "GET /wiki/api/v2/pages/123/footer-comments?body-format=storage&limit=5&cursor=xyz%3D HTTP/1.1"
+    );
+    assert_eq!(value, response);
+}
+
+#[test]
+fn page_comments_on_a_missing_page_is_page_not_found() {
+    let (url, server) = mock_server(&[("404 Not Found", r#"{"errors":[]}"#)]);
+
+    let error = page_comments(&client(&url), "999", 25, None, BodyFormat::Markdown).unwrap_err();
+
+    server.join().unwrap();
+    assert!(matches!(&error, CliError::PageNotFound { id } if id == "999"), "{error:?}");
+}
+
+#[test]
+fn page_comments_refused_403_names_the_comment_scope_and_how_to_get_it() {
+    let (url, server) = mock_server(&[("403 Forbidden", r#"{"message":"scope does not match"}"#)]);
+
+    let error = page_comments(&client(&url), "123", 25, None, BodyFormat::Markdown).unwrap_err();
+
+    server.join().unwrap();
+    assert!(matches!(&error, CliError::CommentsForbidden { body } if body.contains("scope does not match")), "{error:?}");
+    let message = error.to_string();
+    for needle in ["read:comment:confluence", "confluence auth login", "confluence auth login --user <USER_ID>"] {
+        assert!(message.contains(needle), "{needle}: {message}");
+    }
 }

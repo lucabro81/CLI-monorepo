@@ -130,6 +130,23 @@ impl ConfluenceClient {
         self.get_json(&format!("{}?{query}", endpoints::page_direct_children_path(id)))
     }
 
+    /// Lists a page's footer comments with their storage bodies (v2 offers only
+    /// `storage` and `atlas_doc_format` here, no `export_view`), cursor-paginated.
+    pub fn list_footer_comments(
+        &self,
+        id: &str,
+        limit: u32,
+        cursor: Option<&str>,
+    ) -> Result<serde_json::Value, ClientError> {
+        let mut params = vec![("body-format".to_string(), "storage".to_string()), ("limit".to_string(), limit.to_string())];
+        if let Some(cursor) = cursor {
+            params.push(("cursor".to_string(), cursor.to_string()));
+        }
+        let query = serde_urlencoded::to_string(&params)
+            .map_err(|e| ClientError::Request(format!("failed to encode query params: {e}")))?;
+        self.get_json(&format!("{}?{query}", endpoints::page_footer_comments_path(id)))
+    }
+
     /// Lists a page's ancestors (top-down per the v2 spec, as returned), and returns the raw JSON response
     /// (`{"results": [{"id", "type"}]}`). Asks for 250 (v2's maximum), so a
     /// page's whole path comes in one response.

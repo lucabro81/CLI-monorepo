@@ -42,6 +42,11 @@ pub fn page_direct_children_path(id: &str) -> String {
     format!("{PATH_PAGES}/{id}/direct-children")
 }
 
+/// `/wiki/api/v2/pages/<id>/footer-comments`
+pub fn page_footer_comments_path(id: &str) -> String {
+    format!("{PATH_PAGES}/{id}/footer-comments")
+}
+
 /// `/wiki/api/v2/pages/<id>/ancestors`
 pub fn page_ancestors_path(id: &str) -> String {
     format!("{PATH_PAGES}/{id}/ancestors")

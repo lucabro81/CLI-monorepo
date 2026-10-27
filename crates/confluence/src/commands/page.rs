@@ -30,7 +30,7 @@ use crate::client::{ClientError, ConfluenceClient};
 use crate::auth::Identity;
 use crate::context::{authenticated_client, client_error_to_cli, print_json};
 use crate::error::CliError;
-use crate::markdown::html_to_markdown;
+use crate::markdown::{html_to_markdown, storage_to_markdown};
 
 pub fn run(command: PageCommand, select: cli_fields::Select<'_>, identity: &Identity) -> Result<(), CliError> {
     match command {
@@ -59,6 +59,10 @@ pub fn run(command: PageCommand, select: cli_fields::Select<'_>, identity: &Iden
         PageCommand::Children { id, limit, cursor } => {
             print_json(&page_children(&authenticated_client(identity)?, &id, limit, cursor.as_deref())?, select)
         }
+        PageCommand::Comments { id, limit, cursor, body_format } => print_json(
+            &page_comments(&authenticated_client(identity)?, &id, limit, cursor.as_deref(), body_format)?,
+            select,
+        ),
         PageCommand::Ancestors { id } => print_json(&page_ancestors(&authenticated_client(identity)?, &id)?, select),
         PageCommand::Delete { id, confirm, purge } => run_delete(&id, confirm, purge, select, identity),
     }
@@ -97,6 +101,35 @@ fn page_ancestors(client: &ConfluenceClient, id: &str) -> Result<Value, CliError
             if let (Some(title), Some(fields)) = (page.get("title").cloned(), ancestor.as_object_mut()) {
                 fields.insert("title".to_string(), title);
             }
+        }
+    }
+    Ok(value)
+}
+
+/// `page comments`: footer comments read as storage; with `Markdown`, each
+/// `body.storage` is replaced by `body.markdown` (converted with
+/// [`storage_to_markdown`]), as `page get` does with `export_view`. A 404 is
+/// `PageNotFound`, a 403 `CommentsForbidden` (likely the comment scope).
+fn page_comments(
+    client: &ConfluenceClient,
+    id: &str,
+    limit: u32,
+    cursor: Option<&str>,
+    body_format: BodyFormat,
+) -> Result<Value, CliError> {
+    let mut value = client.list_footer_comments(id, limit, cursor).map_err(|e| match e {
+        ClientError::Status { status: 403, body } => CliError::CommentsForbidden { body },
+        other => page_not_found_or(id)(other),
+    })?;
+    if body_format == BodyFormat::Storage {
+        return Ok(value);
+    }
+    if let Some(comments) = value.get_mut("results").and_then(Value::as_array_mut) {
+        for comment in comments {
+            let Some(body) = comment.get_mut("body").and_then(Value::as_object_mut) else { continue };
+            let storage = body.remove("storage").and_then(|storage| storage["value"].as_str().map(str::to_string));
+            let markdown = storage_to_markdown(&storage.unwrap_or_default(), client.site_url())?;
+            body.insert("markdown".to_string(), json!({"representation": "markdown", "value": markdown}));
         }
     }
     Ok(value)

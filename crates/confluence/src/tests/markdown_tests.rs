@@ -2,7 +2,7 @@
 //! Fixtures are shaped like Confluence's `export_view` body (issue #254):
 //! macros already rendered to HTML, with Confluence's own classes and wrappers.
 
-use super::html_to_markdown;
+use super::{html_to_markdown, storage_to_markdown};
 
 fn md(html: &str) -> String {
     html_to_markdown(html, None).unwrap()
@@ -221,4 +221,43 @@ fn script_and_style_content_is_dropped() {
 fn an_empty_or_blank_body_is_an_empty_string() {
     assert_eq!(md(""), "");
     assert_eq!(md("<p> </p>"), "");
+}
+
+// --- storage format (comment bodies, issue #258) ---
+
+fn storage(xhtml: &str) -> String {
+    storage_to_markdown(xhtml, None).unwrap()
+}
+
+#[test]
+fn a_plain_storage_body_converts_like_html() {
+    assert_eq!(storage("<p>Looks <strong>good</strong>, ship it.</p>"), "Looks **good**, ship it.");
+}
+
+#[test]
+fn a_code_macro_body_in_cdata_becomes_a_fenced_block_without_its_parameters() {
+    let xhtml = r#"<ac:structured-macro ac:name="code" ac:schema-version="1"><ac:parameter ac:name="language">bash</ac:parameter><ac:plain-text-body><![CDATA[echo "a<b" && ls]]></ac:plain-text-body></ac:structured-macro>"#;
+
+    assert_eq!(storage(xhtml), "```\necho \"a<b\" && ls\n```");
+}
+
+#[test]
+fn a_page_link_keeps_its_cdata_text() {
+    let xhtml = r#"<p>See <ac:link><ri:page ri:content-title="Runbook"/><ac:plain-text-link-body><![CDATA[the runbook]]></ac:plain-text-link-body></ac:link>.</p>"#;
+
+    assert_eq!(storage(xhtml), "See the runbook.");
+}
+
+#[test]
+fn a_macro_without_text_is_dropped() {
+    let xhtml = r#"<p>Done <ac:emoticon ac:name="tick"/></p><ac:structured-macro ac:name="toc"><ac:parameter ac:name="maxLevel">2</ac:parameter></ac:structured-macro>"#;
+
+    assert_eq!(storage(xhtml), "Done");
+}
+
+#[test]
+fn storage_links_also_become_absolute_with_the_site_url() {
+    let xhtml = r#"<p><a href="/wiki/spaces/ENG/pages/2">doc</a></p>"#;
+
+    assert_eq!(storage_to_markdown(xhtml, Some(SITE)).unwrap(), "[doc](https://example.atlassian.net/wiki/spaces/ENG/pages/2)");
 }
