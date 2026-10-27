@@ -273,6 +273,31 @@ pub enum PageCommand {
         #[arg(long, default_value = "0")]
         start: u32,
     },
+    /// List a page's direct children (pages, folders, whiteboards, ...) and print them as JSON
+    ///
+    /// Each child has id, title, type (page, folder, whiteboard, database,
+    /// embed), status, spaceId and childPosition (its order under the parent).
+    #[command(after_help = "Examples:\n  confluence page children 123456 --select results.id,results.title,results.type\n  confluence page children 123456 --limit 50 --select results.id,results.title,_links.next\n  confluence page children 123456 --cursor <cursor-from-previous-response> --select results.id,results.title\n\nPagination: the response's _links.next field (if present) contains a cursor\nquery parameter — pass its value to --cursor to fetch the next page.\nA space's root page is space get's homepageId.")]
+    Children {
+        /// Page ID
+        id: String,
+        /// Maximum number of children to return (default: 25)
+        #[arg(long, default_value = "25")]
+        limit: u32,
+        /// Cursor token for the next page, from the _links.next field of a previous response
+        #[arg(long)]
+        cursor: Option<String>,
+    },
+    /// List a page's ancestors, from the top of the space down to its parent, and print them as JSON
+    ///
+    /// Each ancestor has id and type; page ancestors also have title (looked up
+    /// by this CLI, one request per page ancestor). A folder ancestor has id and
+    /// type only. A top-level page has an empty results list.
+    #[command(after_help = "Examples:\n  confluence page ancestors 123456 --select results.id,results.title,results.type\n  confluence page ancestors 123456 --select results.title")]
+    Ancestors {
+        /// Page ID
+        id: String,
+    },
     /// Delete a page — requires --confirm
     ///
     /// By default moves the page to the trash, where it can be restored —

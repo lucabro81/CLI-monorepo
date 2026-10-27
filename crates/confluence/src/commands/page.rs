@@ -56,8 +56,45 @@ pub fn run(command: PageCommand, select: cli_fields::Select<'_>, identity: &Iden
         PageCommand::Search { cql, limit, start } => {
             print_json(&search_pages(&authenticated_client(identity)?, &cql, limit, start)?, select)
         }
+        PageCommand::Children { id, limit, cursor } => {
+            print_json(&page_children(&authenticated_client(identity)?, &id, limit, cursor.as_deref())?, select)
+        }
+        PageCommand::Ancestors { id } => print_json(&page_ancestors(&authenticated_client(identity)?, &id)?, select),
         PageCommand::Delete { id, confirm, purge } => run_delete(&id, confirm, purge, select, identity),
     }
+}
+
+/// A 404 on the page the caller named: it doesn't exist or this identity can't see it.
+fn page_not_found_or(id: &str) -> impl Fn(ClientError) -> CliError + '_ {
+    move |e| match e {
+        ClientError::Status { status: 404, .. } => CliError::PageNotFound { id: id.to_string() },
+        other => client_error_to_cli(other),
+    }
+}
+
+/// `page children`: v2's direct children, printed as Confluence returns them.
+fn page_children(client: &ConfluenceClient, id: &str, limit: u32, cursor: Option<&str>) -> Result<Value, CliError> {
+    client.list_page_children(id, limit, cursor).map_err(page_not_found_or(id))
+}
+
+/// `page ancestors`: v2 returns only `id` and `type`; each `page` ancestor
+/// gets its `title` from one more request, so the path reads without further
+/// calls. Other types (folders) are left as they are.
+fn page_ancestors(client: &ConfluenceClient, id: &str) -> Result<Value, CliError> {
+    let mut value = client.list_page_ancestors(id).map_err(page_not_found_or(id))?;
+    if let Some(ancestors) = value.get_mut("results").and_then(Value::as_array_mut) {
+        for ancestor in ancestors {
+            if ancestor.get("type").and_then(Value::as_str) != Some("page") {
+                continue;
+            }
+            let Some(ancestor_id) = ancestor.get("id").and_then(Value::as_str) else { continue };
+            let page = client.get_page_without_body(ancestor_id).map_err(client_error_to_cli)?;
+            if let (Some(title), Some(fields)) = (page.get("title").cloned(), ancestor.as_object_mut()) {
+                fields.insert("title".to_string(), title);
+            }
+        }
+    }
+    Ok(value)
 }
 
 /// `page search`: a 400 is the CQL's fault, reported as such; each result's

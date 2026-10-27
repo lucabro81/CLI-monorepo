@@ -37,6 +37,16 @@ pub fn page_path(id: &str) -> String {
     format!("{PATH_PAGES}/{id}")
 }
 
+/// `/wiki/api/v2/pages/<id>/direct-children` (`/children` is deprecated in v2)
+pub fn page_direct_children_path(id: &str) -> String {
+    format!("{PATH_PAGES}/{id}/direct-children")
+}
+
+/// `/wiki/api/v2/pages/<id>/ancestors`
+pub fn page_ancestors_path(id: &str) -> String {
+    format!("{PATH_PAGES}/{id}/ancestors")
+}
+
 /// `/wiki/rest/api/template/<id>`
 pub fn template_path(id: &str) -> String {
     format!("{PATH_TEMPLATE}/{id}")

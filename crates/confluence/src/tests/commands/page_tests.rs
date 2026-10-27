@@ -3,7 +3,7 @@
 use serde_json::json;
 
 use super::{
-    get_page, markdown_body, parse_body_source, search_pages, strip_highlight, update_page, validate_update_target,
+    get_page, page_ancestors, page_children, markdown_body, parse_body_source, search_pages, strip_highlight, update_page, validate_update_target,
     BodySource,
 };
 use crate::auth::Credentials;
@@ -270,4 +270,121 @@ fn strip_highlight_removes_every_marker_and_keeps_the_text() {
     assert_eq!(strip_highlight("@@@hl@@@a@@@endhl@@@ b @@@hl@@@c@@@endhl@@@"), "a b c");
     // An unclosed marker (excerpt cut at its length limit) still leaves clean text.
     assert_eq!(strip_highlight("cut @@@hl@@@wor"), "cut wor");
+}
+
+// --- page children / page ancestors (issue #256) ---
+
+#[test]
+fn page_children_asks_direct_children_and_prints_the_response() {
+    let response = json!({
+        "results": [
+            {"id": "21", "title": "Child", "type": "page", "status": "current", "spaceId": "9", "childPosition": 0},
+            {"id": "22", "title": "Folder", "type": "folder", "status": "current", "spaceId": "9", "childPosition": 1}
+        ],
+        "_links": {"next": "/wiki/api/v2/pages/123/direct-children?cursor=xyz"}
+    });
+    let (url, server) = mock_server(&[("200 OK", &response.to_string())]);
+
+    let value = page_children(&client(&url), "123", 25, None).unwrap();
+
+    let requests = server.join().unwrap();
+    assert_eq!(request_line(&requests[0]), "GET /wiki/api/v2/pages/123/direct-children?limit=25 HTTP/1.1");
+    assert_eq!(value, response);
+}
+
+#[test]
+fn page_children_passes_the_cursor() {
+    let (url, server) = mock_server(&[("200 OK", r#"{"results":[]}"#)]);
+
+    page_children(&client(&url), "123", 10, Some("xyz=")).unwrap();
+
+    let requests = server.join().unwrap();
+    assert_eq!(
+        request_line(&requests[0]),
+        "GET /wiki/api/v2/pages/123/direct-children?limit=10&cursor=xyz%3D HTTP/1.1"
+    );
+}
+
+#[test]
+fn a_404_on_children_or_ancestors_is_page_not_found() {
+    for ancestors in [false, true] {
+        let (url, server) = mock_server(&[("404 Not Found", r#"{"errors":[{"status":404}]}"#)]);
+
+        let error = if ancestors {
+            page_ancestors(&client(&url), "999").unwrap_err()
+        } else {
+            page_children(&client(&url), "999", 25, None).unwrap_err()
+        };
+
+        server.join().unwrap();
+        assert!(matches!(&error, CliError::PageNotFound { id } if id == "999"), "{error:?}");
+        assert_eq!(
+            error.to_string(),
+            "no page with id \"999\" that this identity can see (Confluence answered 404). Check the id, \
+            e.g. with: confluence page search --cql \"type=page AND title~\\\"<words>\\\"\" \
+            --select results.content.id,results.content.title"
+        );
+    }
+}
+
+#[test]
+fn page_ancestors_adds_each_page_ancestors_title_and_leaves_folders_alone() {
+    let ancestors = json!({
+        "results": [
+            {"id": "1", "type": "page"},
+            {"id": "5", "type": "folder"},
+            {"id": "2", "type": "page"}
+        ]
+    });
+    let (url, server) = mock_server(&[
+        ("200 OK", &ancestors.to_string()),
+        ("200 OK", r#"{"id":"1","title":"Home","status":"current"}"#),
+        ("200 OK", r#"{"id":"2","title":"Guides","status":"current"}"#),
+    ]);
+
+    let value = page_ancestors(&client(&url), "123").unwrap();
+
+    let requests = server.join().unwrap();
+    let lines: Vec<&str> = requests.iter().map(|r| request_line(r)).collect();
+    assert_eq!(
+        lines,
+        [
+            "GET /wiki/api/v2/pages/123/ancestors?limit=250 HTTP/1.1",
+            "GET /wiki/api/v2/pages/1 HTTP/1.1",
+            "GET /wiki/api/v2/pages/2 HTTP/1.1",
+        ]
+    );
+    assert_eq!(
+        value,
+        json!({
+            "results": [
+                {"id": "1", "type": "page", "title": "Home"},
+                {"id": "5", "type": "folder"},
+                {"id": "2", "type": "page", "title": "Guides"}
+            ]
+        })
+    );
+}
+
+#[test]
+fn page_ancestors_of_a_top_level_page_is_an_empty_list() {
+    let (url, server) = mock_server(&[("200 OK", r#"{"results":[]}"#)]);
+
+    let value = page_ancestors(&client(&url), "123").unwrap();
+
+    assert_eq!(server.join().unwrap().len(), 1);
+    assert_eq!(value, json!({"results": []}));
+}
+
+#[test]
+fn a_failed_ancestor_title_lookup_is_reported_not_skipped() {
+    let (url, server) = mock_server(&[
+        ("200 OK", r#"{"results":[{"id":"1","type":"page"}]}"#),
+        ("403 Forbidden", r#"{"message":"no"}"#),
+    ]);
+
+    let error = page_ancestors(&client(&url), "123").unwrap_err();
+
+    server.join().unwrap();
+    assert!(matches!(error, CliError::ApiError { status: 403, .. }), "{error:?}");
 }

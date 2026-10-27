@@ -24,7 +24,10 @@ const CLI_DIR: &str = "confluence-cli";
 /// classic scopes. Not yet live-verified against a real 3LO app — see this
 /// crate's CLAUDE.md "OAuth / auth design" section.
 pub const SCOPES: &str =
-    "read:page:confluence write:page:confluence read:space:confluence read:confluence-user search:confluence offline_access";
+    "read:page:confluence write:page:confluence read:space:confluence \
+     read:hierarchical-content:confluence read:content.metadata:confluence \
+     read:confluence-user search:confluence read:confluence-content.summary write:confluence-content \
+     offline_access";
 
 /// Path to the app credentials file: `<config_dir>/confluence-cli/app.json`.
 pub fn app_config_path(config_dir: &Path) -> PathBuf {

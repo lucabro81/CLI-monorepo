@@ -899,3 +899,49 @@ fn rejects_space_get_without_a_key() {
 
     assert_eq!(error.kind(), clap::error::ErrorKind::MissingRequiredArgument);
 }
+
+// --- page children / page ancestors (issue #256) ---
+
+#[test]
+fn parses_page_children_with_defaults() {
+    let cli = Cli::try_parse_from(["confluence", "page", "children", "123"]).expect("should parse");
+
+    match cli.command {
+        Command::Page { command: PageCommand::Children { id, limit, cursor } } => {
+            assert_eq!((id.as_str(), limit, cursor), ("123", 25, None));
+        }
+        other => panic!("expected page children, got {other:?}"),
+    }
+}
+
+#[test]
+fn parses_page_children_with_limit_and_cursor() {
+    let cli = Cli::try_parse_from(["confluence", "page", "children", "123", "--limit", "10", "--cursor", "abc"])
+        .expect("should parse");
+
+    match cli.command {
+        Command::Page { command: PageCommand::Children { limit, cursor, .. } } => {
+            assert_eq!((limit, cursor.as_deref()), (10, Some("abc")));
+        }
+        other => panic!("expected page children, got {other:?}"),
+    }
+}
+
+#[test]
+fn parses_page_ancestors() {
+    let cli = Cli::try_parse_from(["confluence", "page", "ancestors", "123"]).expect("should parse");
+
+    match cli.command {
+        Command::Page { command: PageCommand::Ancestors { id } } => assert_eq!(id, "123"),
+        other => panic!("expected page ancestors, got {other:?}"),
+    }
+}
+
+#[test]
+fn page_children_and_ancestors_need_an_id() {
+    for command in ["children", "ancestors"] {
+        let error = Cli::try_parse_from(["confluence", "page", command]).unwrap_err();
+
+        assert_eq!(error.kind(), clap::error::ErrorKind::MissingRequiredArgument, "{command}");
+    }
+}
