@@ -4,6 +4,46 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [3.0.0](https://github.com/lucabro81/CLI-monorepo/compare/confluence-v2.3.2...confluence-v3.0.0) - 2026-10-27
+
+### Added
+- *(confluence)* html_to_markdown converts rendered page HTML to Markdown (#254)
+- *(confluence)* page get prints the body as Markdown by default (#254)
+- *(confluence)* page search uses /wiki/rest/api/search with clean excerpts (#255)
+- *(confluence)* space get <KEY> (#257)
+- *(confluence)* page children and page ancestors (#256)
+- *(confluence)* Markdown panels as typed blockquotes, images as alt text, \| in cells, absolute links; search excerpts unescaped with a link (#261)
+- *(confluence)* page comments, footer comments as Markdown from storage (#258)
+
+### Fixed
+- *(confluence)* strip highlight markers from search result titles too (#255)
+- *(confluence)* page ancestors keeps an unreadable ancestor without its title (#256)
+- *(confluence)* panel label before a block, links rewritten on the element, panel class fallback (#261)
+
+### Other
+- *(confluence)* page get --body-format in README and CLAUDE.md (#254)
+- *(confluence)* pin markdown_body without an export_view string; BodyFormat before mod tests (#254)
+- *(confluence)* markdown_body empty case and markup5ever_rcdom in CLAUDE.md (#254)
+- *(confluence)* warning panel fixture alongside info (#254)
+- Merge pull request #259 from lucabro81/issue254 ([#259](https://github.com/lucabro81/CLI-monorepo/pull/259))
+- *(confluence)* collapse the excerpt rewrite in search_pages (#255)
+- *(confluence)* page search output, InvalidCql and unverified points (#255)
+- Merge pull request #260 from lucabro81/issue255 ([#260](https://github.com/lucabro81/CLI-monorepo/pull/260))
+- *(confluence)* space get in README and CLAUDE.md (#257)
+- *(confluence)* space get --select wording and the exempt-command lists (#257)
+- Merge pull request #262 from lucabro81/issue257 ([#262](https://github.com/lucabro81/CLI-monorepo/pull/262))
+- *(confluence)* page children/ancestors and the #256 scopes (#256)
+- *(confluence)* --select in every example that needs it, template delete exempt, ancestors scopes (#256)
+- *(confluence)* which SCOPES are verified, ancestors order from the spec (#256)
+- *(confluence)* only a 404 ancestor lookup is skipped (#256)
+- *(confluence)* page.rs module doc, page_tests coverage, verified scopes, ancestors cap, auth login exempt (#256)
+- Merge pull request #264 from lucabro81/issue256 ([#264](https://github.com/lucabro81/CLI-monorepo/pull/264))
+- *(confluence)* #261 conversion, search link and unescaped excerpts (#261)
+- Merge pull request #266 from lucabro81/issue261 ([#266](https://github.com/lucabro81/CLI-monorepo/pull/266))
+- *(confluence)* page comments and read:comment:confluence (#258)
+- *(confluence)* CDATA and comment body edge cases; docs fixes from review (#258)
+- *(confluence)* drop needless raw string hashes (#258)
+- Merge pull request #268 from lucabro81/issue258 ([#268](https://github.com/lucabro81/CLI-monorepo/pull/268))
 ## [2.3.2](https://github.com/lucabro81/CLI-monorepo/compare/confluence-v2.3.1...confluence-v2.3.2) - 2026-10-09
 
 ### Fixed
