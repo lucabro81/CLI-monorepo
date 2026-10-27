@@ -18,6 +18,7 @@ CLI for Confluence Cloud, designed to be driven by an LLM agent (output is JSON,
   - [`confluence page search --cql <QUERY>`](#confluence-page-search---cql-query)
   - [`confluence page children <ID>`](#confluence-page-children-id)
   - [`confluence page ancestors <ID>`](#confluence-page-ancestors-id)
+  - [`confluence page comments <ID>`](#confluence-page-comments-id)
   - [`confluence page delete <ID>`](#confluence-page-delete-id)
   - [`confluence space get <KEY>`](#confluence-space-get-key)
   - [`confluence space list`](#confluence-space-list)
@@ -52,7 +53,7 @@ Each `init`/`auth login` touches only its own section and file; `confluence auth
   cargo run -p confluence -- init --client-id <ID> --client-secret <SECRET>
   ```
 
-- **People (`--user <USER_ID>`)**: register one OAuth 2.0 app for everybody at developer.atlassian.com/console/myapps, **Resource-level** access, callback URL `http://localhost:8080/callback`, Confluence API scopes `read:confluence-user`, `search:confluence`, `read:confluence-content.summary` and `write:confluence-content` under Classic scopes and `read:page:confluence`, `write:page:confluence`, `read:space:confluence`, `read:hierarchical-content:confluence`, `read:content.metadata:confluence` under Granular scopes (`offline_access` is requested by the CLI and needs no setting). Then, with one browser consent:
+- **People (`--user <USER_ID>`)**: register one OAuth 2.0 app for everybody at developer.atlassian.com/console/myapps, **Resource-level** access, callback URL `http://localhost:8080/callback`, Confluence API scopes `read:confluence-user`, `search:confluence`, `read:confluence-content.summary` and `write:confluence-content` under Classic scopes and `read:page:confluence`, `write:page:confluence`, `read:space:confluence`, `read:hierarchical-content:confluence`, `read:content.metadata:confluence`, `read:comment:confluence` under Granular scopes (`offline_access` is requested by the CLI and needs no setting). Then, with one browser consent:
 
   ```sh
   cargo run -p confluence -- init --user jane.doe --client-id <ID> --client-secret <SECRET>
@@ -211,6 +212,19 @@ cargo run -p confluence -- page ancestors 123456 --select results.id,results.tit
 Both commands report an unknown page (or one this identity can't see) with an error pointing at `page search`.
 
 **New scopes (#256).** `page children` needs `read:hierarchical-content:confluence`, `page ancestors` needs `read:content.metadata:confluence`, plus `read:page:confluence` (already in `SCOPES`) for its ancestors' titles (all granular); the `template` commands' classic scopes `read:confluence-content.summary` and `write:confluence-content` were added to `SCOPES` at the same time. A login made before them gets a 403 on those commands: for the Service Account, add the scopes to its credential in admin.atlassian.com, then run `confluence auth login`; for people, add them to the 3LO app in the developer console, then each person runs `confluence auth login --user <USER_ID>` again to consent.
+
+### `confluence page comments <ID>`
+
+Lists a page's footer comments (inline comments are not listed), cursor-paginated like `page children`. Each comment has `id`, `status`, `pageId`, `version` (`number`, `authorId`, `createdAt`) and its body: as Markdown in `body.markdown.value` by default, or the storage XHTML in `body.storage.value` with `--body-format storage`. Confluence returns comment bodies only as storage, so the Markdown is converted from it, with the same choices as `page get`; macros keep only their text, and a code macro becomes a fenced block. An unknown page gives the same error as `page children`. `--select` is required.
+
+```sh
+cargo run -p confluence -- page comments 123456 --select results.id,results.version.authorId,results.version.createdAt,results.body.markdown.value
+cargo run -p confluence -- page comments 123456 --body-format storage --select results.id,results.body.storage.value
+```
+
+**Flags:** `--limit <N>` (default 25), `--cursor <CURSOR>` (from the previous response's `_links.next`), `--body-format <markdown|storage>` (default `markdown`).
+
+**New scope (#258):** `read:comment:confluence` (granular). A login made before it gets a 403, reported with the steps to fix it: for the Service Account, add the scope to its credential in admin.atlassian.com, then run `confluence auth login`; for people, add it to the 3LO app, then each person runs `confluence auth login --user <USER_ID>` again.
 
 ### `confluence page delete <ID>`
 
