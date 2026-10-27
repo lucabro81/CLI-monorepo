@@ -296,10 +296,10 @@ pub enum PageCommand {
     /// The order is Confluence's own (documented as root first); the CLI does not reorder.
     /// At most 250 ancestors (v2's maximum, one request).
     /// Each ancestor has id and type; page ancestors also have title (looked up
-    /// by this CLI, one request per page ancestor). A folder ancestor, or a page
-    /// ancestor whose lookup answers 404 (restricted or deleted), has id and
-    /// type only; any other failed lookup (e.g. a 403) fails the command. A top-level page has an empty results list.
-    /// Page ancestors also have link (their absolute URL), when the login recorded the site URL.
+    /// by this CLI, one request per page ancestor). A folder ancestor has id and
+    /// type only; a page ancestor whose lookup answers 404 (restricted or deleted)
+    /// has no title; any other failed lookup (e.g. a 403) fails the command. A top-level page has an empty results list.
+    /// Page ancestors also have link (their absolute URL, 404 or not), when the login recorded the site URL.
     #[command(after_help = "Examples:\n  confluence page ancestors 123456 --select results.id,results.title,results.type,results.link\n  confluence page ancestors 123456 --select results.title")]
     Ancestors {
         /// Page ID

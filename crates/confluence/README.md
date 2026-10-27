@@ -192,7 +192,7 @@ cargo run -p confluence -- page search --cql "type=page AND space=ENG" --limit 1
 
 ### `confluence page children <ID>`
 
-Lists a page's direct children: pages, folders, whiteboards, databases and embeds. Each child has `id`, `title`, `type`, `status`, `spaceId` and `childPosition` (its order under the parent); a page child also has `link`, its absolute `https://<site>.atlassian.net/wiki/pages/viewpage.action?pageId=<id>` (absent if the login didn't record the site URL). Cursor-paginated like `space list`; a space's root page is `space get`'s `homepageId`. `--select` is required.
+Lists a page's direct children: pages, folders, whiteboards, databases and embeds. Each child has `id`, `title`, `type`, `status`, `spaceId` and `childPosition` (its order under the parent); a page child also has `link`, its absolute `https://<site>.atlassian.net/wiki/pages/viewpage.action?pageId=<id>` (absent if the login didn't record the site URL). Cursor-paginated like `space list`: a response with a next page has a top-level `nextCursor`, the value for `--cursor`; a space's root page is `space get`'s `homepageId`. `--select` is required.
 
 ```sh
 cargo run -p confluence -- page children 123456 --select results.id,results.title,results.type,results.link
@@ -203,7 +203,7 @@ cargo run -p confluence -- page children 123456 --limit 50 --cursor <nextCursor-
 
 ### `confluence page ancestors <ID>`
 
-Lists up to 250 of a page's ancestors (v2's maximum, one request; deeper paths are cut) in the order Confluence returns them, documented as from the top of the space down to its parent (an empty list for a top-level page). Confluence returns only `id` and `type` per ancestor; the CLI adds the `title` of each page ancestor (one request each), while a folder, or a page ancestor whose lookup answers 404 (restricted or deleted), keeps `id` and `type` only; any other failed lookup (for example a 403) fails the command. Each page ancestor also has `link`, as in `page children`. `--select` is required.
+Lists up to 250 of a page's ancestors (v2's maximum, one request; deeper paths are cut) in the order Confluence returns them, documented as from the top of the space down to its parent (an empty list for a top-level page). Confluence returns only `id` and `type` per ancestor; the CLI adds the `title` of each page ancestor (one request each), while a folder keeps `id` and `type` only and a page ancestor whose lookup answers 404 (restricted or deleted) has no `title`; any other failed lookup (for example a 403) fails the command. Each page ancestor also has `link`, as in `page children`, whether its lookup answered 404 or not. `--select` is required.
 
 ```sh
 cargo run -p confluence -- page ancestors 123456 --select results.id,results.title,results.type,results.link
@@ -215,10 +215,10 @@ Both commands report an unknown page (or one this identity can't see) with an er
 
 ### `confluence page comments <ID>`
 
-Lists a page's footer comments (inline comments are not listed), cursor-paginated like `page children`. Each comment has `id`, `status`, `pageId`, `version` (`number`, `authorId`, `createdAt`) and its body: as Markdown in `body.markdown.value` by default, or the storage XHTML in `body.storage.value` with `--body-format storage`. Confluence returns comment bodies only as storage, so the Markdown is converted from it, with the same choices as `page get`; macros keep only their text, and a code macro becomes a fenced block. An unknown page gives the same error as `page children`. `--select` is required.
+Lists a page's footer comments (inline comments are not listed), cursor-paginated like `page children` (a top-level `nextCursor` when there is a next page). Each comment has `id`, `status`, `pageId`, `version` (`number`, `authorId`, `createdAt`) and its body: as Markdown in `body.markdown.value` by default, or the storage XHTML in `body.storage.value` with `--body-format storage`. Confluence returns comment bodies only as storage, so the Markdown is converted from it, with the same choices as `page get`; macros keep only their text, and a code macro becomes a fenced block. An unknown page gives the same error as `page children`. `--select` is required.
 
 ```sh
-cargo run -p confluence -- page comments 123456 --select results.id,results.version.authorId,results.version.createdAt,results.body.markdown.value
+cargo run -p confluence -- page comments 123456 --select results.id,results.version.authorId,results.version.createdAt,results.body.markdown.value,nextCursor
 cargo run -p confluence -- page comments 123456 --body-format storage --select results.id,results.body.storage.value
 ```
 
