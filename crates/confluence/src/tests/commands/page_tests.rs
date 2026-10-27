@@ -388,3 +388,20 @@ fn a_failed_ancestor_title_lookup_is_reported_not_skipped() {
     server.join().unwrap();
     assert!(matches!(error, CliError::ApiError { status: 403, .. }), "{error:?}");
 }
+
+#[test]
+fn an_ancestor_page_this_identity_cannot_read_keeps_id_and_type_only() {
+    let (url, server) = mock_server(&[
+        ("200 OK", r#"{"results":[{"id":"1","type":"page"},{"id":"2","type":"page"}]}"#),
+        ("404 Not Found", r#"{"errors":[{"status":404}]}"#),
+        ("200 OK", r#"{"id":"2","title":"Guides"}"#),
+    ]);
+
+    let value = page_ancestors(&client(&url), "123").unwrap();
+
+    server.join().unwrap();
+    assert_eq!(
+        value,
+        json!({"results": [{"id": "1", "type": "page"}, {"id": "2", "type": "page", "title": "Guides"}]})
+    );
+}

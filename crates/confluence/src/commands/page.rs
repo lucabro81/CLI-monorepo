@@ -79,7 +79,8 @@ fn page_children(client: &ConfluenceClient, id: &str, limit: u32, cursor: Option
 
 /// `page ancestors`: v2 returns only `id` and `type`; each `page` ancestor
 /// gets its `title` from one more request, so the path reads without further
-/// calls. Other types (folders) are left as they are.
+/// calls. Other types (folders), and a page ancestor this identity can't read
+/// (404), are left with `id` and `type`; any other error fails the command.
 fn page_ancestors(client: &ConfluenceClient, id: &str) -> Result<Value, CliError> {
     let mut value = client.list_page_ancestors(id).map_err(page_not_found_or(id))?;
     if let Some(ancestors) = value.get_mut("results").and_then(Value::as_array_mut) {
@@ -88,7 +89,11 @@ fn page_ancestors(client: &ConfluenceClient, id: &str) -> Result<Value, CliError
                 continue;
             }
             let Some(ancestor_id) = ancestor.get("id").and_then(Value::as_str) else { continue };
-            let page = client.get_page_without_body(ancestor_id).map_err(client_error_to_cli)?;
+            let page = match client.get_page_without_body(ancestor_id) {
+                Ok(page) => page,
+                Err(ClientError::Status { status: 404, .. }) => continue,
+                Err(other) => return Err(client_error_to_cli(other)),
+            };
             if let (Some(title), Some(fields)) = (page.get("title").cloned(), ancestor.as_object_mut()) {
                 fields.insert("title".to_string(), title);
             }

@@ -291,8 +291,8 @@ pub enum PageCommand {
     /// List a page's ancestors, from the top of the space down to its parent, and print them as JSON
     ///
     /// Each ancestor has id and type; page ancestors also have title (looked up
-    /// by this CLI, one request per page ancestor). A folder ancestor has id and
-    /// type only. A top-level page has an empty results list.
+    /// by this CLI, one request per page ancestor). A folder ancestor, or a page
+    /// ancestor this identity can't read, has id and type only. A top-level page has an empty results list.
     #[command(after_help = "Examples:\n  confluence page ancestors 123456 --select results.id,results.title,results.type\n  confluence page ancestors 123456 --select results.title")]
     Ancestors {
         /// Page ID
