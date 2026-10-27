@@ -58,10 +58,14 @@ fn a_pre_code_block_keeps_htmd_handling() {
 }
 
 #[test]
-fn an_info_panel_keeps_its_text_and_drops_the_icon() {
-    let html = r#"<div class="confluence-information-macro confluence-information-macro-information conf-macro output-block" data-hasbody="true" data-macro-name="info"><span class="aui-icon aui-icon-small aui-iconfont-info confluence-information-macro-icon"> </span><div class="confluence-information-macro-body"><p>Read this first.</p></div></div>"#;
+fn info_and_warning_panels_keep_their_text_and_drop_the_icon_and_panel_type() {
+    for (class, macro_name, icon) in [("information", "info", "info"), ("warning", "warning", "error")] {
+        let html = format!(
+            r#"<div class="confluence-information-macro confluence-information-macro-{class} conf-macro output-block" data-hasbody="true" data-macro-name="{macro_name}"><span class="aui-icon aui-icon-small aui-iconfont-{icon} confluence-information-macro-icon"> </span><div class="confluence-information-macro-body"><p>Read this first.</p></div></div>"#
+        );
 
-    assert_eq!(md(html), "Read this first.");
+        assert_eq!(md(&html), "Read this first.", "{macro_name} panel");
+    }
 }
 
 #[test]
