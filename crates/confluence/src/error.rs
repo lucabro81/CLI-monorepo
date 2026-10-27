@@ -122,6 +122,13 @@ pub enum CliError {
     )]
     InvalidCql { cql: String, body: String },
 
+    #[error(
+        "no page with id \"{id}\" that this identity can see (Confluence answered 404). Check the id, \
+        e.g. with: confluence page search --cql \"type=page AND title~\\\"<words>\\\"\" \
+        --select results.content.id,results.content.title"
+    )]
+    PageNotFound { id: String },
+
     #[error("no space with key \"{key}\". Find space keys with: confluence space list --select results.key,results.name")]
     SpaceNotFound { key: String },
 

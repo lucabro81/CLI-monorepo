@@ -38,6 +38,19 @@ fn app_config_path_is_under_confluence_cli_dir() {
 }
 
 #[test]
+fn scopes_are_exactly_what_the_commands_need() {
+    // Issue #256: page children/ancestors need the two granular scopes, and the
+    // template commands' two classic scopes were missing until then.
+    assert_eq!(
+        SCOPES,
+        "read:page:confluence write:page:confluence read:space:confluence \
+         read:hierarchical-content:confluence read:content.metadata:confluence \
+         read:confluence-user search:confluence read:confluence-content.summary write:confluence-content \
+         offline_access"
+    );
+}
+
+#[test]
 fn scopes_include_offline_access() {
     // offline_access is what makes 3LO logins issue a refresh_token — losing
     // it from SCOPES would silently break `auth login --user` renewal.

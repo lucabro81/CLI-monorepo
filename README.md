@@ -10,7 +10,7 @@ A Cargo workspace of CLI tools, one per external service, designed to be driven 
 | [bitbucket](crates/bitbucket/README.md) | Bitbucket Cloud (PRs, repos) |
 | [google-chat](crates/google-chat/README.md) | Google Chat (Workspace) |
 | [atlassian-admin](crates/atlassian-admin/README.md) | Atlassian Organization Admin API (account_id → email/profile lookup) |
-| [confluence](crates/confluence/README.md) | Confluence Cloud (pages, spaces, CQL search) |
+| [confluence](crates/confluence/README.md) | Confluence Cloud (pages and their hierarchy, spaces, templates, CQL search) |
 | [zitadel](crates/zitadel/README.md) | ZITADEL identity platform (users, organizations, projects) |
 
 ## Install prebuilt binaries

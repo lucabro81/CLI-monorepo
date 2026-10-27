@@ -56,7 +56,8 @@ Step 3: Give it a name (e.g. \"confluence-cli\"), Resource-level access.
 Step 4: In the \"Authorization\" section, add callback URL:
         http://localhost:8080/callback
 Step 5: In \"Permissions\" -> Confluence API, add the scopes listed below
-        (\"Scopes to add\"): read:confluence-user and search:confluence under
+        (\"Scopes to add\"): read:confluence-user, search:confluence,
+        read:confluence-content.summary and write:confluence-content under
         Classic scopes, the others under Granular scopes. offline_access is
         requested by the CLI itself and needs no setting.
 Step 6: Under \"Settings\", copy the Client ID and Client Secret.

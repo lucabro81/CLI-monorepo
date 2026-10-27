@@ -98,6 +98,36 @@ impl ConfluenceClient {
         self.get_json(&format!("{}?body-format={body_format}", endpoints::page_path(id)))
     }
 
+    /// Gets a page without its body (`id`, `title`, `status`, ...): `page
+    /// ancestors` only needs the title.
+    pub fn get_page_without_body(&self, id: &str) -> Result<serde_json::Value, ClientError> {
+        self.get_json(&endpoints::page_path(id))
+    }
+
+    /// Lists a page's direct children, cursor-paginated, and returns the raw
+    /// JSON response (`{"results": [...], "_links": {"next": "..."}}`).
+    pub fn list_page_children(
+        &self,
+        id: &str,
+        limit: u32,
+        cursor: Option<&str>,
+    ) -> Result<serde_json::Value, ClientError> {
+        let mut params = vec![("limit".to_string(), limit.to_string())];
+        if let Some(cursor) = cursor {
+            params.push(("cursor".to_string(), cursor.to_string()));
+        }
+        let query = serde_urlencoded::to_string(&params)
+            .map_err(|e| ClientError::Request(format!("failed to encode query params: {e}")))?;
+        self.get_json(&format!("{}?{query}", endpoints::page_direct_children_path(id)))
+    }
+
+    /// Lists a page's ancestors (top-down per the v2 spec, as returned), and returns the raw JSON response
+    /// (`{"results": [{"id", "type"}]}`). Asks for 250 (v2's maximum), so a
+    /// page's whole path comes in one response.
+    pub fn list_page_ancestors(&self, id: &str) -> Result<serde_json::Value, ClientError> {
+        self.get_json(&format!("{}?limit=250", endpoints::page_ancestors_path(id)))
+    }
+
     /// Creates a page from a pre-built request body (`spaceId`, `title`, `body`,
     /// optional `parentId`) and returns the created page as raw JSON.
     pub fn create_page(&self, body: &serde_json::Value) -> Result<serde_json::Value, ClientError> {

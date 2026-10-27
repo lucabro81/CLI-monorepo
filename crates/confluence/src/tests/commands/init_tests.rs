@@ -252,3 +252,12 @@ fn an_empty_answer_writes_nothing() {
         "Client Secret is empty: nothing was written. Run the same confluence init command again and type it, or pass it with --client-secret"
     );
 }
+
+#[test]
+fn the_3lo_instructions_name_every_classic_scope() {
+    // Issue #256: the developer console splits scopes into Classic and
+    // Granular; the classic ones are the only ones named explicitly.
+    for scope in ["read:confluence-user", "search:confluence", "read:confluence-content.summary", "write:confluence-content"] {
+        assert!(super::USER_INSTRUCTIONS.contains(scope), "{scope}");
+    }
+}
