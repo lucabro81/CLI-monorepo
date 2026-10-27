@@ -19,7 +19,7 @@ pub struct Cli {
     /// Required on most commands: if both this and --select-all are omitted, the
     /// command fails with an error reporting the byte size of the full response and
     /// its top-level field names, so you can retry with an informed --select. A few
-    /// commands whose output is always small and fixed-shape (doctor, auth whoami, auth logout, page delete, space get)
+    /// commands whose output is always small and fixed-shape (doctor, auth whoami, auth logout, page delete, template delete, space get)
     /// are exempt and print in full regardless — see that command's own --help.
     /// This description is shared across every command and has no single
     /// correct path syntax. IMPORTANT: do NOT guess a path from this text —
@@ -215,7 +215,7 @@ pub enum PageCommand {
     /// to create a page "from" a template directly, so this fetches the
     /// template's body and submits it as this page's initial content, same
     /// as duplicating it by hand.
-    #[command(after_help = "Examples:\n  confluence page create --space-id 98765 --title \"Sprint Notes\" --body \"<p>Agenda</p>\"\n  confluence page create --space-id 98765 --title \"Runbook\" --body-file ./runbook-content.html\n  confluence page create --space-id 98765 --title \"Retro\" --template-id 4321 --parent-id 111222")]
+    #[command(after_help = "Examples:\n  confluence page create --space-id 98765 --title \"Sprint Notes\" --body \"<p>Agenda</p>\" --select id,title,version.number\n  confluence page create --space-id 98765 --title \"Runbook\" --body-file ./runbook-content.html --select id,title,version.number\n  confluence page create --space-id 98765 --title \"Retro\" --template-id 4321 --parent-id 111222 --select id,title,version.number")]
     Create {
         /// Numeric ID of the space to create the page in — find one with `space list`
         #[arg(long)]
@@ -244,7 +244,7 @@ pub enum PageCommand {
     /// title, body, and version number first, then submits a full update with
     /// your --title and/or --body overriding just those fields (the other
     /// keeps its current value) and the version number incremented by one.
-    #[command(after_help = "Examples:\n  confluence page update 123456 --title \"Sprint Notes (updated)\"\n  confluence page update 123456 --body \"<p>New agenda</p>\"\n\nAt least one of --title or --body is required.")]
+    #[command(after_help = "Examples:\n  confluence page update 123456 --title \"Sprint Notes (updated)\" --select id,title,version.number\n  confluence page update 123456 --body \"<p>New agenda</p>\" --select id,title,version.number\n\nAt least one of --title or --body is required.")]
     Update {
         /// Page ID
         id: String,
@@ -335,7 +335,7 @@ pub enum SpaceCommand {
         key: String,
     },
     /// List Confluence spaces and print them as JSON
-    #[command(after_help = "Examples:\n  confluence space list\n  confluence space list --limit 10\n  confluence space list --cursor <cursor-from-previous-response>\n\nPagination: the response's _links.next field (if present) contains a cursor\nquery parameter — pass its value to --cursor to fetch the next page.")]
+    #[command(after_help = "Examples:\n  confluence space list --select results.id,results.key,results.name,_links.next\n  confluence space list --limit 10 --select results.id,results.key,results.name,_links.next\n  confluence space list --cursor <cursor-from-previous-response> --select results.id,results.key,results.name,_links.next\n\nPagination: the response's _links.next field (if present) contains a cursor\nquery parameter — pass its value to --cursor to fetch the next page.")]
     List {
         /// Maximum number of spaces to return (default: 25)
         #[arg(long, default_value = "25")]
@@ -357,7 +357,7 @@ pub enum TemplateCommand {
     /// create a space template instead (requires Admin permission on that
     /// space). The created template's ID (`templateId` in the response) can
     /// then be passed to `page create --template-id` to build pages from it.
-    #[command(after_help = "Examples:\n  confluence template create --name \"Runbook\" --space-key ENG --body \"<p>Steps</p>\"\n  confluence template create --name \"Postmortem\" --body-file ./postmortem.html --description \"Standard postmortem layout\"")]
+    #[command(after_help = "Examples:\n  confluence template create --name \"Runbook\" --space-key ENG --body \"<p>Steps</p>\" --select templateId,name\n  confluence template create --name \"Postmortem\" --body-file ./postmortem.html --description \"Standard postmortem layout\" --select templateId,name")]
     Create {
         /// Space key to create a space-scoped template in; omit for a global template
         #[arg(long)]
@@ -376,7 +376,7 @@ pub enum TemplateCommand {
         body_file: Option<String>,
     },
     /// List content templates and print them as JSON
-    #[command(after_help = "Examples:\n  confluence template list\n  confluence template list --space-key ENG\n  confluence template list --limit 10 --start 10\n\nOffset pagination: pass --start <previous start + limit> to fetch the next page.")]
+    #[command(after_help = "Examples:\n  confluence template list --select results.templateId,results.name\n  confluence template list --space-key ENG --select results.templateId,results.name\n  confluence template list --limit 10 --start 10 --select results.templateId,results.name\n\nOffset pagination: pass --start <previous start + limit> to fetch the next page.")]
     List {
         /// Only list templates in this space; omit to list global templates
         #[arg(long)]
@@ -396,7 +396,7 @@ pub enum TemplateCommand {
     /// update with your --name/--description/--body(-file) overriding just
     /// those fields (the others keep their current value). At least one of
     /// --name, --description, --body, or --body-file is required.
-    #[command(after_help = "Examples:\n  confluence template update 4321 --name \"Runbook (v2)\"\n  confluence template update 4321 --body-file ./runbook-v2.html")]
+    #[command(after_help = "Examples:\n  confluence template update 4321 --name \"Runbook (v2)\" --select templateId,name\n  confluence template update 4321 --body-file ./runbook-v2.html --select templateId,name")]
     Update {
         /// Template ID
         id: String,

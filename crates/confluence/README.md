@@ -162,9 +162,9 @@ The response includes a read-only `position` field (a page's order among its sib
 Creates a page in a space. Requires `--space-id` and `--title`, plus exactly one of `--body`, `--body-file`, or `--template-id` to supply the content — see this crate's `CLAUDE.md` "API design notes" for why `--template-id` works this way (Confluence has no API to create a page "from" a template directly).
 
 ```sh
-cargo run -p confluence -- page create --space-id 98765 --title "Sprint Notes" --body "<p>Agenda</p>"
-cargo run -p confluence -- page create --space-id 98765 --title "Runbook" --body-file ./runbook-content.html
-cargo run -p confluence -- page create --space-id 98765 --title "Retro" --template-id 4321 --parent-id 111222
+cargo run -p confluence -- page create --space-id 98765 --title "Sprint Notes" --body "<p>Agenda</p>" --select id,title,version.number
+cargo run -p confluence -- page create --space-id 98765 --title "Runbook" --body-file ./runbook-content.html --select id,title,version.number
+cargo run -p confluence -- page create --space-id 98765 --title "Retro" --template-id 4321 --parent-id 111222 --select id,title,version.number
 ```
 
 `--body`/`--body-file` are raw Confluence **storage format** (XHTML) — the same format `page get --body-format storage` returns in `body.storage.value`. Plain text with no markup is also valid storage format. `--body-file` is just `--body` read from a local file instead of the command line (handy for longer content) — it has no relation to Confluence's own Template feature, unlike `--template-id`.
@@ -174,8 +174,8 @@ cargo run -p confluence -- page create --space-id 98765 --title "Retro" --templa
 Updates a page's title and/or body. At least one of `--title`/`--body` is required. Fetches the current page first to fill in whichever field you didn't override, and increments the version number automatically (Confluence's v2 API has no partial-patch endpoint).
 
 ```sh
-cargo run -p confluence -- page update 123456 --title "Sprint Notes (updated)"
-cargo run -p confluence -- page update 123456 --body "<p>New agenda</p>"
+cargo run -p confluence -- page update 123456 --title "Sprint Notes (updated)" --select id,title,version.number
+cargo run -p confluence -- page update 123456 --body "<p>New agenda</p>" --select id,title,version.number
 ```
 
 ### `confluence page search --cql <QUERY>`
@@ -210,7 +210,7 @@ cargo run -p confluence -- page ancestors 123456 --select results.id,results.tit
 
 Both commands report an unknown page (or one this identity can't see) with an error pointing at `page search`.
 
-**New scopes (#256).** `page children` needs `read:hierarchical-content:confluence`, `page ancestors` needs `read:content.metadata:confluence` (both granular); the `template` commands' classic scopes `read:confluence-content.summary` and `write:confluence-content` were added to `SCOPES` at the same time. A login made before them gets a 403 on those commands: for the Service Account, add the scopes to its credential in admin.atlassian.com, then run `confluence auth login`; for people, add them to the 3LO app in the developer console, then each person runs `confluence auth login --user <USER_ID>` again to consent.
+**New scopes (#256).** `page children` needs `read:hierarchical-content:confluence`, `page ancestors` needs `read:content.metadata:confluence`, plus `read:page:confluence` (already in `SCOPES`) for its ancestors' titles (all granular); the `template` commands' classic scopes `read:confluence-content.summary` and `write:confluence-content` were added to `SCOPES` at the same time. A login made before them gets a 403 on those commands: for the Service Account, add the scopes to its credential in admin.atlassian.com, then run `confluence auth login`; for people, add them to the 3LO app in the developer console, then each person runs `confluence auth login --user <USER_ID>` again to consent.
 
 ### `confluence page delete <ID>`
 
@@ -237,9 +237,9 @@ cargo run -p confluence -- space get ENG --select id,homepageId
 Lists Confluence spaces, cursor-paginated.
 
 ```sh
-cargo run -p confluence -- space list
-cargo run -p confluence -- space list --limit 10
-cargo run -p confluence -- space list --cursor <cursor-from-previous-response>
+cargo run -p confluence -- space list --select results.id,results.key,results.name,_links.next
+cargo run -p confluence -- space list --limit 10 --select results.id,results.key,results.name,_links.next
+cargo run -p confluence -- space list --cursor <cursor-from-previous-response> --select results.id,results.key,results.name,_links.next
 ```
 
 ### `confluence template create`
@@ -247,8 +247,8 @@ cargo run -p confluence -- space list --cursor <cursor-from-previous-response>
 Creates a content template. Requires `--name`, plus exactly one of `--body`/`--body-file` to supply the content (same storage-format XHTML as `page create` — see that command's section above). Omit `--space-key` for a global template (requires Confluence Administrator global permission); pass it for a space template (requires Admin permission on that space).
 
 ```sh
-cargo run -p confluence -- template create --name "Runbook" --space-key ENG --body "<p>Steps</p>"
-cargo run -p confluence -- template create --name "Postmortem" --body-file ./postmortem.html --description "Standard postmortem layout"
+cargo run -p confluence -- template create --name "Runbook" --space-key ENG --body "<p>Steps</p>" --select templateId,name
+cargo run -p confluence -- template create --name "Postmortem" --body-file ./postmortem.html --description "Standard postmortem layout" --select templateId,name
 ```
 
 The created template's `templateId` can be passed to [`page create --template-id`](#confluence-page-create) to build pages from it.
@@ -258,9 +258,9 @@ The created template's `templateId` can be passed to [`page create --template-id
 Lists content templates, offset-paginated. Omit `--space-key` to list global templates; pass it to scope to one space.
 
 ```sh
-cargo run -p confluence -- template list
-cargo run -p confluence -- template list --space-key ENG
-cargo run -p confluence -- template list --limit 10 --start 10
+cargo run -p confluence -- template list --select results.templateId,results.name
+cargo run -p confluence -- template list --space-key ENG --select results.templateId,results.name
+cargo run -p confluence -- template list --limit 10 --start 10 --select results.templateId,results.name
 ```
 
 ### `confluence template update <ID>`
@@ -268,8 +268,8 @@ cargo run -p confluence -- template list --limit 10 --start 10
 Updates a template's name, description, and/or body. At least one of `--name`/`--description`/`--body`/`--body-file` is required. Fetches the current template first to fill in whichever fields you didn't override (Confluence's template API has no partial-patch endpoint, same as `page update`).
 
 ```sh
-cargo run -p confluence -- template update 4321 --name "Runbook (v2)"
-cargo run -p confluence -- template update 4321 --body-file ./runbook-v2.html
+cargo run -p confluence -- template update 4321 --name "Runbook (v2)" --select templateId,name
+cargo run -p confluence -- template update 4321 --body-file ./runbook-v2.html --select templateId,name
 ```
 
 ### `confluence template delete <ID>`
@@ -284,7 +284,7 @@ Prints `{"deleted": true, "id": "4321"}` on success.
 
 ### `--select <PATHS>` (global flag)
 
-Same client-side field-projection flag as every other crate in this workspace — see root `CLAUDE.md`'s "Shared library: crates/cli-fields". Mandatory on every command in this crate except `doctor`, `auth whoami`, `auth logout`, `page delete` and `space get` (see this crate's `CLAUDE.md` for the full table) — omitting both `--select` and `--select-all` fails with the response's byte size and top-level field names instead of printing.
+Same client-side field-projection flag as every other crate in this workspace — see root `CLAUDE.md`'s "Shared library: crates/cli-fields". Mandatory on every command in this crate except `doctor`, `auth whoami`, `auth logout`, `page delete`, `template delete` and `space get` (see this crate's `CLAUDE.md` for the full table) — omitting both `--select` and `--select-all` fails with the response's byte size and top-level field names instead of printing.
 
 ```sh
 cargo run -p confluence -- page get 123456 --select title,version.number
