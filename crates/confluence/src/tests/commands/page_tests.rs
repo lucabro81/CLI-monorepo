@@ -13,12 +13,17 @@ use crate::error::CliError;
 use crate::test_support::mock_server;
 
 fn client(url: &str) -> ConfluenceClient {
+    client_for_site(url, None)
+}
+
+/// A client whose credentials carry `site_url` (accessible-resources' `url`).
+fn client_for_site(url: &str, site_url: Option<&str>) -> ConfluenceClient {
     let credentials = Credentials {
         access_token: "at".to_string(),
         refresh_token: None,
         expires_at: u64::MAX,
         cloud_id: "cid".to_string(),
-        site_url: None,
+        site_url: site_url.map(str::to_string),
     };
     ConfluenceClient::new(&credentials).with_base_url(url)
 }
@@ -122,6 +127,18 @@ fn page_get_as_markdown_requests_export_view_and_replaces_it_with_markdown() {
 }
 
 #[test]
+fn page_get_as_markdown_makes_wiki_links_absolute_with_the_credentials_site_url() {
+    // Issue #261.
+    let page = json!({"id": "123", "body": {"export_view": {"value": r#"<p><a href="/wiki/x">x</a></p>"#}}});
+    let (url, server) = mock_server(&[("200 OK", &page.to_string())]);
+
+    let value = get_page(&client_for_site(&url, Some("https://example.atlassian.net")), "123", BodyFormat::Markdown).unwrap();
+
+    server.join().unwrap();
+    assert_eq!(value["body"]["markdown"]["value"], "[x](https://example.atlassian.net/wiki/x)");
+}
+
+#[test]
 fn page_get_as_storage_requests_storage_and_prints_the_page_unchanged() {
     let page = json!({"id": "123", "body": {"storage": {"representation": "storage", "value": "<p>x</p>"}}});
     let (url, server) = mock_server(&[("200 OK", &page.to_string())]);
@@ -137,7 +154,7 @@ fn page_get_as_storage_requests_storage_and_prints_the_page_unchanged() {
 fn markdown_body_leaves_a_page_without_body_unchanged() {
     let page = json!({"id": "123", "title": "Doc"});
 
-    assert_eq!(markdown_body(page.clone()).unwrap(), page);
+    assert_eq!(markdown_body(page.clone(), None).unwrap(), page);
 }
 
 #[test]
@@ -146,7 +163,7 @@ fn markdown_body_without_a_string_export_view_value_prints_an_empty_markdown_bod
         let page = json!({"id": "123", "body": body});
 
         assert_eq!(
-            markdown_body(page).unwrap(),
+            markdown_body(page, None).unwrap(),
             json!({"id": "123", "body": {"markdown": {"representation": "markdown", "value": ""}}})
         );
     }
@@ -210,7 +227,7 @@ fn search_pages_asks_v1_search_with_highlighted_excerpts_and_strips_the_markers_
     let requests = server.join().unwrap();
     assert_eq!(
         request_line(&requests[0]),
-        "GET /wiki/rest/api/search?cql=type%3Dpage+AND+space%3DENG&limit=10&start=25&excerpt=highlight HTTP/1.1"
+        "GET /wiki/rest/api/search?cql=type%3Dpage+AND+space%3DENG&limit=10&start=25&excerpt=highlight_unescaped HTTP/1.1"
     );
     let mut expected = response;
     expected["results"][0]["excerpt"] = json!("restart the api with care");
@@ -404,4 +421,36 @@ fn an_ancestor_page_this_identity_cannot_read_keeps_id_and_type_only() {
         value,
         json!({"results": [{"id": "1", "type": "page"}, {"id": "2", "type": "page", "title": "Guides"}]})
     );
+}
+
+#[test]
+fn search_pages_adds_an_absolute_link_to_each_result_with_a_url() {
+    // Issue #261: `url` is relative to the site's /wiki; `link` can be followed as is.
+    let response = json!({
+        "results": [
+            {"content": {"id": "11"}, "url": "/spaces/ENG/pages/11/Runbook"},
+            {"content": {"id": "12"}},
+            {"content": {"id": "13"}, "url": null}
+        ],
+        "_links": {"base": "https://api.atlassian.com/ex/confluence/cid/wiki"}
+    });
+    let (url, server) = mock_server(&[("200 OK", &response.to_string())]);
+
+    let value = search_pages(&client_for_site(&url, Some("https://example.atlassian.net/")), "type=page", 25, 0).unwrap();
+
+    server.join().unwrap();
+    let mut expected = response;
+    expected["results"][0]["link"] = json!("https://example.atlassian.net/wiki/spaces/ENG/pages/11/Runbook");
+    assert_eq!(value, expected);
+}
+
+#[test]
+fn search_pages_adds_no_link_without_a_site_url() {
+    let response = json!({"results": [{"content": {"id": "11"}, "url": "/spaces/ENG/pages/11/Runbook"}]});
+    let (url, server) = mock_server(&[("200 OK", &response.to_string())]);
+
+    let value = search_pages(&client(&url), "type=page", 25, 0).unwrap();
+
+    server.join().unwrap();
+    assert_eq!(value, response);
 }

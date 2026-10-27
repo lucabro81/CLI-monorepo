@@ -50,6 +50,7 @@ impl std::fmt::Display for ClientError {
 pub struct ConfluenceClient {
     base_url: String,
     token: BearerToken<CliError>,
+    site_url: Option<String>,
     http: reqwest::blocking::Client,
 }
 
@@ -62,8 +63,16 @@ impl ConfluenceClient {
                 endpoints::CONFLUENCE_API_BASE_URL, credentials.cloud_id
             ),
             token: BearerToken::new(credentials.access_token.clone()),
+            site_url: credentials.site_url.clone(),
             http: reqwest::blocking::Client::new(),
         }
+    }
+
+    /// The site's `https://<site>.atlassian.net`, from the credentials
+    /// (accessible-resources' `url`); `None` when the login didn't record it.
+    /// Used to make links absolute (#261), never to call the API.
+    pub fn site_url(&self) -> Option<&str> {
+        self.site_url.as_deref()
     }
 
     /// On a 401 the client calls `renewer` once with the rejected token and
@@ -194,7 +203,7 @@ impl ConfluenceClient {
             ("cql", cql.to_string()),
             ("limit", limit.to_string()),
             ("start", start.to_string()),
-            ("excerpt", "highlight".to_string()),
+            ("excerpt", "highlight_unescaped".to_string()),
         ];
         let query = serde_urlencoded::to_string(params)
             .map_err(|e| ClientError::Request(format!("failed to encode query params: {e}")))?;
