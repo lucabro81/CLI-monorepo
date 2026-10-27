@@ -323,3 +323,64 @@ mod rejected_token {
         assert_eq!(err.exit_code(), 3);
     }
 }
+
+// --- nextCursor (issue #271) ---
+
+mod next_cursor {
+    use serde_json::json;
+
+    use super::super::add_next_cursor;
+
+    #[test]
+    fn takes_the_cursor_out_of_links_next_among_other_parameters() {
+        let mut value = json!({
+            "results": [],
+            "_links": {"next": "/wiki/api/v2/pages/547/direct-children?limit=3&cursor=eyJpZCI6IjEifQ&sort=id"}
+        });
+
+        add_next_cursor(&mut value);
+
+        assert_eq!(
+            value,
+            json!({
+                "results": [],
+                "_links": {"next": "/wiki/api/v2/pages/547/direct-children?limit=3&cursor=eyJpZCI6IjEifQ&sort=id"},
+                "nextCursor": "eyJpZCI6IjEifQ"
+            })
+        );
+    }
+
+    #[test]
+    fn decodes_a_url_encoded_cursor_once() {
+        // `--cursor` encodes its value again, so nextCursor must be the decoded form:
+        // %3D becomes `=`, while `%2525` decodes to `%25`, not to `%`.
+        let mut value = json!({"_links": {"next": "/wiki/api/v2/spaces?cursor=ab%2Bc%3D%3D%2525&limit=25"}});
+
+        add_next_cursor(&mut value);
+
+        assert_eq!(value["nextCursor"], json!("ab+c==%25"));
+    }
+
+    #[test]
+    fn adds_nothing_on_the_last_page() {
+        for last_page in [json!({"results": []}), json!({"results": [], "_links": {}}), json!({"_links": {"base": "x"}})] {
+            let mut value = last_page.clone();
+
+            add_next_cursor(&mut value);
+
+            assert_eq!(value, last_page);
+        }
+    }
+
+    #[test]
+    fn adds_nothing_when_links_next_has_no_cursor_parameter() {
+        for next in ["/wiki/api/v2/spaces?limit=25", "/wiki/api/v2/spaces", "/wiki/api/v2/spaces?cursor=", "/wiki/api/v2/spaces?xcursor=a"] {
+            let original = json!({"_links": {"next": next}});
+            let mut value = original.clone();
+
+            add_next_cursor(&mut value);
+
+            assert_eq!(value, original, "{next}");
+        }
+    }
+}

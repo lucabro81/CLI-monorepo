@@ -13,6 +13,8 @@
 //!   repeating the load/refresh/build chain.
 //! - `print_json` — renders a `serde_json::Value` via `cli_fields::render_json`
 //!   (see that crate for the `--select`/`--select-all` contract) and prints it.
+//! - `add_next_cursor` — copies the `cursor` of a v2 list's `_links.next` to a
+//!   top-level `nextCursor`, ready for `--cursor` (issue #271).
 
 use std::path::Path;
 
@@ -137,6 +139,23 @@ pub fn print_json(value: &serde_json::Value, select: cli_fields::Select<'_>) -> 
     let output = cli_fields::render_json(value, select)?;
     println!("{output}");
     Ok(())
+}
+
+/// Adds a top-level `nextCursor` to a v2 cursor-paginated list: the `cursor`
+/// query parameter of `_links.next`, decoded once, so it can be passed to
+/// `--cursor` as is. Nothing is added on the last page (no `_links.next`) or
+/// when `_links.next` carries no non-empty `cursor`; `_links` is left alone.
+pub fn add_next_cursor(value: &mut serde_json::Value) {
+    let Some(next) = value.pointer("/_links/next").and_then(serde_json::Value::as_str) else { return };
+    let Some((_, query)) = next.split_once('?') else { return };
+    let cursor = serde_urlencoded::from_str::<Vec<(String, String)>>(query)
+        .ok()
+        .and_then(|pairs| pairs.into_iter().find(|(name, _)| name == "cursor"))
+        .map(|(_, cursor)| cursor)
+        .filter(|cursor| !cursor.is_empty());
+    if let (Some(cursor), Some(fields)) = (cursor, value.as_object_mut()) {
+        fields.insert("nextCursor".to_string(), serde_json::Value::String(cursor));
+    }
 }
 
 /// Maps a [`ClientError`] (HTTP/network layer) to the user-facing [`CliError`].

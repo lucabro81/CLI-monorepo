@@ -28,7 +28,7 @@ use serde_json::{json, Value};
 use crate::cli::{BodyFormat, PageCommand};
 use crate::client::{ClientError, ConfluenceClient};
 use crate::auth::Identity;
-use crate::context::{authenticated_client, client_error_to_cli, print_json};
+use crate::context::{add_next_cursor, authenticated_client, client_error_to_cli, print_json};
 use crate::error::CliError;
 use crate::markdown::{html_to_markdown, storage_to_markdown};
 
@@ -76,15 +76,39 @@ fn page_not_found_or(id: &str) -> impl Fn(ClientError) -> CliError + '_ {
     }
 }
 
-/// `page children`: v2's direct children, printed as Confluence returns them.
+/// `page children`: v2's direct children, plus `nextCursor` and a `link` on
+/// each page child (#271).
 fn page_children(client: &ConfluenceClient, id: &str, limit: u32, cursor: Option<&str>) -> Result<Value, CliError> {
-    client.list_page_children(id, limit, cursor).map_err(page_not_found_or(id))
+    let mut value = client.list_page_children(id, limit, cursor).map_err(page_not_found_or(id))?;
+    add_next_cursor(&mut value);
+    add_page_links(&mut value, client.site_url());
+    Ok(value)
+}
+
+/// Gives each `results` item of type `page` a `link` =
+/// `<site_url>/wiki/pages/viewpage.action?pageId=<id>`, which needs no space
+/// key. Other types (folders, whiteboards) and credentials without a
+/// `site_url` get none (#271).
+fn add_page_links(value: &mut Value, site_url: Option<&str>) {
+    let Some(site_url) = site_url else { return };
+    let Some(items) = value.get_mut("results").and_then(Value::as_array_mut) else { return };
+    for item in items {
+        if item.get("type").and_then(Value::as_str) != Some("page") {
+            continue;
+        }
+        let Some(id) = item.get("id").and_then(Value::as_str) else { continue };
+        let link = format!("{}/wiki/pages/viewpage.action?pageId={id}", site_url.trim_end_matches('/'));
+        if let Some(fields) = item.as_object_mut() {
+            fields.insert("link".to_string(), Value::String(link));
+        }
+    }
 }
 
 /// `page ancestors`: v2 returns only `id` and `type`; each `page` ancestor
 /// gets its `title` from one more request, so the path reads without further
 /// calls. Other types (folders), and a page ancestor this identity can't read
 /// (404), are left with `id` and `type`; any other error fails the command.
+/// Every page ancestor also gets a `link`, as in `page children` (#271).
 fn page_ancestors(client: &ConfluenceClient, id: &str) -> Result<Value, CliError> {
     let mut value = client.list_page_ancestors(id).map_err(page_not_found_or(id))?;
     if let Some(ancestors) = value.get_mut("results").and_then(Value::as_array_mut) {
@@ -103,12 +127,14 @@ fn page_ancestors(client: &ConfluenceClient, id: &str) -> Result<Value, CliError
             }
         }
     }
+    add_page_links(&mut value, client.site_url());
     Ok(value)
 }
 
 /// `page comments`: footer comments read as storage; with `Markdown`, each
 /// `body.storage` is replaced by `body.markdown` (converted with
-/// [`storage_to_markdown`]), as `page get` does with `export_view`. A 404 is
+/// [`storage_to_markdown`]), as `page get` does with `export_view`. Both
+/// formats get `nextCursor` (#271). A 404 is
 /// `PageNotFound`, a 403 `CommentsForbidden` (likely the comment scope).
 fn page_comments(
     client: &ConfluenceClient,
@@ -121,6 +147,7 @@ fn page_comments(
         ClientError::Status { status: 403, body } => CliError::CommentsForbidden { body },
         other => page_not_found_or(id)(other),
     })?;
+    add_next_cursor(&mut value);
     if body_format == BodyFormat::Storage {
         return Ok(value);
     }

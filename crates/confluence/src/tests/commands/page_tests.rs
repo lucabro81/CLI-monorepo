@@ -306,7 +306,33 @@ fn page_children_asks_direct_children_and_prints_the_response() {
 
     let requests = server.join().unwrap();
     assert_eq!(request_line(&requests[0]), "GET /wiki/api/v2/pages/123/direct-children?limit=25 HTTP/1.1");
-    assert_eq!(value, response);
+    let mut expected = response;
+    expected["nextCursor"] = json!("xyz");
+    assert_eq!(value, expected);
+}
+
+#[test]
+fn page_children_links_page_children_only_when_the_site_is_known() {
+    // Issue #271: children carry no space key, so the link goes through viewpage.action.
+    let response = json!({
+        "results": [
+            {"id": "21", "title": "Child", "type": "page"},
+            {"id": "22", "title": "Folder", "type": "folder"},
+            {"id": "23", "title": "Board", "type": "whiteboard"}
+        ]
+    });
+    for site_url in [Some("https://example.atlassian.net/"), None] {
+        let (url, server) = mock_server(&[("200 OK", &response.to_string())]);
+
+        let value = page_children(&client_for_site(&url, site_url), "123", 25, None).unwrap();
+
+        server.join().unwrap();
+        let mut expected = response.clone();
+        if site_url.is_some() {
+            expected["results"][0]["link"] = json!("https://example.atlassian.net/wiki/pages/viewpage.action?pageId=21");
+        }
+        assert_eq!(value, expected, "{site_url:?}");
+    }
 }
 
 #[test]
@@ -378,6 +404,30 @@ fn page_ancestors_adds_each_page_ancestors_title_and_leaves_folders_alone() {
                 {"id": "1", "type": "page", "title": "Home"},
                 {"id": "5", "type": "folder"},
                 {"id": "2", "type": "page", "title": "Guides"}
+            ]
+        })
+    );
+}
+
+#[test]
+fn page_ancestors_links_page_ancestors_but_not_folders() {
+    // Issue #271: same link as `page children`, also on an ancestor whose title lookup got a 404.
+    let (url, server) = mock_server(&[
+        ("200 OK", r#"{"results":[{"id":"1","type":"page"},{"id":"5","type":"folder"},{"id":"2","type":"page"}]}"#),
+        ("200 OK", r#"{"id":"1","title":"Home"}"#),
+        ("404 Not Found", r#"{"errors":[{"status":404}]}"#),
+    ]);
+
+    let value = page_ancestors(&client_for_site(&url, Some("https://example.atlassian.net")), "123").unwrap();
+
+    server.join().unwrap();
+    assert_eq!(
+        value,
+        json!({
+            "results": [
+                {"id": "1", "type": "page", "title": "Home", "link": "https://example.atlassian.net/wiki/pages/viewpage.action?pageId=1"},
+                {"id": "5", "type": "folder"},
+                {"id": "2", "type": "page", "link": "https://example.atlassian.net/wiki/pages/viewpage.action?pageId=2"}
             ]
         })
     );
@@ -458,6 +508,20 @@ fn search_pages_adds_no_link_without_a_site_url() {
 // --- page comments (issue #258) ---
 
 #[test]
+fn page_comments_adds_next_cursor_in_both_body_formats() {
+    // Issue #271.
+    let response = json!({"results": [], "_links": {"next": "/wiki/api/v2/pages/123/footer-comments?cursor=c%3D2&limit=5"}});
+    for body_format in [BodyFormat::Markdown, BodyFormat::Storage] {
+        let (url, server) = mock_server(&[("200 OK", &response.to_string())]);
+
+        let value = page_comments(&client(&url), "123", 5, None, body_format).unwrap();
+
+        server.join().unwrap();
+        assert_eq!(value["nextCursor"], json!("c=2"), "{body_format:?}");
+    }
+}
+
+#[test]
 fn page_comments_as_markdown_reads_storage_and_replaces_each_body() {
     let response = json!({
         "results": [
@@ -484,6 +548,7 @@ fn page_comments_as_markdown_reads_storage_and_replaces_each_body() {
     let mut expected = response;
     expected["results"][0]["body"] = json!({"markdown": {"representation": "markdown", "value": "Use `v2`."}});
     expected["results"][1]["body"] = json!({"markdown": {"representation": "markdown", "value": ""}});
+    expected["nextCursor"] = json!("xyz");
     assert_eq!(value, expected);
 }
 
