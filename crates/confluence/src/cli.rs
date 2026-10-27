@@ -385,10 +385,6 @@ pub enum TemplateCommand {
     },
 }
 
-#[cfg(test)]
-#[path = "tests/cli_tests.rs"]
-mod tests;
-
 /// How `page get` prints the page body.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum BodyFormat {
@@ -397,3 +393,7 @@ pub enum BodyFormat {
     /// Confluence storage XHTML, in body.storage
     Storage,
 }
+
+#[cfg(test)]
+#[path = "tests/cli_tests.rs"]
+mod tests;

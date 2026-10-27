@@ -138,6 +138,18 @@ fn markdown_body_leaves_a_page_without_body_unchanged() {
 }
 
 #[test]
+fn markdown_body_without_a_string_export_view_value_prints_an_empty_markdown_body() {
+    for body in [json!({}), json!({"export_view": {"value": null}})] {
+        let page = json!({"id": "123", "body": body});
+
+        assert_eq!(
+            markdown_body(page).unwrap(),
+            json!({"id": "123", "body": {"markdown": {"representation": "markdown", "value": ""}}})
+        );
+    }
+}
+
+#[test]
 fn page_update_reads_and_writes_storage_even_though_page_get_defaults_to_markdown() {
     // Guards #254: `page get` prints Markdown by default; `page update` must keep
     // reading storage, or it would write Markdown back into the page.
