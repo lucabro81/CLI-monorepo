@@ -152,7 +152,7 @@ cargo run -p confluence -- page get 123456 --body-format storage --select title,
 
 **`--body-format <markdown|storage>`** (default `markdown`):
 
-- `markdown` — the page as rendered (macros expanded, Confluence's `export_view`) converted to Markdown, in `body.markdown = {"representation": "markdown", "value": "..."}`. For reading: storage XHTML is full of `ac:`/`ri:` tags that cost context and carry little. Tables become GFM tables, the code and noformat macros fenced code blocks; panels and status lozenges keep only their text.
+- `markdown` — the page as rendered (macros expanded, Confluence's `export_view`) converted to Markdown, in `body.markdown = {"representation": "markdown", "value": "..."}`. For reading: storage XHTML is full of `ac:`/`ri:` tags that cost context and carry little. Tables become GFM tables (a `|` in a cell is `\|`), the code and noformat macros fenced code blocks; info/note/warning/tip/success/error panels become blockquotes that name their type (`> **Warning:** ...`), status lozenges keep only their text, images become `[image: <alt>]` without the attachment URL (it needs authentication), and links to `/wiki/...` are made absolute with the site URL saved at login (left relative if the login didn't record one).
 - `storage` — Confluence's storage XHTML, in `body.storage`, as returned by the API. The format `page create`/`page update` `--body` take, so use it to edit a page.
 
 The response includes a read-only `position` field (a page's order among its siblings). Confluence Cloud has **no public API to change it** — only the UI's drag-and-drop can reorder pages (this is a longstanding, still-open Atlassian feature request: [CONFCLOUD-40101](https://jira.atlassian.com/browse/CONFCLOUD-40101)). This crate has no `page move`/reorder command as a result — there's nothing for it to call.
@@ -180,11 +180,11 @@ cargo run -p confluence -- page update 123456 --body "<p>New agenda</p>" --selec
 
 ### `confluence page search --cql <QUERY>`
 
-Searches content using CQL (Confluence Query Language). Raw query passed straight through, same approach as `jira issue search --jql`. A page result carries `content` (`id`, `type`, `title`), `excerpt` (plain text around the match, highlight markers removed), `url` (relative to the response's `_links.base`), `resultGlobalContainer` (the space) and `lastModified`; a CQL not limited to `type=page` can also return spaces, users or attachments, which have no `content`. An invalid CQL query (Confluence answers 400) fails with Confluence's own message. `--select` is required.
+Searches content using CQL (Confluence Query Language). Raw query passed straight through, same approach as `jira issue search --jql`. A page result carries `content` (`id`, `type`, `title`), `excerpt` (plain text around the match, highlight markers removed), `url` (relative to the response's `_links.base`), `link` (the absolute `https://<site>.atlassian.net/wiki<url>`, built from the site URL saved at login; absent if the login didn't record one), `resultGlobalContainer` (the space) and `lastModified`; a CQL not limited to `type=page` can also return spaces, users or attachments, which have no `content`. An invalid CQL query (Confluence answers 400) fails with Confluence's own message. `--select` is required.
 
 ```sh
 cargo run -p confluence -- page search --cql "type=page AND space=ENG AND text~\"deploy\"" --select results.content.id,results.content.title,results.excerpt,results.url
-cargo run -p confluence -- page search --cql "type=page AND space=ENG" --limit 10 --select results.content.id,results.content.title,_links.base
+cargo run -p confluence -- page search --cql "type=page AND space=ENG" --limit 10 --select results.content.id,results.content.title,results.link
 ```
 
 **Flags:** `--limit <N>` (default 25), `--start <N>` (offset for pagination, default 0).
