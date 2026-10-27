@@ -2,7 +2,10 @@
 
 use serde_json::json;
 
-use super::{get_page, markdown_body, parse_body_source, update_page, validate_update_target, BodySource};
+use super::{
+    get_page, markdown_body, parse_body_source, search_pages, strip_highlight, update_page, validate_update_target,
+    BodySource,
+};
 use crate::auth::Credentials;
 use crate::cli::BodyFormat;
 use crate::client::ConfluenceClient;
@@ -177,4 +180,91 @@ fn page_update_reads_and_writes_storage_even_though_page_get_defaults_to_markdow
             "version": {"number": 5},
         })
     );
+}
+
+// --- page search (issue #255) ---
+
+#[test]
+fn search_pages_asks_v1_search_with_highlighted_excerpts_and_strips_the_markers() {
+    let response = json!({
+        "results": [
+            {
+                "content": {"id": "11", "type": "page", "title": "Runbook"},
+                "excerpt": "restart the @@@hl@@@api@@@endhl@@@ with @@@hl@@@care@@@endhl@@@",
+                "url": "/spaces/ENG/pages/11/Runbook",
+                "resultGlobalContainer": {"title": "Engineering", "displayUrl": "/spaces/ENG"},
+                "lastModified": "2026-10-01T10:00:00.000Z"
+            },
+            {"content": {"id": "12", "type": "page", "title": "Plain"}, "excerpt": "no markers here"}
+        ],
+        "start": 25,
+        "limit": 10,
+        "size": 2,
+        "_links": {"base": "https://example.atlassian.net/wiki"}
+    });
+    let (url, server) = mock_server(&[("200 OK", &response.to_string())]);
+
+    let value = search_pages(&client(&url), "type=page AND space=ENG", 10, 25).unwrap();
+
+    let requests = server.join().unwrap();
+    assert_eq!(
+        request_line(&requests[0]),
+        "GET /wiki/rest/api/search?cql=type%3Dpage+AND+space%3DENG&limit=10&start=25&excerpt=highlight HTTP/1.1"
+    );
+    let mut expected = response;
+    expected["results"][0]["excerpt"] = json!("restart the api with care");
+    assert_eq!(value, expected);
+}
+
+#[test]
+fn search_pages_leaves_results_without_a_string_excerpt_unchanged() {
+    let response = json!({
+        "results": [
+            {"content": {"id": "11"}},
+            {"content": {"id": "12"}, "excerpt": null}
+        ],
+        "size": 2
+    });
+    let (url, server) = mock_server(&[("200 OK", &response.to_string())]);
+
+    let value = search_pages(&client(&url), "type=page", 25, 0).unwrap();
+
+    server.join().unwrap();
+    assert_eq!(value, response);
+}
+
+#[test]
+fn search_pages_reports_a_400_as_invalid_cql_with_confluence_message() {
+    let body = r#"{"statusCode":400,"message":"Could not parse cql : type=pag AND"}"#;
+    let (url, server) = mock_server(&[("400 Bad Request", body)]);
+
+    let error = search_pages(&client(&url), "type=pag AND", 25, 0).unwrap_err();
+
+    server.join().unwrap();
+    assert!(
+        matches!(&error, CliError::InvalidCql { cql, body: b } if cql == "type=pag AND" && b == body),
+        "{error:?}"
+    );
+    let message = error.to_string();
+    assert!(message.contains("Could not parse cql : type=pag AND"), "{message}");
+    assert!(message.contains("confluence page search --cql"), "{message}");
+}
+
+#[test]
+fn search_pages_keeps_other_statuses_as_api_errors() {
+    let (url, server) = mock_server(&[("403 Forbidden", r#"{"message":"no"}"#)]);
+
+    let error = search_pages(&client(&url), "type=page", 25, 0).unwrap_err();
+
+    server.join().unwrap();
+    assert!(matches!(error, CliError::ApiError { status: 403, .. }), "{error:?}");
+}
+
+#[test]
+fn strip_highlight_removes_every_marker_and_keeps_the_text() {
+    assert_eq!(strip_highlight(""), "");
+    assert_eq!(strip_highlight("plain text"), "plain text");
+    assert_eq!(strip_highlight("@@@hl@@@a@@@endhl@@@ b @@@hl@@@c@@@endhl@@@"), "a b c");
+    // An unclosed marker (excerpt cut at its length limit) still leaves clean text.
+    assert_eq!(strip_highlight("cut @@@hl@@@wor"), "cut wor");
 }
