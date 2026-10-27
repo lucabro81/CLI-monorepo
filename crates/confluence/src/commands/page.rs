@@ -69,10 +69,8 @@ fn search_pages(client: &ConfluenceClient, cql: &str, limit: u32, start: u32) ->
     })?;
     if let Some(results) = value.get_mut("results").and_then(Value::as_array_mut) {
         for result in results {
-            if let Some(excerpt) = result.get_mut("excerpt") {
-                if let Some(text) = excerpt.as_str() {
-                    *excerpt = Value::String(strip_highlight(text));
-                }
+            if let Some(Value::String(excerpt)) = result.get_mut("excerpt") {
+                *excerpt = strip_highlight(excerpt);
             }
         }
     }
